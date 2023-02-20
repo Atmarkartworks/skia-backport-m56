@@ -4,11 +4,11 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "bench/Benchmark.h"
-#include "include/core/SkString.h"
-#include "include/private/SkSpinlock.h"
-#include "include/private/base/SkMutex.h"
-#include "src/core/SkSharedMutex.h"
+#include "Benchmark.h"
+#include "SkMutex.h"
+#include "SkSharedMutex.h"
+#include "SkSpinlock.h"
+#include "SkString.h"
 
 template <typename Mutex>
 class MutexBench : public Benchmark {
@@ -31,7 +31,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
     SkString fBenchName;
     Mutex fMu;
 };
@@ -55,7 +55,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
     SkSharedMutex fMu;
 };
 

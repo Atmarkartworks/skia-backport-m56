@@ -5,41 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkColorMatrix.h"
-#include "include/effects/SkGradientShader.h"
+#include "gm.h"
+#include "SkColorMatrixFilter.h"
+#include "SkGradientShader.h"
+#include "SkImage.h"
 
 #define WIDTH 500
-#define HEIGHT 160
+#define HEIGHT 500
 
 static void set_color_matrix(SkPaint* paint, const SkColorMatrix& matrix) {
-    paint->setColorFilter(SkColorFilters::Matrix(matrix));
+    paint->setColorFilter(SkColorFilter::MakeMatrixFilterRowMajor255(matrix.fMat));
 }
 
-static void set_array(SkPaint* paint, const float array[]) {
-    paint->setColorFilter(SkColorFilters::Matrix(array));
+static void set_array(SkPaint* paint, const SkScalar array[]) {
+    paint->setColorFilter(SkColorFilter::MakeMatrixFilterRowMajor255(array));
 }
 
 class ColorMatrixGM : public skiagm::GM {
 public:
     ColorMatrixGM() {
-        this->setBGColor(0xFF808080);
+        this->setBGColor(sk_tool_utils::color_to_565(0xFF808080));
     }
 
 protected:
@@ -69,7 +54,7 @@ protected:
                     SkIntToScalar(y), SK_Scalar1, SK_Scalar1), paint);
             }
         }
-        return bm.asImage();
+        return SkImage::MakeFromBitmap(bm);
     }
 
     // creates a bitmap with shades of transparent gray.
@@ -83,9 +68,9 @@ protected:
         SkColor colors[] = {0x00000000, 0xFFFFFFFF};
         SkPaint paint;
         paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2,
-                                                     SkTileMode::kClamp));
+                                                     SkShader::kClamp_TileMode));
         canvas.drawRect(SkRect::MakeWH(SkIntToScalar(width), SkIntToScalar(height)), paint);
-        return bm.asImage();
+        return SkImage::MakeFromBitmap(bm);
     }
 
     void onDraw(SkCanvas* canvas) override {
@@ -95,43 +80,61 @@ protected:
         paint.setBlendMode(SkBlendMode::kSrc);
         const SkImage* bmps[] = { fSolidImg.get(), fTransparentImg.get() };
 
-        for (size_t i = 0; i < std::size(bmps); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(bmps); ++i) {
             matrix.setIdentity();
             set_color_matrix(&paint, matrix);
-            canvas->drawImage(bmps[i], 0, 0, SkSamplingOptions(), &paint);
+            canvas->drawImage(bmps[i], 0, 0, &paint);
 
+            matrix.setRotate(SkColorMatrix::kR_Axis, 90);
+            set_color_matrix(&paint, matrix);
+            canvas->drawImage(bmps[i], 80, 0, &paint);
+
+            matrix.setRotate(SkColorMatrix::kG_Axis, 90);
+            set_color_matrix(&paint, matrix);
+            canvas->drawImage(bmps[i], 160, 0, &paint);
+
+            matrix.setRotate(SkColorMatrix::kB_Axis, 90);
+            set_color_matrix(&paint, matrix);
+            canvas->drawImage(bmps[i], 240, 0, &paint);
             ///////////////////////////////////////////////
-
             matrix.setSaturation(0.0f);
             set_color_matrix(&paint, matrix);
-            canvas->drawImage(bmps[i], 80, 0, SkSamplingOptions(), &paint);
+            canvas->drawImage(bmps[i], 0, 80, &paint);
 
             matrix.setSaturation(0.5f);
             set_color_matrix(&paint, matrix);
-            canvas->drawImage(bmps[i], 160, 0, SkSamplingOptions(), &paint);
+            canvas->drawImage(bmps[i], 80, 80, &paint);
 
             matrix.setSaturation(1.0f);
             set_color_matrix(&paint, matrix);
-            canvas->drawImage(bmps[i], 240, 0, SkSamplingOptions(), &paint);
+            canvas->drawImage(bmps[i], 160, 80, &paint);
 
             matrix.setSaturation(2.0f);
             set_color_matrix(&paint, matrix);
-            canvas->drawImage(bmps[i], 320, 0, SkSamplingOptions(), &paint);
-
+            canvas->drawImage(bmps[i], 240, 80, &paint);
             ///////////////////////////////////////////////
+            matrix.setRGB2YUV();
+            set_color_matrix(&paint, matrix);
+            canvas->drawImage(bmps[i], 0, 160, &paint);
 
+            matrix.setYUV2RGB();
+            set_color_matrix(&paint, matrix);
+            canvas->drawImage(bmps[i], 80, 160, &paint);
+
+            SkScalar s1 = SK_Scalar1;
+            SkScalar s255 = SkIntToScalar(255);
             // Move red into alpha, set color to white
-            float data[20] = {
-                0,  0, 0, 0, 1,
-                0,  0, 0, 0, 1,
-                0,  0, 0, 0, 1,
-                1, 0, 0, 0, 0,
+            SkScalar data[20] = {
+                0,  0, 0, 0, s255,
+                0,  0, 0, 0, s255,
+                0,  0, 0, 0, s255,
+                s1, 0, 0, 0, 0,
             };
 
             set_array(&paint, data);
-            canvas->drawImage(bmps[i], 400, 0, SkSamplingOptions(), &paint);
+            canvas->drawImage(bmps[i], 160, 160, &paint);
             ///////////////////////////////////////////////
-            canvas->translate(0, 80);
+            canvas->translate(0, 240);
         }
     }
 
@@ -139,6 +142,6 @@ private:
     sk_sp<SkImage>   fSolidImg;
     sk_sp<SkImage>   fTransparentImg;
 
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 DEF_GM( return new ColorMatrixGM; )

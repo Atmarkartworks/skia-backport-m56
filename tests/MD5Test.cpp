@@ -5,15 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkMD5.h"
-#include "tests/Test.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <string>
+#include "SkMD5.h"
+#include "Test.h"
 
 static bool digests_equal(const SkMD5::Digest& expectedDigest, const SkMD5::Digest& computedDigest) {
-    for (size_t i = 0; i < std::size(expectedDigest.data); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(expectedDigest.data); ++i) {
         if (expectedDigest.data[i] != computedDigest.data[i]) {
             return false;
         }
@@ -28,7 +24,8 @@ static void md5_test(const char* string, const SkMD5::Digest& expectedDigest, sk
     {
         SkMD5 context;
         context.write(string, len);
-        SkMD5::Digest digest = context.finish();
+        SkMD5::Digest digest;
+        context.finish(digest);
 
         REPORTER_ASSERT(reporter, digests_equal(expectedDigest, digest));
     }
@@ -41,7 +38,8 @@ static void md5_test(const char* string, const SkMD5::Digest& expectedDigest, sk
         for (; data < end; ++data) {
             context.write(data, 1);
         }
-        SkMD5::Digest digest = context.finish();
+        SkMD5::Digest digest;
+        context.finish(digest);
 
         REPORTER_ASSERT(reporter, digests_equal(expectedDigest, digest));
     }
@@ -62,7 +60,7 @@ static struct MD5Test {
 };
 
 DEF_TEST(MD5, reporter) {
-    for (size_t i = 0; i < std::size(md5_tests); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(md5_tests); ++i) {
         md5_test(md5_tests[i].message, md5_tests[i].digest, reporter);
     }
 }

@@ -5,17 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/base/SkTemplates.h"
-#include "tests/Test.h"
-
-#include <cstddef>
-#include <utility>
-
-using namespace skia_private;
+#include "SkTemplates.h"
+#include "Test.h"
 
 // Tests for some of the helpers in SkTemplates.h
 static void test_automalloc_realloc(skiatest::Reporter* reporter) {
-    AutoSTMalloc<1, int> array;
+    SkAutoSTMalloc<1, int> array;
 
     // test we have a valid pointer, should not crash
     array[0] = 1;
@@ -82,39 +77,31 @@ constexpr int static kStackPreallocCount = 10;
 template<typename TContainer, typename TCount>
 static void test_container_apis(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, !TContainer((TCount)0).get());
-    REPORTER_ASSERT(reporter, !TContainer((TCount)0).data());
     REPORTER_ASSERT(reporter, TContainer((TCount)1).get());
-    REPORTER_ASSERT(reporter, TContainer((TCount)1).data());
     REPORTER_ASSERT(reporter, TContainer((TCount)kStackPreallocCount).get());
-    REPORTER_ASSERT(reporter, TContainer((TCount)kStackPreallocCount).data());
     REPORTER_ASSERT(reporter, TContainer((TCount)kStackPreallocCount + 1).get());
-    REPORTER_ASSERT(reporter, TContainer((TCount)kStackPreallocCount + 1).data());
 
     TContainer container;
     // The default constructor may or may not init to empty, depending on the type of container.
 
     container.reset((TCount)1);
     REPORTER_ASSERT(reporter, container.get());
-    REPORTER_ASSERT(reporter, container.get() == container.data());
 
     container.reset((TCount)kStackPreallocCount);
     REPORTER_ASSERT(reporter, container.get());
-    REPORTER_ASSERT(reporter, container.get() == container.data());
 
     container.reset((TCount)kStackPreallocCount + 1);
     REPORTER_ASSERT(reporter, container.get());
-    REPORTER_ASSERT(reporter, container.get() == container.data());
 
     container.reset((TCount)0);
     REPORTER_ASSERT(reporter, !container.get());
-    REPORTER_ASSERT(reporter, !container.data());
 }
 
 DEF_TEST(TemplateContainerAPIs, reporter) {
-    test_container_apis<AutoTArray<int>, int>(reporter);
-    test_container_apis<AutoSTArray<kStackPreallocCount, int>, int>(reporter);
-    test_container_apis<AutoTMalloc<int>, size_t>(reporter);
-    test_container_apis<AutoSTMalloc<kStackPreallocCount, int>, size_t>(reporter);
+    test_container_apis<SkAutoTArray<int>, int>(reporter);
+    test_container_apis<SkAutoSTArray<kStackPreallocCount, int>, int>(reporter);
+    test_container_apis<SkAutoTMalloc<int>, size_t>(reporter);
+    test_container_apis<SkAutoSTMalloc<kStackPreallocCount, int>, size_t>(reporter);
 }
 
 // Ensures that realloc(0) results in a null pointer.
@@ -136,23 +123,6 @@ template<typename TAutoMalloc> static void test_realloc_to_zero(skiatest::Report
 }
 
 DEF_TEST(AutoReallocToZero, reporter) {
-    test_realloc_to_zero<AutoTMalloc<int> >(reporter);
-    test_realloc_to_zero<AutoSTMalloc<kStackPreallocCount, int> >(reporter);
-}
-
-DEF_TEST(AutoTMallocSelfMove, r) {
-#if defined(__clang__)
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wself-move"
-#endif
-
-    AutoTMalloc<int> foo(20);
-    REPORTER_ASSERT(r, foo.get());
-
-    foo = std::move(foo);
-    REPORTER_ASSERT(r, foo.get());  // NOLINT(bugprone-use-after-move)
-
-#if defined(__clang__)
-    #pragma clang diagnostic pop
-#endif
+    test_realloc_to_zero<SkAutoTMalloc<int> >(reporter);
+    test_realloc_to_zero<SkAutoSTMalloc<kStackPreallocCount, int> >(reporter);
 }

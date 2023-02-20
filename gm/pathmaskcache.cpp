@@ -5,18 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/private/base/SkTArray.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "gm.h"
+
+#if SK_SUPPORT_GPU
+
+#include "GrContext.h"
+#include "GrContextOptions.h"
+#include "SkPath.h"
 
 /** This tests the GPU backend's caching of path coverage masks */
 class PathMaskCache : public skiagm::GM {
@@ -86,7 +81,7 @@ protected:
         paths.push_back();
         paths.back().addCircle(30.f, 30.f, 30.f);
         paths.back().addRect(SkRect::MakeXYWH(45.f, 45.f, 50.f, 60.f));
-        paths.back().setFillType(SkPathFillType::kEvenOdd);
+        paths.back().setFillType(SkPath::kEvenOdd_FillType);
 
         canvas->translate(kPad, kPad);
 
@@ -109,12 +104,14 @@ protected:
     }
 
     void modifyGrContextOptions(GrContextOptions* options) override {
-        options->fGpuPathRenderers = GpuPathRenderers::kNone;
+        options->fForceSWPathMasks = true;
         options->fAllowPathMaskCaching = true;
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 DEF_GM( return new PathMaskCache(); )
+
+#endif

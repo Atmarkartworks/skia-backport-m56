@@ -8,26 +8,15 @@
 #ifndef SkJpegCodec_DEFINED
 #define SkJpegCodec_DEFINED
 
-#include "include/codec/SkCodec.h"
-#include "include/codec/SkEncodedOrigin.h"
-#include "include/core/SkEncodedImageFormat.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkTypes.h"
-#include "include/core/SkYUVAPixmaps.h"
-#include "include/private/SkEncodedInfo.h"
-#include "include/private/base/SkTemplates.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
+#include "SkCodec.h"
+#include "SkColorSpace.h"
+#include "SkColorSpaceXform.h"
+#include "SkImageInfo.h"
+#include "SkSwizzler.h"
+#include "SkStream.h"
+#include "SkTemplates.h"
 
 class JpegDecoderMgr;
-class SkSampler;
-class SkStream;
-class SkSwizzler;
-struct SkGainmapInfo;
-struct SkImageInfo;
 
 /*
  *
@@ -36,15 +25,14 @@ struct SkImageInfo;
  */
 class SkJpegCodec : public SkCodec {
 public:
-    ~SkJpegCodec() override;
-
     static bool IsJpeg(const void*, size_t);
 
     /*
      * Assumes IsJpeg was called and returned true
+     * Creates a jpeg decoder
      * Takes ownership of the stream
      */
-    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*);
+    static SkCodec* NewFromStream(SkStream*);
 
 protected:
 
@@ -57,32 +45,21 @@ protected:
      * Initiates the jpeg decode
      */
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst, size_t dstRowBytes, const Options&,
-            int*) override;
+            SkPMColor*, int*, int*) override;
 
-    bool onQueryYUVAInfo(const SkYUVAPixmapInfo::SupportedDataTypes&,
-                         SkYUVAPixmapInfo*) const override;
+    bool onQueryYUV8(SkYUVSizeInfo* sizeInfo, SkYUVColorSpace* colorSpace) const override;
 
-    Result onGetYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps) override;
+    Result onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo, void* planes[3]) override;
 
-    SkEncodedImageFormat onGetEncodedFormat() const override {
-        return SkEncodedImageFormat::kJPEG;
+    SkEncodedFormat onGetEncodedFormat() const override {
+        return kJPEG_SkEncodedFormat;
     }
 
     bool onRewind() override;
 
     bool onDimensionsSupported(const SkISize&) override;
 
-    bool conversionSupported(const SkImageInfo&, bool, bool) override;
-
-    bool onGetGainmapInfo(SkGainmapInfo* info,
-                          std::unique_ptr<SkStream>* gainmapImageStream) override;
-
 private:
-    /*
-     * Allows SkRawCodec to communicate the color profile from the exif data.
-     */
-    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*,
-            std::unique_ptr<SkEncodedInfo::ICCProfile> defaultColorProfile);
 
     /*
      * Read enough of the stream to initialize the SkJpegCodec.
@@ -102,13 +79,9 @@ private:
      * codecOut will take ownership of it in the case where we created a codec.
      * Ownership is unchanged when we set decoderMgrOut.
      *
-     * @param defaultColorProfile
-     * If the jpeg does not have an embedded color profile, the image data should
-     * be tagged with this color profile.
      */
-    static Result ReadHeader(SkStream* stream, SkCodec** codecOut,
-            JpegDecoderMgr** decoderMgrOut,
-            std::unique_ptr<SkEncodedInfo::ICCProfile> defaultColorProfile);
+    static bool ReadHeader(SkStream* stream, SkCodec** codecOut,
+            JpegDecoderMgr** decoderMgrOut);
 
     /*
      * Creates an instance of the decoder
@@ -118,25 +91,28 @@ private:
      * @param stream the encoded image data
      * @param decoderMgr holds decompress struct, src manager, and error manager
      *                   takes ownership
-     * @param origin indicates the image orientation as specified in Exif metadata.
-     * @param xmpMetadata holds the XMP metadata included in the image, if any.
      */
-    SkJpegCodec(SkEncodedInfo&& info,
-                std::unique_ptr<SkStream> stream,
-                JpegDecoderMgr* decoderMgr,
-                SkEncodedOrigin origin);
+    SkJpegCodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
+            JpegDecoderMgr* decoderMgr, sk_sp<SkColorSpace> colorSpace, Origin origin);
 
-    void initializeSwizzler(const SkImageInfo& dstInfo, const Options& options,
-                            bool needsCMYKToRGB);
-    bool SK_WARN_UNUSED_RESULT allocateStorage(const SkImageInfo& dstInfo);
-    int readRows(const SkImageInfo& dstInfo, void* dst, size_t rowBytes, int count, const Options&);
+    /*
+     * Checks if the conversion between the input image and the requested output
+     * image has been implemented.
+     *
+     * Sets the output color space.
+     */
+    bool setOutputColorSpace(const SkImageInfo& dst);
+
+    void initializeSwizzler(const SkImageInfo& dstInfo, const Options& options);
+    void allocateStorage(const SkImageInfo& dstInfo);
+    int readRows(const SkImageInfo& dstInfo, void* dst, size_t rowBytes, int count);
 
     /*
      * Scanline decoding.
      */
     SkSampler* getSampler(bool createIfNecessary) override;
-    Result onStartScanlineDecode(const SkImageInfo& dstInfo,
-            const Options& options) override;
+    Result onStartScanlineDecode(const SkImageInfo& dstInfo, const Options& options,
+            SkPMColor ctable[], int* ctableCount) override;
     int onGetScanlines(void* dst, int count, size_t rowBytes) override;
     bool onSkipScanlines(int count) override;
 
@@ -147,20 +123,18 @@ private:
     const int                          fReadyState;
 
 
-    skia_private::AutoTMalloc<uint8_t>             fStorage;
-    uint8_t* fSwizzleSrcRow = nullptr;
-    uint32_t* fColorXformSrcRow = nullptr;
+    SkAutoTMalloc<uint8_t>             fStorage;
+    uint8_t*                           fSwizzleSrcRow;
+    uint32_t*                          fColorXformSrcRow;
 
     // libjpeg-turbo provides some subsetting.  In the case that libjpeg-turbo
     // cannot take the exact the subset that we need, we will use the swizzler
     // to further subset the output from libjpeg-turbo.
-    SkIRect fSwizzlerSubset = SkIRect::MakeEmpty();
+    SkIRect                            fSwizzlerSubset;
 
     std::unique_ptr<SkSwizzler>        fSwizzler;
 
-    friend class SkRawCodec;
-
-    using INHERITED = SkCodec;
+    typedef SkCodec INHERITED;
 };
 
 #endif

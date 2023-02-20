@@ -4,24 +4,22 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/utils/win/SkDWriteNTDDI_VERSION.h"
+#include "SkTypes.h"
+#if defined(SK_BUILD_FOR_WIN32)
 
-#include "include/core/SkTypes.h"
-#if defined(SK_BUILD_FOR_WIN)
-
-#include "include/core/SkStream.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/ports/SkRemotableFontMgr.h"
-#include "include/private/base/SkMutex.h"
-#include "include/private/base/SkTArray.h"
-#include "src/base/SkUTF.h"
-#include "src/ports/SkTypeface_win_dw.h"
-#include "src/utils/win/SkDWrite.h"
-#include "src/utils/win/SkDWriteFontFileStream.h"
-#include "src/utils/win/SkHRESULT.h"
-#include "src/utils/win/SkObjBase.h"
-#include "src/utils/win/SkTScopedComPtr.h"
+#include "SkDWrite.h"
+#include "SkDWriteFontFileStream.h"
+#include "SkDataTable.h"
+#include "SkHRESULT.h"
+#include "SkMutex.h"
+#include "SkRemotableFontMgr.h"
+#include "SkStream.h"
+#include "SkString.h"
+#include "SkTArray.h"
+#include "SkTScopedComPtr.h"
+#include "SkTypeface_win_dw.h"
+#include "SkTypes.h"
+#include "SkUtils.h"
 
 #include <dwrite.h>
 
@@ -59,8 +57,8 @@ private:
                    "Failed to re-convert to IDWriteFontFileLoader.",
                    SkFontIdentity::kInvalidDataId);
 
-        SkAutoMutexExclusive ama(fDataIdCacheMutex);
-        int count = fDataIdCache.size();
+        SkAutoMutexAcquire ama(fDataIdCacheMutex);
+        int count = fDataIdCache.count();
         int i;
         for (i = 0; i < count; ++i) {
             const DataId& current = fDataIdCache[i];
@@ -90,6 +88,26 @@ public:
         , fLocaleName(localeNameLength)
     {
         memcpy(fLocaleName.get(), localeName, localeNameLength * sizeof(WCHAR));
+    }
+
+    sk_sp<SkDataTable> getFamilyNames() const override {
+        int count = fFontCollection->GetFontFamilyCount();
+
+        SkDataTableBuilder names(1024);
+        for (int index = 0; index < count; ++index) {
+            SkTScopedComPtr<IDWriteFontFamily> fontFamily;
+            HRNM(fFontCollection->GetFontFamily(index, &fontFamily),
+                 "Could not get requested family.");
+
+            SkTScopedComPtr<IDWriteLocalizedStrings> familyNames;
+            HRNM(fontFamily->GetFamilyNames(&familyNames), "Could not get family names.");
+
+            SkString familyName;
+            sk_get_locale_string(familyNames.get(), fLocaleName.get(), &familyName);
+
+            names.appendString(familyName);
+        }
+        return names.detachDataTable();
     }
 
     HRESULT FontToIdentity(IDWriteFont* font, SkFontIdentity* fontId) const {
@@ -237,7 +255,7 @@ public:
         virtual ~FontFallbackRenderer() { }
 
         // IDWriteTextRenderer methods
-        SK_STDMETHODIMP DrawGlyphRun(
+        virtual HRESULT STDMETHODCALLTYPE DrawGlyphRun(
             void* clientDrawingContext,
             FLOAT baselineOriginX,
             FLOAT baselineOriginY,
@@ -263,7 +281,7 @@ public:
             return S_OK;
         }
 
-        SK_STDMETHODIMP DrawUnderline(
+        virtual HRESULT STDMETHODCALLTYPE DrawUnderline(
             void* clientDrawingContext,
             FLOAT baselineOriginX,
             FLOAT baselineOriginY,
@@ -271,7 +289,7 @@ public:
             IUnknown* clientDrawingEffect) override
         { return E_NOTIMPL; }
 
-        SK_STDMETHODIMP DrawStrikethrough(
+        virtual HRESULT STDMETHODCALLTYPE DrawStrikethrough(
             void* clientDrawingContext,
             FLOAT baselineOriginX,
             FLOAT baselineOriginY,
@@ -279,7 +297,7 @@ public:
             IUnknown* clientDrawingEffect) override
         { return E_NOTIMPL; }
 
-        SK_STDMETHODIMP DrawInlineObject(
+        virtual HRESULT STDMETHODCALLTYPE DrawInlineObject(
             void* clientDrawingContext,
             FLOAT originX,
             FLOAT originY,
@@ -290,7 +308,7 @@ public:
         { return E_NOTIMPL; }
 
         // IDWritePixelSnapping methods
-        SK_STDMETHODIMP IsPixelSnappingDisabled(
+        virtual HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(
             void* clientDrawingContext,
             BOOL* isDisabled) override
         {
@@ -298,7 +316,7 @@ public:
             return S_OK;
         }
 
-        SK_STDMETHODIMP GetCurrentTransform(
+        virtual HRESULT STDMETHODCALLTYPE GetCurrentTransform(
             void* clientDrawingContext,
             DWRITE_MATRIX* transform) override
         {
@@ -307,7 +325,7 @@ public:
             return S_OK;
         }
 
-        SK_STDMETHODIMP GetPixelsPerDip(
+        virtual HRESULT STDMETHODCALLTYPE GetPixelsPerDip(
             void* clientDrawingContext,
             FLOAT* pixelsPerDip) override
         {
@@ -316,11 +334,11 @@ public:
         }
 
         // IUnknown methods
-        SK_STDMETHODIMP_(ULONG) AddRef() override {
+        ULONG STDMETHODCALLTYPE AddRef() override {
             return InterlockedIncrement(&fRefCount);
         }
 
-        SK_STDMETHODIMP_(ULONG) Release() override {
+        ULONG STDMETHODCALLTYPE Release() override {
             ULONG newCount = InterlockedDecrement(&fRefCount);
             if (0 == newCount) {
                 delete this;
@@ -328,7 +346,7 @@ public:
             return newCount;
         }
 
-        SK_STDMETHODIMP QueryInterface(
+        virtual HRESULT STDMETHODCALLTYPE QueryInterface(
             IID const& riid, void** ppvObject) override
         {
             if (__uuidof(IUnknown) == riid ||
@@ -399,7 +417,7 @@ public:
 
         WCHAR str[16];
         UINT32 strLen = static_cast<UINT32>(
-            SkUTF::ToUTF16(character, reinterpret_cast<uint16_t*>(str)));
+            SkUTF16_FromUnichar(character, reinterpret_cast<uint16_t*>(str)));
         SkTScopedComPtr<IDWriteTextLayout> fallbackLayout;
         HR_GENERAL(dwFactory->CreateTextLayout(str, strLen, fallbackFormat.get(),
                                                200.0f, 200.0f,
@@ -418,8 +436,8 @@ public:
     }
 
     SkStreamAsset* getData(int dataId) const override {
-        SkAutoMutexExclusive ama(fDataIdCacheMutex);
-        if (dataId >= fDataIdCache.size()) {
+        SkAutoMutexAcquire ama(fDataIdCacheMutex);
+        if (dataId >= fDataIdCache.count()) {
             return nullptr;
         }
         const DataId& id = fDataIdCache[dataId];
@@ -438,7 +456,7 @@ private:
     SkTScopedComPtr<IDWriteFontCollection> fFontCollection;
     SkSMallocWCHAR fLocaleName;
 
-    using INHERITED = SkRemotableFontMgr;
+    typedef SkRemotableFontMgr INHERITED;
 };
 
 SkRemotableFontMgr* SkRemotableFontMgr_New_DirectWrite() {
@@ -469,4 +487,4 @@ SkRemotableFontMgr* SkRemotableFontMgr_New_DirectWrite() {
 
     return new SkRemotableFontMgr_DirectWrite(sysFontCollection.get(), localeName, localeNameLen);
 }
-#endif//defined(SK_BUILD_FOR_WIN)
+#endif//defined(SK_BUILD_FOR_WIN32)

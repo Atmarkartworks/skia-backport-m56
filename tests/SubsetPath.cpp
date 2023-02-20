@@ -5,13 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPathTypes.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/base/SkMathPriv.h"
-#include "src/core/SkPathPriv.h"
-#include "tests/SubsetPath.h"
+#include "SubsetPath.h"
+#include "SkMathPriv.h"
 
 SubsetPath::SubsetPath(const SkPath& path)
         : fPath(path)
@@ -23,7 +18,7 @@ int SubsetPath::range(int* end) const {
     int parts = 1 << (31 - leadingZero);
     int partIndex = fSubset - parts;
     SkASSERT(partIndex >= 0);
-    int count = fSelected.size();
+    int count = fSelected.count();
     int start = count * partIndex / parts;
     *end = count * (partIndex + 1) / parts;
     return start;
@@ -43,7 +38,7 @@ bool SubsetPath::subset(bool testFailed, SkPath* sub) {
             start = range(&end);
  //           SkDebugf("%d s=%d e=%d t=%d\n", fSubset, start, end, fTries);
             if (end - start > 1) {
-                fTries = fSelected.size();
+                fTries = fSelected.count();
             } else if (end - start == 1) {
                 if (--fTries <= 0) {
                     return false;
@@ -56,7 +51,7 @@ bool SubsetPath::subset(bool testFailed, SkPath* sub) {
     }
 #if 1
     SkDebugf("selected: ");
-    for (int index = 0; index < fSelected.size(); ++index) {
+    for (int index = 0; index < fSelected.count(); ++index) {
         SkDebugf("%c", fSelected[index] ? 'x' : '-');
     }
 #endif
@@ -66,19 +61,22 @@ bool SubsetPath::subset(bool testFailed, SkPath* sub) {
 
 SubsetContours::SubsetContours(const SkPath& path)
         : SubsetPath(path) {
+    SkPath::RawIter iter(fPath);
+    uint8_t verb;
+    SkPoint pts[4];
     bool foundCurve = false;
     int contourCount = 0;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(fPath)) {
+    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
         switch (verb) {
-            case SkPathVerb::kMove:
+            case SkPath::kMove_Verb:
                 break;
-            case SkPathVerb::kLine:
-            case SkPathVerb::kQuad:
-            case SkPathVerb::kConic:
-            case SkPathVerb::kCubic:
+            case SkPath::kLine_Verb:
+            case SkPath::kQuad_Verb:
+            case SkPath::kConic_Verb:
+            case SkPath::kCubic_Verb:
                 foundCurve = true;
                 break;
-            case SkPathVerb::kClose:
+            case SkPath::kClose_Verb:
                 ++contourCount;
                 foundCurve = false;
                 break;
@@ -97,45 +95,48 @@ SubsetContours::SubsetContours(const SkPath& path)
 SkPath SubsetContours::getSubsetPath() const {
     SkPath result;
     result.setFillType(fPath.getFillType());
-    if (!fSelected.size()) {
+    if (!fSelected.count()) {
         return result;
     }
+    SkPath::RawIter iter(fPath);
+    uint8_t verb;
+    SkPoint pts[4];
     int contourCount = 0;
     bool enabled = fSelected[0];
     bool addMoveTo = true;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(fPath)) {
+    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
         if (enabled && addMoveTo) {
             result.moveTo(pts[0]);
             addMoveTo = false;
         }
         switch (verb) {
-            case SkPathVerb::kMove:
+            case SkPath::kMove_Verb:
                 break;
-            case SkPathVerb::kLine:
+            case SkPath::kLine_Verb:
                 if (enabled) {
                     result.lineTo(pts[1]);
                 }
                 break;
-            case SkPathVerb::kQuad:
+            case SkPath::kQuad_Verb:
                 if (enabled) {
                     result.quadTo(pts[1], pts[2]);
                 }
                 break;
-            case SkPathVerb::kConic:
+            case SkPath::kConic_Verb:
                 if (enabled) {
-                    result.conicTo(pts[1], pts[2], *w);
+                    result.conicTo(pts[1], pts[2], iter.conicWeight());
                 }
                 break;
-            case SkPathVerb::kCubic:
+            case SkPath::kCubic_Verb:
                  if (enabled) {
                     result.cubicTo(pts[1], pts[2], pts[3]);
                 }
                 break;
-            case SkPathVerb::kClose:
+            case SkPath::kClose_Verb:
                 if (enabled) {
                     result.close();
                 }
-                if (++contourCount >= fSelected.size()) {
+                if (++contourCount >= fSelected.count()) {
                     break;
                 }
                 enabled = fSelected[contourCount];
@@ -151,18 +152,21 @@ SkPath SubsetContours::getSubsetPath() const {
 
 SubsetVerbs::SubsetVerbs(const SkPath& path)
         : SubsetPath(path) {
+    SkPath::RawIter iter(fPath);
+    uint8_t verb;
+    SkPoint pts[4];
     int verbCount = 0;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(fPath)) {
+    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
         switch (verb) {
-            case SkPathVerb::kMove:
+            case SkPath::kMove_Verb:
                 break;
-            case SkPathVerb::kLine:
-            case SkPathVerb::kQuad:
-            case SkPathVerb::kConic:
-            case SkPathVerb::kCubic:
+            case SkPath::kLine_Verb:
+            case SkPath::kQuad_Verb:
+            case SkPath::kConic_Verb:
+            case SkPath::kCubic_Verb:
                 ++verbCount;
                 break;
-            case SkPathVerb::kClose:
+            case SkPath::kClose_Verb:
                 break;
             default:
                 SkDEBUGFAIL("bad verb");
@@ -178,14 +182,17 @@ SubsetVerbs::SubsetVerbs(const SkPath& path)
 SkPath SubsetVerbs::getSubsetPath() const {
     SkPath result;
     result.setFillType(fPath.getFillType());
-    if (!fSelected.size()) {
+    if (!fSelected.count()) {
         return result;
     }
+    SkPath::RawIter iter(fPath);
+    uint8_t verb;
+    SkPoint pts[4];
     int verbIndex = 0;
     bool addMoveTo = true;
     bool addLineTo = false;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(fPath)) {
-        bool enabled = SkPathVerb::kLine <= verb && verb <= SkPathVerb::kCubic
+    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
+        bool enabled = SkPath::kLine_Verb <= verb && verb <= SkPath::kCubic_Verb
             ? fSelected[verbIndex++] : false;
         if (enabled) {
             if (addMoveTo) {
@@ -197,29 +204,29 @@ SkPath SubsetVerbs::getSubsetPath() const {
             }
         }
         switch (verb) {
-            case SkPathVerb::kMove:
+            case SkPath::kMove_Verb:
                 break;
-            case SkPathVerb::kLine:
+            case SkPath::kLine_Verb:
                 if (enabled) {
                     result.lineTo(pts[1]);
                 }
                 break;
-            case SkPathVerb::kQuad:
+            case SkPath::kQuad_Verb:
                 if (enabled) {
                     result.quadTo(pts[1], pts[2]);
                 }
                 break;
-            case SkPathVerb::kConic:
+            case SkPath::kConic_Verb:
                 if (enabled) {
-                    result.conicTo(pts[1], pts[2], *w);
+                    result.conicTo(pts[1], pts[2], iter.conicWeight());
                 }
                 break;
-            case SkPathVerb::kCubic:
+            case SkPath::kCubic_Verb:
                  if (enabled) {
                     result.cubicTo(pts[1], pts[2], pts[3]);
                 }
                 break;
-            case SkPathVerb::kClose:
+            case SkPath::kClose_Verb:
                 result.close();
                 addMoveTo = true;
                 addLineTo = false;

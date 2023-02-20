@@ -5,21 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "tools/ToolUtils.h"
+
+/*
+ * Tests overlapping LCD text
+ */
+
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkSurface.h"
+#include "SkTextBlob.h"
 
 namespace skiagm {
 
@@ -42,11 +36,14 @@ protected:
         // build text blob
         SkTextBlobBuilder builder;
 
-        SkFont      font(ToolUtils::create_portable_typeface(), 32);
+        SkPaint paint;
+        sk_tool_utils::set_portable_typeface(&paint);
+        paint.setTextSize(32);
         const char* text = "able was I ere I saw elba";
-        font.setSubpixel(true);
-        font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, 0);
+        paint.setAntiAlias(true);
+        paint.setSubpixelText(true);
+        paint.setLCDRenderText(true);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, 0);
         fBlob = builder.make();
     }
 
@@ -63,11 +60,11 @@ protected:
                 SK_ColorMAGENTA,
         };
 
-        for (size_t i = 0; i < std::size(colors); i++) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(colors); i++) {
             canvas->save();
             canvas->translate(x, y);
-            canvas->rotate(360.0f / std::size(colors) * i);
-            canvas->translate(-fBlob->bounds().width() / 2.0f - fBlob->bounds().left() + 0.5f, 0);
+            canvas->rotate(360.0f / SK_ARRAY_COUNT(colors) * i);
+            canvas->translate(-fBlob->bounds().width() / 2.0f + 0.5f, 0);
 
             SkPaint textPaint;
             textPaint.setColor(colors[i]);
@@ -90,10 +87,10 @@ protected:
 private:
     SkScalar fTextHeight;
     sk_sp<SkTextBlob> fBlob;
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM( return new LcdOverlapGM; )
-}  // namespace skiagm
+}

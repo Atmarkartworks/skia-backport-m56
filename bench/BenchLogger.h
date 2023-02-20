@@ -9,8 +9,8 @@
 #define BenchLogger_DEFINED
 
 #include <stdio.h>
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
+#include "SkString.h"
+#include "SkTypes.h"
 
 class SkFILEWStream;
 

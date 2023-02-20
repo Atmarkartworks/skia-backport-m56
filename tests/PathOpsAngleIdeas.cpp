@@ -4,30 +4,14 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPoint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTArray.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkRandom.h"
-#include "src/base/SkTSort.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkOpAngle.h"
-#include "src/pathops/SkOpContour.h"
-#include "src/pathops/SkOpSegment.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsQuad.h"
-#include "src/pathops/SkPathOpsRect.h"
-#include "src/pathops/SkPathOpsTypes.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <algorithm>
-#include <array>
-#include <cfloat>
-#include <cmath>
+#include "PathOpsTestCommon.h"
+#include "SkIntersections.h"
+#include "SkOpContour.h"
+#include "SkOpSegment.h"
+#include "SkRandom.h"
+#include "SkTArray.h"
+#include "SkTSort.h"
+#include "Test.h"
 
 static bool gPathOpsAngleIdeasVerbose = false;
 static bool gPathOpsAngleIdeasEnableBruteCheck = false;
@@ -108,7 +92,7 @@ static void orderQuads(skiatest::Reporter* reporter, const SkDQuad& quad, double
         if (t < 0) {
             continue;
         }
-        for (int index = 0; index < tArray->size(); ++index) {
+        for (int index = 0; index < tArray->count(); ++index) {
             double matchT = (*tArray)[index];
             if (approximately_equal(t, matchT)) {
                 goto next;
@@ -138,7 +122,7 @@ static void setQuadHullSweep(const SkDQuad& quad, SkDVector sweep[2]) {
 
 static double distEndRatio(double dist, const SkDQuad& quad) {
     SkDVector v[] = {quad[2] - quad[0], quad[1] - quad[0], quad[2] - quad[1]};
-    double longest = std::max(v[0].length(), std::max(v[1].length(), v[2].length()));
+    double longest = SkTMax(v[0].length(), SkTMax(v[1].length(), v[2].length()));
     return longest / dist;
 }
 
@@ -246,11 +230,11 @@ static bool orderTRange(skiatest::Reporter* reporter, const SkDQuad& quad1, cons
     SkTArray<double, false> t1Array, t2Array;
     orderQuads(reporter, quad1, r, &t1Array);
     orderQuads(reporter,quad2, r, &t2Array);
-    if (t1Array.empty() || t2Array.empty()) {
+    if (!t1Array.count() || !t2Array.count()) {
         return false;
     }
-    SkTQSort<double>(t1Array.begin(), t1Array.end());
-    SkTQSort<double>(t2Array.begin(), t2Array.end());
+    SkTQSort<double>(t1Array.begin(), t1Array.end() - 1);
+    SkTQSort<double>(t2Array.begin(), t2Array.end() - 1);
     double t1 = result->tMin1 = t1Array[0];
     double t2 = result->tMin2 = t2Array[0];
     double a1 = quadAngle(reporter,quad1, t1);
@@ -261,7 +245,7 @@ static bool orderTRange(skiatest::Reporter* reporter, const SkDQuad& quad1, cons
     bool refCCW = angleDirection(a1, a2);
     result->t1 = t1;
     result->t2 = t2;
-    result->tMin = std::min(t1, t2);
+    result->tMin = SkTMin(t1, t2);
     result->a1 = a1;
     result->a2 = a2;
     result->ccw = refCCW;
@@ -283,8 +267,8 @@ static double maxDist(const SkDQuad& quad) {
         { bounds.fRight - quad[0].fX, bounds.fBottom - quad[0].fY }
     };
     double max = 0;
-    for (unsigned index = 0; index < std::size(corner); ++index) {
-        max = std::max(max, corner[index].length());
+    for (unsigned index = 0; index < SK_ARRAY_COUNT(corner); ++index) {
+        max = SkTMax(max, corner[index].length());
     }
     return max;
 }
@@ -292,16 +276,16 @@ static double maxDist(const SkDQuad& quad) {
 static double maxQuad(const SkDQuad& quad) {
     double max = 0;
     for (int index = 0; index < 2; ++index) {
-        max = std::max(max, fabs(quad[index].fX));
-        max = std::max(max, fabs(quad[index].fY));
+        max = SkTMax(max, fabs(quad[index].fX));
+        max = SkTMax(max, fabs(quad[index].fY));
     }
     return max;
 }
 
 static bool bruteMinT(skiatest::Reporter* reporter, const SkDQuad& quad1, const SkDQuad& quad2,
         TRange* lowerRange, TRange* upperRange) {
-    double maxRadius = std::min(maxDist(quad1), maxDist(quad2));
-    double maxQuads = std::max(maxQuad(quad1), maxQuad(quad2));
+    double maxRadius = SkTMin(maxDist(quad1), maxDist(quad2));
+    double maxQuads = SkTMax(maxQuad(quad1), maxQuad(quad2));
     double r = maxRadius / 2;
     double rStep = r / 2;
     SkDPoint best1 = {SK_ScalarInfinity, SK_ScalarInfinity};
@@ -350,6 +334,9 @@ static bool bruteMinT(skiatest::Reporter* reporter, const SkDQuad& quad1, const 
             rStep /= 2;
         } while (rStep > FLT_EPSILON);
         if (bestCCW < 0) {
+            if (bestR >= maxRadius) {
+                SkDebugf("");
+            }
             REPORTER_ASSERT(reporter, bestR < maxRadius);
             return false;
         }
@@ -391,7 +378,7 @@ static bool bruteMinT(skiatest::Reporter* reporter, const SkDQuad& quad1, const 
                         *lowerRange = tRange;
                     }
                 }
-                lastHighR = std::min(r, lastHighR);
+                lastHighR = SkTMin(r, lastHighR);
             }
             r += success ? -rStep : rStep;
             rStep /= 2;
@@ -432,7 +419,7 @@ static void makeSegment(SkOpContour* contour, const SkDQuad& quad, SkPoint short
 }
 
 static void testQuadAngles(skiatest::Reporter* reporter, const SkDQuad& quad1, const SkDQuad& quad2,
-        int testNo, SkArenaAlloc* allocator) {
+        int testNo, SkChunkAlloc* allocator) {
     SkPoint shortQuads[2][3];
 
     SkOpContourHead contour;
@@ -497,14 +484,14 @@ static void testQuadAngles(skiatest::Reporter* reporter, const SkDQuad& quad1, c
     double maxWidth = 0;
     bool useIntersect = false;
     double smallestTs[] = {1, 1};
-    for (unsigned index = 0; index < std::size(quads); ++index) {
+    for (unsigned index = 0; index < SK_ARRAY_COUNT(quads); ++index) {
         const SkDQuad& q = *quads[index];
         midSpokes[index] = q.ptAtT(0.5) - origin;
-        minX = std::min(std::min(std::min(minX, origin.fX), q[1].fX), q[2].fX);
-        minY = std::min(std::min(std::min(minY, origin.fY), q[1].fY), q[2].fY);
-        maxX = std::max(std::max(std::max(maxX, origin.fX), q[1].fX), q[2].fX);
-        maxY = std::max(std::max(std::max(maxY, origin.fY), q[1].fY), q[2].fY);
-        maxWidth = std::max(maxWidth, std::max(maxX - minX, maxY - minY));
+        minX = SkTMin(SkTMin(SkTMin(minX, origin.fX), q[1].fX), q[2].fX);
+        minY = SkTMin(SkTMin(SkTMin(minY, origin.fY), q[1].fY), q[2].fY);
+        maxX = SkTMax(SkTMax(SkTMax(maxX, origin.fX), q[1].fX), q[2].fX);
+        maxY = SkTMax(SkTMax(SkTMax(maxY, origin.fY), q[1].fY), q[2].fY);
+        maxWidth = SkTMax(maxWidth, SkTMax(maxX - minX, maxY - minY));
         intersect[index].intersectRay(q, rays[index]);
         const SkIntersections& i = intersect[index];
         REPORTER_ASSERT(reporter, i.used() >= 1);
@@ -571,13 +558,13 @@ static void testQuadAngles(skiatest::Reporter* reporter, const SkDQuad& quad1, c
 }
 
 DEF_TEST(PathOpsAngleOverlapHullsOne, reporter) {
-    SkSTArenaAlloc<4096> allocator;
+    SkChunkAlloc allocator(4096);
 //    gPathOpsAngleIdeasVerbose = true;
     const QuadPts quads[] = {
 {{{939.4808349609375, 914.355224609375}, {-357.7921142578125, 590.842529296875}, {736.8936767578125, -350.717529296875}}},
 {{{939.4808349609375, 914.355224609375}, {-182.85418701171875, 634.4552001953125}, {-509.62615966796875, 576.1182861328125}}}
     };
-    for (int index = 0; index < (int) std::size(quads); index += 2) {
+    for (int index = 0; index < (int) SK_ARRAY_COUNT(quads); index += 2) {
         SkDQuad quad0, quad1;
         quad0.debugSet(quads[index].fPts);
         quad1.debugSet(quads[index + 1].fPts);
@@ -586,7 +573,7 @@ DEF_TEST(PathOpsAngleOverlapHullsOne, reporter) {
 }
 
 DEF_TEST(PathOpsAngleOverlapHulls, reporter) {
-    SkSTArenaAlloc<4096> allocator;
+    SkChunkAlloc allocator(4096);
     if (!gPathOpsAngleIdeasVerbose) {  // takes a while to run -- so exclude it by default
         return;
     }
@@ -624,7 +611,7 @@ DEF_TEST(PathOpsAngleBruteT, reporter) {
     SkRandom ran;
     double smaller = SK_Scalar1;
     SkDQuad small[2];
-    SkDEBUGCODE(int smallIndex = 0);
+    SkDEBUGCODE(int smallIndex);
     for (int index = 0; index < 100000; ++index) {
         SkDPoint origin = {ran.nextRangeF(-1000, 1000), ran.nextRangeF(-1000, 1000)};
         QuadPts quad1 = {{origin, {ran.nextRangeF(-1000, 1000), ran.nextRangeF(-1000, 1000)},
@@ -649,7 +636,7 @@ DEF_TEST(PathOpsAngleBruteT, reporter) {
         TRange lowerRange, upperRange;
         bool result = bruteMinT(reporter, q1, q2, &lowerRange, &upperRange);
         REPORTER_ASSERT(reporter, result);
-        double min = std::min(upperRange.t1, upperRange.t2);
+        double min = SkTMin(upperRange.t1, upperRange.t2);
         if (smaller > min) {
             small[0] = q1;
             small[1] = q2;
@@ -673,8 +660,8 @@ DEF_TEST(PathOpsAngleBruteTOne, reporter) {
 {{{598.857421875, 846.345458984375}, {715.7142333984375, 955.3599853515625}, {-919.9478759765625, 691.611328125}}},
     };
     TRange lowerRange, upperRange;
-    SkDQuad quads[std::size(qPts)];
-    for (int index = 0; index < (int) std::size(qPts); ++index) {
+    SkDQuad quads[SK_ARRAY_COUNT(qPts)];
+    for (int index = 0; index < (int) SK_ARRAY_COUNT(qPts); ++index) {
         quads[index].debugSet(qPts[index].fPts);
     }
     bruteMinT(reporter, quads[0], quads[1], &lowerRange, &upperRange);
@@ -823,7 +810,7 @@ DEF_TEST(PathOpsAngleExtreme, reporter) {
         return;
     }
     double maxR = SK_ScalarMax;
-    for (int index = 0; index < (int) std::size(extremeTests); ++index) {
+    for (int index = 0; index < (int) SK_ARRAY_COUNT(extremeTests); ++index) {
         const QuadPts& qu1 = extremeTests[index][0];
         const QuadPts& qu2 = extremeTests[index][1];
         SkDQuad quad1, quad2;
@@ -846,7 +833,7 @@ DEF_TEST(PathOpsAngleExtreme, reporter) {
         REPORTER_ASSERT(reporter, s0xt0 != 0);
         bool ccw = s0xt0 < 0;
         bool agrees = bruteForceCheck(reporter, quad1, quad2, ccw);
-        maxR = std::min(maxR, mDistance(reporter, agrees, quad1, quad2));
+        maxR = SkTMin(maxR, mDistance(reporter, agrees, quad1, quad2));
         if (agrees) {
             continue;
         }
@@ -862,7 +849,7 @@ DEF_TEST(PathOpsAngleExtreme, reporter) {
             q2[1].fX = quad2[0].fX * (1 - hiPass) + quad2[1].fX * hiPass;
             q2[1].fY = quad2[0].fY * (1 - hiPass) + quad2[1].fY * hiPass;
             agrees = bruteForceCheck(reporter, q1, q2, ccw);
-            maxR = std::min(maxR, mDistance(reporter, agrees, q1, q2));
+            maxR = SkTMin(maxR, mDistance(reporter, agrees, q1, q2));
             if (agrees) {
                 break;
             }
@@ -879,7 +866,7 @@ DEF_TEST(PathOpsAngleExtreme, reporter) {
             q2[1].fX = quad2[0].fX * (1 - midTest) + quad2[1].fX * midTest;
             q2[1].fY = quad2[0].fY * (1 - midTest) + quad2[1].fY * midTest;
             agrees = bruteForceCheck(reporter, q1, q2, ccw);
-            maxR = std::min(maxR, mDistance(reporter, agrees, q1, q2));
+            maxR = SkTMin(maxR, mDistance(reporter, agrees, q1, q2));
             if (!agrees) {
                 midPointAgrees(reporter, quad1, quad2, !ccw);
             }

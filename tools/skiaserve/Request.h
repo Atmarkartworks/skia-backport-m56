@@ -8,20 +8,22 @@
 #ifndef Request_DEFINED
 #define Request_DEFINED
 
-#include "include/core/SkTypes.h"
+#include "SkTypes.h"
 
-#include "tools/gpu/GrContextFactory.h"
+#if SK_SUPPORT_GPU
+#include "GrContextFactory.h"
+#endif
 
-#include "include/core/SkPicture.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkSurface.h"
-#include "tools/debugger/DebugCanvas.h"
+#include "SkDebugCanvas.h"
+#include "SkPicture.h"
+#include "SkStream.h"
+#include "SkSurface.h"
 
-#include "tools/UrlDataManager.h"
+#include "UrlDataManager.h"
 
 namespace sk_gpu_test {
 class GrContextFactory;
-}  // namespace sk_gpu_test
+}
 struct MHD_Connection;
 struct MHD_PostProcessor;
 
@@ -35,10 +37,11 @@ struct Request {
     Request(SkString rootUrl);
     ~Request();
 
-    // draws to canvas operation N, highlighting the Mth GrOp. m = -1 means no highlight.
+    // draws to skia draw op N, highlighting the Mth batch(-1 means no highlight)
     sk_sp<SkData> drawToPng(int n, int m = -1);
     sk_sp<SkData> writeOutSkp();
     SkCanvas* getCanvas();
+    SkBitmap* getBitmapFromCanvas(SkCanvas* canvas);
     bool enableGPU(bool enable);
     bool setOverdraw(bool enable);
     bool setColorMode(int mode);
@@ -48,27 +51,28 @@ struct Request {
     bool initPictureFromStream(SkStream*);
 
     // Returns the json list of ops as an SkData
-    sk_sp<SkData> getJsonOps();
+    sk_sp<SkData> getJsonOps(int n);
 
-    // Returns a json list of ops as an SkData
-    sk_sp<SkData> getJsonOpsTask();
+    // Returns a json list of batches as an SkData
+    sk_sp<SkData> getJsonBatchList(int n);
 
-    // Returns json with the viewMatrix and clipRect at the given command
+    // Returns json with the viewMatrix and clipRect
     sk_sp<SkData> getJsonInfo(int n);
 
     // returns the color of the pixel at (x,y) in the canvas
     SkColor getPixel(int x, int y);
 
     UploadContext* fUploadContext;
-    std::unique_ptr<DebugCanvas> fDebugCanvas;
+    std::unique_ptr<SkDebugCanvas> fDebugCanvas;
     UrlDataManager fUrlDataManager;
 
 private:
     sk_sp<SkData> writeCanvasToPng(SkCanvas* canvas);
+    void drawToCanvas(int n, int m = -1);
     SkSurface* createCPUSurface();
     SkSurface* createGPUSurface();
     SkIRect getBounds();
-    GrDirectContext* directContext();
+    GrContext* getContext();
 
     sk_sp<SkPicture> fPicture;
     sk_gpu_test::GrContextFactory* fContextFactory;

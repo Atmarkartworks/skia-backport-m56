@@ -1,133 +1,43 @@
 {
   "builder_name_schema": {
-    "BazelBuild": {
-      "keys": [
-        "label",
-        "config",
-        "host"
-      ],
-      "optional_keys": [
-        "cross"
-      ]
-    },
-    "BazelTest": {
-      "keys": [
-        "task_driver",
-        "config",
-        "host"
-      ],
-      "optional_keys": [
-        "cross"
-      ]
-    },
-    "Build": {
-      "keys": [
-        "os",
-        "compiler",
-        "target_arch",
-        "configuration"
-      ],
-      "optional_keys": [
-        "extra_config"
-      ]
-    },
-    "BuildStats": {
-      "keys": [
-        "os",
-        "compiler",
-        "target_arch",
-        "configuration"
-      ],
-      "optional_keys": [
-        "extra_config"
-      ]
-    },
-    "Canary": {
-      "keys": [
-        "project"
-      ]
-    },
-    "CodeSize": {
-      "keys": [
-        "binary_name",
-        "os",
-        "compiler",
-        "target_arch",
-        "configuration"
-      ],
-      "optional_keys": [
-        "extra_config"
-      ]
-    },
-    "Housekeeper": {
-      "keys": [
-        "frequency"
-      ],
-      "optional_keys": [
-        "extra_config"
-      ]
-    },
-    "Infra": {
-      "keys": [
-        "frequency"
-      ],
-      "optional_keys": [
-        "extra_config"
-      ]
-    },
-    "Perf": {
-      "keys": [
-        "os",
-        "compiler",
-        "model",
-        "cpu_or_gpu",
-        "cpu_or_gpu_value",
-        "arch",
-        "configuration",
-        "test_filter"
-      ],
-      "optional_keys": [
-        "extra_config"
-      ]
-    },
-    "Test": {
-      "keys": [
-        "os",
-        "compiler",
-        "model",
-        "cpu_or_gpu",
-        "cpu_or_gpu_value",
-        "arch",
-        "configuration",
-        "test_filter"
-      ],
-      "optional_keys": [
-        "extra_config"
-      ]
-    },
-    "FM": {
-      "keys": [
-        "os",
-        "compiler",
-        "model",
-        "cpu_or_gpu",
-        "cpu_or_gpu_value",
-        "arch",
-        "configuration",
-        "test_filter"
-      ],
-      "optional_keys": [
-        "extra_config"
-      ]
-    },
-    "Upload": {
-      "recurse_roles": [
-        "Build",
-        "BuildStats",
-        "Perf",
-        "Test"
-      ]
-    }
+    "Test": [
+      "os",
+      "compiler",
+      "model",
+      "cpu_or_gpu",
+      "cpu_or_gpu_value",
+      "arch",
+      "configuration"
+    ],
+    "Housekeeper": [
+      "frequency"
+    ],
+    "Infra": [
+      "frequency"
+    ],
+    "Build": [
+      "os",
+      "compiler",
+      "target_arch",
+      "configuration"
+    ],
+    "Perf": [
+      "os",
+      "compiler",
+      "model",
+      "cpu_or_gpu",
+      "cpu_or_gpu_value",
+      "arch",
+      "configuration"
+    ],
+    "Canary": [
+      "project",
+      "os",
+      "compiler",
+      "target_arch",
+      "configuration"
+    ]
   },
-  "builder_name_sep": "-"
+  "builder_name_sep": "-",
+  "trybot_name_suffix": "Trybot"
 }

@@ -5,18 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorType.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "tests/Test.h"
-#include <cstdint>
+#include "SkCanvas.h"
+#include "SkImagePriv.h"
+#include "Test.h"
 
 static const int gWidth = 20;
 static const int gHeight = 20;
@@ -35,22 +26,22 @@ DEF_TEST(SkImageFromBitmap_extractSubset, reporter) {
         canvas.drawIRect(r, p);
         SkBitmap dstBitmap;
         srcBitmap.extractSubset(&dstBitmap, r);
-        image = dstBitmap.asImage();
+        image = SkImage::MakeFromBitmap(dstBitmap);
     }
 
     SkBitmap tgt;
     tgt.allocN32Pixels(gWidth, gHeight);
     SkCanvas canvas(tgt);
     canvas.clear(SK_ColorTRANSPARENT);
-    canvas.drawImage(image, 0, 0);
+    canvas.drawImage(image, 0, 0, nullptr);
 
     uint32_t pixel = 0;
     SkImageInfo info = SkImageInfo::Make(1, 1, kBGRA_8888_SkColorType, kUnpremul_SkAlphaType);
-    tgt.readPixels(info, &pixel, 4, 0, 0);
+    canvas.readPixels(info, &pixel, 4, 0, 0);
     REPORTER_ASSERT(reporter, pixel == SK_ColorGREEN);
-    tgt.readPixels(info, &pixel, 4, gWidth - 6, gWidth - 6);
+    canvas.readPixels(info, &pixel, 4, gWidth - 6, gWidth - 6);
     REPORTER_ASSERT(reporter, pixel == SK_ColorGREEN);
 
-    tgt.readPixels(info, &pixel, 4, gWidth - 5, gWidth - 5);
+    canvas.readPixels(info, &pixel, 4, gWidth - 5, gWidth - 5);
     REPORTER_ASSERT(reporter, pixel == SK_ColorTRANSPARENT);
 }

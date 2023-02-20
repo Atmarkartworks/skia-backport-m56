@@ -5,12 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkGeometry.h"
-#include "src/core/SkPathPriv.h"
+#include "Benchmark.h"
+#include "SkGeometry.h"
+#include "SkRandom.h"
+#include "SkRect.h"
 
 class GeometryBench : public Benchmark {
 public:
@@ -48,11 +46,11 @@ public:
 protected:
     SkRect fRects[2048];
 
-    void onDelayedSetup() override {
+    virtual void onDelayedSetup() {
         const SkScalar min = -100;
         const SkScalar max = 100;
         SkRandom rand;
-        for (size_t i = 0; i < std::size(fRects); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
             SkScalar x = rand.nextRangeScalar(min, max);
             SkScalar y = rand.nextRangeScalar(min, max);
             SkScalar w = rand.nextRangeScalar(min, max);
@@ -70,7 +68,7 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         for (int outer = 0; outer < loops; ++outer) {
             int count = 0;
-            for (size_t i = 0; i < std::size(fRects); ++i) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
                 SkRect r = fRects[0];
                 count += r.intersect(fRects[i]);
             }
@@ -88,7 +86,7 @@ protected:
         for (int outer = 0; outer < loops; ++outer) {
             int count = 0;
             SkRect r;
-            for (size_t i = 0; i < std::size(fRects); ++i) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
                 count += r.intersect(fRects[0], fRects[i]);
             }
             this->virtualCallToFoilOptimizers(count);
@@ -104,7 +102,7 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         for (int outer = 0; outer < loops; ++outer) {
             int count = 0;
-            for (size_t i = 0; i < std::size(fRects); ++i) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
                 count += SkRect::Intersects(fRects[0], fRects[i]);
             }
             this->virtualCallToFoilOptimizers(count);
@@ -119,7 +117,7 @@ public:
 protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         for (int outer = 0; outer < loops; ++outer) {
-            for (size_t i = 0; i < std::size(fRects); ++i) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
                 fRects[i].sort();
             }
         }
@@ -245,51 +243,3 @@ protected:
     }
 };
 DEF_BENCH( return new ChopCubicAt; )
-
-#include "include/core/SkPath.h"
-
-class ConvexityBench : public Benchmark {
-    SkPath fPath;
-
-public:
-    ConvexityBench(const char suffix[]) {
-        fName.printf("convexity_%s", suffix);
-    }
-
-    const char* onGetName() override {
-        return fName.c_str();
-    }
-
-    bool isSuitableFor(Backend backend) override {
-        return kNonRendering_Backend == backend;
-    }
-
-    virtual void preparePath(SkPath*) = 0;
-
-protected:
-    void onPreDraw(SkCanvas*) override {
-        this->preparePath(&fPath);
-    }
-
-    void onDraw(int loops, SkCanvas* canvas) override {
-        for (int i = 0; i < loops; ++i) {
-            SkPathPriv::ForceComputeConvexity(fPath);
-        }
-    }
-
-private:
-    SkString fName;
-};
-
-class RRectConvexityBench : public ConvexityBench {
-public:
-    RRectConvexityBench() : ConvexityBench("rrect") {}
-
-    void preparePath(SkPath* path) override {
-        SkRRect rr;
-        rr.setRectXY({0, 0, 100, 100}, 20, 30);
-        path->addRRect(rr);
-    }
-};
-DEF_BENCH( return new RRectConvexityBench; )
-

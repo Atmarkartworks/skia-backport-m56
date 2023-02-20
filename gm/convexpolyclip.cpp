@@ -5,46 +5,31 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkClipOp.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPathBuilder.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
 
-static sk_sp<SkImage> make_img(int w, int h) {
-    auto surf = SkSurface::MakeRaster(SkImageInfo::MakeN32(w, h, kOpaque_SkAlphaType));
-    auto canvas = surf->getCanvas();
+#include "SkBitmap.h"
+#include "SkGradientShader.h"
+#include "SkPath.h"
+#include "SkTLList.h"
 
+static SkBitmap make_bmp(int w, int h) {
+    SkBitmap bmp;
+    bmp.allocN32Pixels(w, h, true);
+
+    SkCanvas canvas(bmp);
     SkScalar wScalar = SkIntToScalar(w);
     SkScalar hScalar = SkIntToScalar(h);
 
     SkPoint     pt = { wScalar / 2, hScalar / 2 };
 
-    SkScalar    radius = 3 * std::max(wScalar, hScalar);
+    SkScalar    radius = 3 * SkMaxScalar(wScalar, hScalar);
 
-    SkColor colors[] = {SK_ColorDKGRAY,
-                        ToolUtils::color_to_565(0xFF222255),
-                        ToolUtils::color_to_565(0xFF331133),
-                        ToolUtils::color_to_565(0xFF884422),
-                        ToolUtils::color_to_565(0xFF000022),
-                        SK_ColorWHITE,
-                        ToolUtils::color_to_565(0xFFAABBCC)};
+    SkColor     colors[] = { sk_tool_utils::color_to_565(SK_ColorDKGRAY),
+                             sk_tool_utils::color_to_565(0xFF222255),
+                             sk_tool_utils::color_to_565(0xFF331133),
+                             sk_tool_utils::color_to_565(0xFF884422),
+                             sk_tool_utils::color_to_565(0xFF000022), SK_ColorWHITE,
+                             sk_tool_utils::color_to_565(0xFFAABBCC) };
 
     SkScalar    pos[] = {0,
                          SK_Scalar1 / 6,
@@ -61,29 +46,28 @@ static sk_sp<SkImage> make_img(int w, int h) {
         paint.setShader(SkGradientShader::MakeRadial(
                         pt, radius,
                         colors, pos,
-                        std::size(colors),
-                        SkTileMode::kRepeat,
+                        SK_ARRAY_COUNT(colors),
+                        SkShader::kRepeat_TileMode,
                         0, &mat));
-        canvas->drawRect(rect, paint);
+        canvas.drawRect(rect, paint);
         rect.inset(wScalar / 8, hScalar / 8);
         mat.preTranslate(6 * wScalar, 6 * hScalar);
         mat.postScale(SK_Scalar1 / 3, SK_Scalar1 / 3);
     }
 
-    SkFont font(ToolUtils::create_portable_typeface(), wScalar / 2.2f);
-
-    paint.setShader(nullptr);
-    paint.setColor(SK_ColorLTGRAY);
+    paint.setAntiAlias(true);
+    sk_tool_utils::set_portable_typeface(&paint);
+    paint.setTextSize(wScalar / 2.2f);
+    paint.setShader(0);
+    paint.setColor(sk_tool_utils::color_to_565(SK_ColorLTGRAY));
     constexpr char kTxt[] = "Skia";
-    SkPoint texPos = { wScalar / 17, hScalar / 2 + font.getSize() / 2.5f };
-    canvas->drawSimpleText(kTxt, std::size(kTxt)-1, SkTextEncoding::kUTF8,
-                           texPos.fX, texPos.fY, font, paint);
+    SkPoint texPos = { wScalar / 17, hScalar / 2 + paint.getTextSize() / 2.5f };
+    canvas.drawText(kTxt, SK_ARRAY_COUNT(kTxt)-1, texPos.fX, texPos.fY, paint);
     paint.setColor(SK_ColorBLACK);
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(SK_Scalar1);
-    canvas->drawSimpleText(kTxt, std::size(kTxt)-1, SkTextEncoding::kUTF8,
-                           texPos.fX, texPos.fY, font, paint);
-    return surf->makeImageSnapshot();
+    canvas.drawText(kTxt, SK_ARRAY_COUNT(kTxt)-1, texPos.fX, texPos.fY, paint);
+    return bmp;
 }
 
 namespace skiagm {
@@ -111,24 +95,20 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        // On < c++17, emplace_back() returns a void :(
-        auto emplace_back = [](std::vector<Clip>& clips) -> Clip& {
-            clips.emplace_back();
-            return clips.back();
-        };
+        SkPath tri;
+        tri.moveTo(5.f, 5.f);
+        tri.lineTo(100.f, 20.f);
+        tri.lineTo(15.f, 100.f);
 
-        emplace_back(fClips).setPath(SkPath::Polygon({
-            {  5.f,   5.f},
-            {100.f,  20.f},
-            { 15.f, 100.f},
-        }, false));
+        fClips.addToTail()->setPath(tri);
 
-        SkPathBuilder hexagon;
+        SkPath hexagon;
         constexpr SkScalar kRadius = 45.f;
         const SkPoint center = { kRadius, kRadius };
         for (int i = 0; i < 6; ++i) {
             SkScalar angle = 2 * SK_ScalarPI * i / 6;
-            SkPoint point = { SkScalarCos(angle), SkScalarSin(angle) };
+            SkPoint point;
+            point.fY = SkScalarSinCos(angle, &point.fX);
             point.scale(kRadius);
             point = center + point;
             if (0 == i) {
@@ -137,20 +117,24 @@ protected:
                 hexagon.lineTo(point);
             }
         }
-        emplace_back(fClips).setPath(hexagon.snapshot());
+        fClips.addToTail()->setPath(hexagon);
 
         SkMatrix scaleM;
         scaleM.setScale(1.1f, 0.4f, kRadius, kRadius);
-        emplace_back(fClips).setPath(hexagon.detach().makeTransform(scaleM));
+        hexagon.transform(scaleM);
+        fClips.addToTail()->setPath(hexagon);
 
-        emplace_back(fClips).setRect(SkRect::MakeXYWH(8.3f, 11.6f, 78.2f, 72.6f));
+        fClips.addToTail()->setRect(SkRect::MakeXYWH(8.3f, 11.6f, 78.2f, 72.6f));
 
+        SkPath rotRect;
         SkRect rect = SkRect::MakeLTRB(10.f, 12.f, 80.f, 86.f);
+        rotRect.addRect(rect);
         SkMatrix rotM;
         rotM.setRotate(23.f, rect.centerX(), rect.centerY());
-        emplace_back(fClips).setPath(SkPath::Rect(rect).makeTransform(rotM));
+        rotRect.transform(rotM);
+        fClips.addToTail()->setPath(rotRect);
 
-        fImg = make_img(100, 100);
+        fBmp = make_bmp(100, 100);
     }
 
     void onDraw(SkCanvas* canvas) override {
@@ -159,25 +143,29 @@ protected:
 
         SkPaint bgPaint;
         bgPaint.setAlpha(0x15);
-        SkISize size = canvas->getBaseLayerSize();
-        canvas->drawImageRect(fImg, SkRect::MakeIWH(size.fWidth, size.fHeight),
-                              SkSamplingOptions(), &bgPaint);
+        SkISize size = canvas->getDeviceSize();
+        canvas->drawBitmapRect(fBmp, SkRect::MakeIWH(size.fWidth, size.fHeight), &bgPaint);
 
         constexpr char kTxt[] = "Clip Me!";
-        SkFont         font(ToolUtils::create_portable_typeface(), 23);
-        SkScalar textW = font.measureText(kTxt, std::size(kTxt)-1, SkTextEncoding::kUTF8);
         SkPaint txtPaint;
-        txtPaint.setColor(SK_ColorDKGRAY);
+        txtPaint.setTextSize(23.f);
+        txtPaint.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&txtPaint);
+        txtPaint.setColor(sk_tool_utils::color_to_565(SK_ColorDKGRAY));
+        SkScalar textW = txtPaint.measureText(kTxt, SK_ARRAY_COUNT(kTxt)-1);
 
         SkScalar startX = 0;
         int testLayers = kBench_Mode != this->getMode();
         for (int doLayer = 0; doLayer <= testLayers; ++doLayer) {
-            for (const Clip& clip : fClips) {
+            for (ClipList::Iter iter(fClips, ClipList::Iter::kHead_IterStart);
+                 iter.get();
+                 iter.next()) {
+                const Clip* clip = iter.get();
                 SkScalar x = startX;
                 for (int aa = 0; aa < 2; ++aa) {
                     if (doLayer) {
                         SkRect bounds;
-                        clip.getBounds(&bounds);
+                        clip->getBounds(&bounds);
                         bounds.outset(2, 2);
                         bounds.offset(x, y);
                         canvas->saveLayer(&bounds, nullptr);
@@ -185,10 +173,10 @@ protected:
                         canvas->save();
                     }
                     canvas->translate(x, y);
-                    clip.setOnCanvas(canvas, SkClipOp::kIntersect, SkToBool(aa));
-                    canvas->drawImage(fImg, 0, 0);
+                    clip->setOnCanvas(canvas, SkCanvas::kIntersect_Op, SkToBool(aa));
+                    canvas->drawBitmap(fBmp, 0, 0);
                     canvas->restore();
-                    x += fImg->width() + kMargin;
+                    x += fBmp.width() + kMargin;
                 }
                 for (int aa = 0; aa < 2; ++aa) {
 
@@ -200,7 +188,7 @@ protected:
 
                     if (doLayer) {
                         SkRect bounds;
-                        clip.getBounds(&bounds);
+                        clip->getBounds(&bounds);
                         bounds.outset(2, 2);
                         bounds.offset(x, y);
                         canvas->saveLayer(&bounds, nullptr);
@@ -208,19 +196,21 @@ protected:
                         canvas->save();
                     }
                     canvas->translate(x, y);
-                    SkPath closedClipPath = clip.asClosedPath();
+                    SkPath closedClipPath;
+                    clip->asClosedPath(&closedClipPath);
                     canvas->drawPath(closedClipPath, clipOutlinePaint);
-                    clip.setOnCanvas(canvas, SkClipOp::kIntersect, SkToBool(aa));
+                    clip->setOnCanvas(canvas, SkCanvas::kIntersect_Op, SkToBool(aa));
                     canvas->scale(1.f, 1.8f);
-                    canvas->drawSimpleText(kTxt, std::size(kTxt)-1, SkTextEncoding::kUTF8,
-                                     0, 1.5f * font.getSize(), font, txtPaint);
+                    canvas->drawText(kTxt, SK_ARRAY_COUNT(kTxt)-1,
+                                     0, 1.5f * txtPaint.getTextSize(),
+                                     txtPaint);
                     canvas->restore();
                     x += textW + 2 * kMargin;
                 }
-                y += fImg->height() + kMargin;
+                y += fBmp.height() + kMargin;
             }
             y = 0;
-            startX += 2 * fImg->width() + SkScalarCeilToInt(2 * textW) + 6 * kMargin;
+            startX += 2 * fBmp.width() + SkScalarCeilToInt(2 * textW) + 6 * kMargin;
         }
     }
 
@@ -237,10 +227,10 @@ private:
 
         Clip () : fClipType(kNone_ClipType) {}
 
-        void setOnCanvas(SkCanvas* canvas, SkClipOp op, bool aa) const {
+        void setOnCanvas(SkCanvas* canvas, SkCanvas::ClipOp op, bool aa) const {
             switch (fClipType) {
                 case kPath_ClipType:
-                    canvas->clipPath(fPathBuilder.snapshot(), op, aa);
+                    canvas->clipPath(fPath, op, aa);
                     break;
                 case kRect_ClipType:
                     canvas->clipRect(fRect, op, aa);
@@ -251,28 +241,31 @@ private:
             }
         }
 
-        SkPath asClosedPath() const {
+        void asClosedPath(SkPath* path) const {
             switch (fClipType) {
                 case kPath_ClipType:
-                    return SkPathBuilder(fPathBuilder).close().detach();
+                    *path = fPath;
+                    path->close();
+                    break;
                 case kRect_ClipType:
-                    return SkPath::Rect(fRect);
+                    path->reset();
+                    path->addRect(fRect);
+                    break;
                 case kNone_ClipType:
                     SkDEBUGFAIL("Uninitialized Clip.");
                     break;
             }
-            return SkPath();
         }
 
         void setPath(const SkPath& path) {
             fClipType = kPath_ClipType;
-            fPathBuilder = path;
+            fPath = path;
         }
 
         void setRect(const SkRect& rect) {
             fClipType = kRect_ClipType;
             fRect = rect;
-            fPathBuilder.reset();
+            fPath.reset();
         }
 
         ClipType getType() const { return fClipType; }
@@ -280,7 +273,7 @@ private:
         void getBounds(SkRect* bounds) const {
             switch (fClipType) {
                 case kPath_ClipType:
-                    *bounds = fPathBuilder.computeBounds();
+                    *bounds = fPath.getBounds();
                     break;
                 case kRect_ClipType:
                     *bounds = fRect;
@@ -293,15 +286,16 @@ private:
 
     private:
         ClipType fClipType;
-        SkPathBuilder fPathBuilder;
+        SkPath fPath;
         SkRect fRect;
     };
 
-    std::vector<Clip> fClips;
-    sk_sp<SkImage>    fImg;;
+    typedef SkTLList<Clip, 1> ClipList;
+    ClipList         fClips;
+    SkBitmap         fBmp;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 DEF_GM(return new ConvexPolyClip;)
-}  // namespace skiagm
+}

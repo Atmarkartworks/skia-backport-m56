@@ -5,21 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPicture.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkImageFilters.h"
-#include "include/gpu/GrDirectContext.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
+#include "SkPictureRecorder.h"
+#include "SkTableColorFilter.h"
+#include "SkColorFilterImageFilter.h"
+#include "SkPictureImageFilter.h"
 
 constexpr int kTestRectSize = 50;
 constexpr int kDetectorGreenValue = 50;
@@ -37,7 +29,7 @@ static sk_sp<SkColorFilter> make_detector_color_filter() {
     uint8_t tableB[256] = { 0, };
     tableA[255] = 255;
     tableG[kDetectorGreenValue] = 255;
-    return SkColorFilters::TableARGB(tableA, tableR, tableG, tableB);
+    return SkTableColorFilter::MakeARGB(tableA, tableR, tableG, tableB);
 }
 
 // This detector detects that color filter phase of the pixel pipeline receives the correct value.
@@ -47,8 +39,11 @@ static void install_detector_color_filter(SkPaint* drawPaint) {
 
 // This detector detects that image filter phase of the pixel pipeline receives the correct value.
 static void install_detector_image_filter(SkPaint* drawPaint) {
-    drawPaint->setImageFilter(SkImageFilters::ColorFilter(
-            make_detector_color_filter(), drawPaint->refImageFilter()));
+    sk_sp<SkColorFilter> colorFilter(make_detector_color_filter());
+    sk_sp<SkImageFilter> imageFilter(
+        SkColorFilterImageFilter::Make(std::move(colorFilter),
+                                       sk_ref_sp(drawPaint->getImageFilter())));
+    drawPaint->setImageFilter(std::move(imageFilter));
 }
 
 static void no_detector_install(SkPaint*) {
@@ -82,11 +77,12 @@ static void draw_save_layer_draw_bitmap_restore_sequence(SkCanvas* canvas, SkCol
     bitmap.eraseColor(shapeColor);
     {
         // Make the bitmap non-uniform color, so that it can not be optimized as uniform drawRect.
-        SkCanvas bitmapCanvas(bitmap);
+        SkCanvas canvas(bitmap);
         SkPaint p;
         p.setColor(SK_ColorWHITE);
         SkASSERT(shapeColor != SK_ColorWHITE);
-        bitmapCanvas.drawRect(SkRect::MakeWH(SkIntToScalar(7), SkIntToScalar(7)), p);
+        canvas.drawRect(SkRect::MakeWH(SkIntToScalar(7), SkIntToScalar(7)), p);
+        canvas.flush();
     }
 
     SkRect targetRect(SkRect::MakeWH(SkIntToScalar(kTestRectSize), SkIntToScalar(kTestRectSize)));
@@ -95,7 +91,7 @@ static void draw_save_layer_draw_bitmap_restore_sequence(SkCanvas* canvas, SkCol
     canvas->saveLayer(&targetRect, &layerPaint);
         SkPaint drawPaint;
         installDetector(&drawPaint);
-        canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(), &drawPaint);
+        canvas->drawBitmap(bitmap, SkIntToScalar(0), SkIntToScalar(0), &drawPaint);
     canvas->restore();
 }
 
@@ -108,11 +104,11 @@ static void draw_svg_opacity_and_filter_layer_sequence(SkCanvas* canvas, SkColor
     sk_sp<SkPicture> shape;
     {
         SkPictureRecorder recorder;
-        SkCanvas* recordCanvas = recorder.beginRecording(SkIntToScalar(kTestRectSize + 2),
-                                                         SkIntToScalar(kTestRectSize + 2));
+        SkCanvas* canvas = recorder.beginRecording(SkIntToScalar(kTestRectSize + 2),
+                                                   SkIntToScalar(kTestRectSize + 2));
         SkPaint shapePaint;
         shapePaint.setColor(shapeColor);
-        recordCanvas->drawRect(targetRect, shapePaint);
+        canvas->drawRect(targetRect, shapePaint);
         shape = recorder.finishRecordingAsPicture();
     }
 
@@ -122,7 +118,7 @@ static void draw_svg_opacity_and_filter_layer_sequence(SkCanvas* canvas, SkColor
         canvas->save();
             canvas->clipRect(targetRect);
             SkPaint drawPaint;
-            drawPaint.setImageFilter(SkImageFilters::Picture(shape));
+            drawPaint.setImageFilter(SkPictureImageFilter::Make(shape));
             installDetector(&drawPaint);
             canvas->saveLayer(&targetRect, &drawPaint);
             canvas->restore();
@@ -137,7 +133,6 @@ static void draw_svg_opacity_and_filter_layer_sequence(SkCanvas* canvas, SkColor
 //    (the grey dent is from the color filter removing everything but the "good" green, see below)
 //  - Last 6 rows are grey
 DEF_SIMPLE_GM(recordopts, canvas, (kTestRectSize+1)*2, (kTestRectSize+1)*15) {
-    auto direct = GrAsDirectContext(canvas->recordingContext());
     canvas->clear(SK_ColorTRANSPARENT);
 
     typedef void (*TestVariantSequence)(SkCanvas*, SkColor, InstallDetectorFunc);
@@ -155,14 +150,12 @@ DEF_SIMPLE_GM(recordopts, canvas, (kTestRectSize+1)*2, (kTestRectSize+1)*15) {
     // the optimization applied.
 
     SkColor shapeColor = SkColorSetARGB(255, 0, 255, 0);
-    for (size_t k = 0; k < std::size(funcs); ++k) {
+    for (size_t k = 0; k < SK_ARRAY_COUNT(funcs); ++k) {
         canvas->save();
 
         TestVariantSequence drawTestSequence = funcs[k];
         drawTestSequence(canvas, shapeColor, no_detector_install);
-        if (direct) {
-            direct->flushAndSubmit();
-        }
+        canvas->flush();
         canvas->translate(SkIntToScalar(kTestRectSize) + SkIntToScalar(1), SkIntToScalar(0));
         {
             SkPictureRecorder recorder;
@@ -170,9 +163,7 @@ DEF_SIMPLE_GM(recordopts, canvas, (kTestRectSize+1)*2, (kTestRectSize+1)*15) {
                                                      SkIntToScalar(kTestRectSize)),
                              shapeColor, no_detector_install);
             recorder.finishRecordingAsPicture()->playback(canvas);
-            if (direct) {
-                direct->flushAndSubmit();
-            }
+            canvas->flush();
         }
         canvas->restore();
         canvas->translate(SkIntToScalar(0), SkIntToScalar(kTestRectSize) + SkIntToScalar(1));
@@ -197,31 +188,27 @@ DEF_SIMPLE_GM(recordopts, canvas, (kTestRectSize+1)*2, (kTestRectSize+1)*15) {
         install_detector_color_filter
     };
 
-    for (size_t i = 0; i < std::size(shapeColors); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(shapeColors); ++i) {
         shapeColor = shapeColors[i];
-        for (size_t j = 0; j < std::size(detectorInstallFuncs); ++j) {
+        for (size_t j = 0; j < SK_ARRAY_COUNT(detectorInstallFuncs); ++j) {
             InstallDetectorFunc detectorInstallFunc = detectorInstallFuncs[j];
-            for (size_t k = 0; k < std::size(funcs); ++k) {
+            for (size_t k = 0; k < SK_ARRAY_COUNT(funcs); ++k) {
                 TestVariantSequence drawTestSequence = funcs[k];
                 canvas->save();
                 drawTestSequence(canvas, shapeColor, detectorInstallFunc);
-                if (direct) {
-                    direct->flushAndSubmit();
-                }
-                canvas->translate(SkIntToScalar(kTestRectSize + 1), SkIntToScalar(0));
+                canvas->flush();
+                canvas->translate(SkIntToScalar(kTestRectSize) + SkIntToScalar(1), SkIntToScalar(0));
                 {
                     SkPictureRecorder recorder;
                     drawTestSequence(recorder.beginRecording(SkIntToScalar(kTestRectSize),
                                                              SkIntToScalar(kTestRectSize)),
                                      shapeColor, detectorInstallFunc);
                     recorder.finishRecordingAsPicture()->playback(canvas);
-                    if (direct) {
-                        direct->flushAndSubmit();
-                    }
+                    canvas->flush();
                 }
 
                 canvas->restore();
-                canvas->translate(SkIntToScalar(0), SkIntToScalar(kTestRectSize + 1));
+                canvas->translate(SkIntToScalar(0), SkIntToScalar(kTestRectSize) + SkIntToScalar(1));
             }
 
         }

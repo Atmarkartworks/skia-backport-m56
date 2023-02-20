@@ -5,13 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRandom.h"
+#include "SkShader.h"
+#include "SkString.h"
 
 enum Flags {
     kBig_Flag = 1 << 0,
@@ -60,7 +60,7 @@ protected:
         SkPath path;
         this->makePath(&path);
         if (fFlags & kBig_Flag) {
-            const SkMatrix m = SkMatrix::Scale(3, 3);
+            const SkMatrix m = SkMatrix::MakeScale(SkIntToScalar(3), SkIntToScalar(3));
             path.transform(m);
         }
 
@@ -75,7 +75,7 @@ private:
     SkPaint     fPaint;
     SkString    fName;
     Flags       fFlags;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class LinePathBench : public HairlinePathBench {
@@ -87,7 +87,7 @@ public:
     }
     void makePath(SkPath* path) override {
         SkRandom rand;
-        int size = std::size(points);
+        int size = SK_ARRAY_COUNT(points);
         int hSize = size / 2;
         for (int i = 0; i < kMaxPathSize; ++i) {
             int xTrans = 10 + 40 * (i%(kMaxPathSize/2));
@@ -107,7 +107,7 @@ public:
         }
     }
 private:
-    using INHERITED = HairlinePathBench;
+    typedef HairlinePathBench INHERITED;
 };
 
 class QuadPathBench : public HairlinePathBench {
@@ -119,7 +119,7 @@ public:
     }
     void makePath(SkPath* path) override {
         SkRandom rand;
-        int size = std::size(points);
+        int size = SK_ARRAY_COUNT(points);
         int hSize = size / 2;
         for (int i = 0; i < kMaxPathSize; ++i) {
             int xTrans = 10 + 40 * (i%(kMaxPathSize/2));
@@ -139,7 +139,7 @@ public:
         }
     }
 private:
-    using INHERITED = HairlinePathBench;
+    typedef HairlinePathBench INHERITED;
 };
 
 class ConicPathBench : public HairlinePathBench {
@@ -152,7 +152,7 @@ public:
     void makePath(SkPath* path) override {
         SkRandom rand;
         SkRandom randWeight;
-        int size = std::size(points);
+        int size = SK_ARRAY_COUNT(points);
         int hSize = size / 2;
         for (int i = 0; i < kMaxPathSize; ++i) {
             int xTrans = 10 + 40 * (i%(kMaxPathSize/2));
@@ -175,7 +175,7 @@ public:
     }
 
 private:
-    using INHERITED = HairlinePathBench;
+    typedef HairlinePathBench INHERITED;
 };
 
 class CubicPathBench : public HairlinePathBench {
@@ -187,7 +187,7 @@ public:
     }
     void makePath(SkPath* path) override {
         SkRandom rand;
-        int size = std::size(points);
+        int size = SK_ARRAY_COUNT(points);
         int hSize = size / 2;
         for (int i = 0; i < kMaxPathSize; ++i) {
             int xTrans = 10 + 40 * (i%(kMaxPathSize/2));
@@ -210,7 +210,7 @@ public:
         }
     }
 private:
-    using INHERITED = HairlinePathBench;
+    typedef HairlinePathBench INHERITED;
 };
 
 // FLAG00 - no AA, small

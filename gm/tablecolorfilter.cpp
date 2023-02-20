@@ -5,28 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/effects/SkImageFilters.h"
-
-#include <math.h>
-#include <utility>
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkColorFilterImageFilter.h"
+#include "SkGradientShader.h"
+#include "SkTableColorFilter.h"
 
 static sk_sp<SkShader> make_shader0(int w, int h) {
     SkPoint pts[] = { {0, 0}, {SkIntToScalar(w), SkIntToScalar(h)} };
@@ -34,8 +17,8 @@ static sk_sp<SkShader> make_shader0(int w, int h) {
         SK_ColorBLACK, SK_ColorGREEN, SK_ColorCYAN,
         SK_ColorRED, 0, SK_ColorBLUE, SK_ColorWHITE
     };
-    return SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
-                                        SkTileMode::kClamp);
+    return SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+                                        SkShader::kClamp_TileMode);
 }
 static void make_bm0(SkBitmap* bm) {
     int W = 120;
@@ -55,7 +38,7 @@ static sk_sp<SkShader> make_shader1(int w, int h) {
         SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE,
     };
     return SkGradientShader::MakeRadial(SkPoint::Make(cx, cy), cx, colors, nullptr,
-                                        std::size(colors), SkTileMode::kClamp);
+                                        SK_ARRAY_COUNT(colors), SkShader::kClamp_TileMode);
 }
 static void make_bm1(SkBitmap* bm) {
     int W = 120;
@@ -96,21 +79,21 @@ static sk_sp<SkColorFilter> make_null_cf() {
 
 static sk_sp<SkColorFilter> make_cf0() {
     uint8_t table[256]; make_table0(table);
-    return SkColorFilters::Table(table);
+    return SkTableColorFilter::Make(table);
 }
 static sk_sp<SkColorFilter> make_cf1() {
     uint8_t table[256]; make_table1(table);
-    return SkColorFilters::Table(table);
+    return SkTableColorFilter::Make(table);
 }
 static sk_sp<SkColorFilter> make_cf2() {
     uint8_t table[256]; make_table2(table);
-    return SkColorFilters::Table(table);
+    return SkTableColorFilter::Make(table);
 }
 static sk_sp<SkColorFilter> make_cf3() {
     uint8_t table0[256]; make_table0(table0);
     uint8_t table1[256]; make_table1(table1);
     uint8_t table2[256]; make_table2(table2);
-    return SkColorFilters::TableARGB(nullptr, table0, table1, table2);
+    return SkTableColorFilter::MakeARGB(nullptr, table0, table1, table2);
 }
 
 class TableColorFilterGM : public skiagm::GM {
@@ -118,17 +101,18 @@ public:
     TableColorFilterGM() {}
 
 protected:
-    SkString onShortName() override {
+    virtual SkString onShortName() {
         return SkString("tablecolorfilter");
     }
 
-    SkISize onISize() override {
-        return {700, 1650};
+    virtual SkISize onISize() {
+        return SkISize::Make(700, 1650);
     }
 
-    void onDraw(SkCanvas* canvas) override {
-        canvas->drawColor(0xFFDDDDDD);
+    virtual void onDraw(SkCanvas* canvas) {
+        canvas->drawColor(sk_tool_utils::color_to_565(0xFFDDDDDD));
         canvas->translate(20, 20);
+
 
         static sk_sp<SkColorFilter> (*gColorFilterMakers[])() = {
             make_null_cf, make_cf0, make_cf1, make_cf2, make_cf3
@@ -140,7 +124,7 @@ protected:
         //  - A first line with the original bitmap, followed by the image drawn once
         //  with each of the N color filters
         //  - N lines of the bitmap drawn N times, this will cover all N*N combinations of
-        //  pair of color filters in order to test the collapsing of consecutive table
+        //  pair of color filters in order to test the collpsing of consecutive table
         //  color filters.
         //
         //  Here is a graphical representation of the result for 2 bitmaps and 2 filters
@@ -156,7 +140,7 @@ protected:
         //  22
 
         SkScalar x = 0, y = 0;
-        for (size_t bitmapMaker = 0; bitmapMaker < std::size(gBitmapMakers); ++bitmapMaker) {
+        for (size_t bitmapMaker = 0; bitmapMaker < SK_ARRAY_COUNT(gBitmapMakers); ++bitmapMaker) {
             SkBitmap bm;
             gBitmapMakers[bitmapMaker](&bm);
 
@@ -166,35 +150,33 @@ protected:
             // Draw the first element of the first line
             x = 0;
             SkPaint paint;
-            SkSamplingOptions sampling;
-
-            canvas->drawImage(bm.asImage(), x, y);
+            canvas->drawBitmap(bm, x, y, &paint);
 
             // Draws the rest of the first line for this bitmap
             // each draw being at xOffset of the previous one
-            for (unsigned i = 1; i < std::size(gColorFilterMakers); ++i) {
+            for (unsigned i = 1; i < SK_ARRAY_COUNT(gColorFilterMakers); ++i) {
                 x += xOffset;
                 paint.setColorFilter(gColorFilterMakers[i]());
-                canvas->drawImage(bm.asImage(), x, y, sampling, &paint);
+                canvas->drawBitmap(bm, x, y, &paint);
             }
 
             paint.setColorFilter(nullptr);
 
-            for (unsigned i = 0; i < std::size(gColorFilterMakers); ++i) {
+            for (unsigned i = 0; i < SK_ARRAY_COUNT(gColorFilterMakers); ++i) {
                 sk_sp<SkColorFilter> colorFilter1(gColorFilterMakers[i]());
-                sk_sp<SkImageFilter> imageFilter1(SkImageFilters::ColorFilter(
-                        std::move(colorFilter1), nullptr));
+                sk_sp<SkImageFilter> imageFilter1(SkColorFilterImageFilter::Make(
+                            std::move(colorFilter1), nullptr));
 
                 // Move down to the next line and draw it
                 // each draw being at xOffset of the previous one
                 y += yOffset;
                 x = 0;
-                for (unsigned j = 1; j < std::size(gColorFilterMakers); ++j) {
+                for (unsigned j = 1; j < SK_ARRAY_COUNT(gColorFilterMakers); ++j) {
                     sk_sp<SkColorFilter> colorFilter2(gColorFilterMakers[j]());
-                    sk_sp<SkImageFilter> imageFilter2(SkImageFilters::ColorFilter(
-                            std::move(colorFilter2), imageFilter1, nullptr));
+                    sk_sp<SkImageFilter> imageFilter2(SkColorFilterImageFilter::Make(
+                                std::move(colorFilter2), imageFilter1, nullptr));
                     paint.setImageFilter(std::move(imageFilter2));
-                    canvas->drawImage(bm.asImage(), x, y, sampling, &paint);
+                    canvas->drawBitmap(bm, x, y, &paint);
                     x += xOffset;
                 }
             }
@@ -205,7 +187,7 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 DEF_GM( return new TableColorFilterGM; )
 
@@ -218,29 +200,37 @@ class ComposeColorFilterGM : public skiagm::GM {
     };
     const SkColor*      fColors;
     const SkBlendMode*  fModes;
-    const char*         fName;
+    SkString            fName;
 
 public:
-    ComposeColorFilterGM(const SkColor colors[], const SkBlendMode modes[], const char* name)
-        : fColors(colors), fModes(modes), fName(name) {}
+    ComposeColorFilterGM(const SkColor colors[], const SkBlendMode modes[],
+                         const char suffix[])
+        : fColors(colors), fModes(modes)
+    {
+        fName.printf("colorcomposefilter_%s", suffix);
+    }
 
-private:
-    SkString onShortName() override { return SkString(fName); }
+protected:
+    virtual SkString onShortName() {
+        return fName;
+    }
 
-    SkISize onISize() override { return {790, 790}; }
+    virtual SkISize onISize() {
+        return SkISize::Make(790, 790);
+    }
 
-    void onDraw(SkCanvas* canvas) override {
+    virtual void onDraw(SkCanvas* canvas) {
         SkBitmap bm;
         make_bm1(&bm);
 
-        canvas->drawColor(0xFFDDDDDD);
+        canvas->drawColor(sk_tool_utils::color_to_565(0xFFDDDDDD));
 
         const int MODES = MODE_COUNT * COLOR_COUNT;
         sk_sp<SkColorFilter> filters[MODES];
         int index = 0;
         for (int i = 0; i < MODE_COUNT; ++i) {
             for (int j = 0; j < COLOR_COUNT; ++j) {
-                filters[index++] = SkColorFilters::Blend(fColors[j], fModes[i]);
+                filters[index++] = SkColorFilter::MakeModeFilter(fColors[j], fModes[i]);
             }
         }
 
@@ -272,7 +262,7 @@ private:
         for (int y = 0; y < MODES; ++y) {
             canvas->save();
             for (int x = 0; x < MODES; ++x) {
-                paint.setColorFilter(filters[y]->makeComposed(filters[x]));
+                paint.setColorFilter(SkColorFilter::MakeComposeFilter(filters[y], filters[x]));
                 canvas->drawRect(r, paint);
                 canvas->translate(r.width() + spacer, 0);
             }
@@ -280,6 +270,9 @@ private:
             canvas->translate(0, r.height() + spacer);
         }
     }
+
+private:
+    typedef GM INHERITED;
 };
 
 const SkColor gColors0[] = { SK_ColorCYAN, SK_ColorMAGENTA, SK_ColorYELLOW };
@@ -289,7 +282,7 @@ const SkBlendMode gModes0[] = {
     SkBlendMode::kColorBurn,
     SkBlendMode::kExclusion,
 };
-DEF_GM( return new ComposeColorFilterGM(gColors0, gModes0, "colorcomposefilter_wacky"); )
+DEF_GM( return new ComposeColorFilterGM(gColors0, gModes0, "wacky"); )
 
 const SkColor gColors1[] = { 0x80FF0000, 0x8000FF00, 0x800000FF };
 const SkBlendMode gModes1[] = {
@@ -298,4 +291,4 @@ const SkBlendMode gModes1[] = {
     SkBlendMode::kDstOut,
     SkBlendMode::kSrcATop,
 };
-DEF_GM( return new ComposeColorFilterGM(gColors1, gModes1, "colorcomposefilter_alpha"); )
+DEF_GM( return new ComposeColorFilterGM(gColors1, gModes1, "alpha"); )

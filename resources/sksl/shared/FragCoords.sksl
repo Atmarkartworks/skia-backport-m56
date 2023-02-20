@@ -1,3 +1,0 @@
-half4 main(float2) {
-    return half4(sk_FragCoord.yx11);
-}

@@ -5,15 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPathBuilder.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "src/base/SkRandom.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
+#include "SkRandom.h"
 
 static void test_hittest(SkCanvas* canvas, const SkPath& path) {
     SkPaint paint;
@@ -34,42 +29,32 @@ static void test_hittest(SkCanvas* canvas, const SkPath& path) {
     }
 }
 
-DEF_SIMPLE_GM_CAN_FAIL(hittestpath, canvas, errorMsg, 700, 460) {
-    if (canvas->recordingContext()) {
-        // GPU rasterization results vary greatly from platform to platform. We can't use them as
-        // an expected result for our internal SkPath::contains().
-        *errorMsg = "This test is for CPU configs only.";
-        return skiagm::DrawResult::kSkip;
-    }
+DEF_SIMPLE_GM(hittestpath, canvas, 700, 460) {
+        SkPath path;
+        SkRandom rand;
 
-    SkPathBuilder b;
-    SkRandom rand;
-
-    int scale = 300;
-    for (int i = 0; i < 4; ++i) {
-        // get the random values deterministically
-        SkScalar randoms[12];
-        for (int index = 0; index < (int) std::size(randoms); ++index) {
-            randoms[index] = rand.nextUScalar1();
+        int scale = 300;
+        for (int i = 0; i < 4; ++i) {
+            // get the random values deterministically
+            SkScalar randoms[12];
+            for (int index = 0; index < (int) SK_ARRAY_COUNT(randoms); ++index) {
+                randoms[index] = rand.nextUScalar1();
+            }
+            path.lineTo(randoms[0] * scale, randoms[1] * scale);
+            path.quadTo(randoms[2] * scale, randoms[3] * scale,
+                        randoms[4] * scale, randoms[5] * scale);
+            path.cubicTo(randoms[6] * scale, randoms[7] * scale,
+                         randoms[8] * scale, randoms[9] * scale,
+                         randoms[10] * scale, randoms[11] * scale);
         }
-        b.lineTo(randoms[0] * scale, randoms[1] * scale)
-         .quadTo(randoms[2] * scale, randoms[3] * scale,
-                 randoms[4] * scale, randoms[5] * scale)
-         .cubicTo(randoms[6] * scale, randoms[7] * scale,
-                  randoms[8] * scale, randoms[9] * scale,
-                  randoms[10] * scale, randoms[11] * scale);
-    }
 
-    b.setFillType(SkPathFillType::kEvenOdd);
-    b.offset(SkIntToScalar(20), SkIntToScalar(20));
+        path.setFillType(SkPath::kEvenOdd_FillType);
+        path.offset(SkIntToScalar(20), SkIntToScalar(20));
 
-    SkPath path = b.detach();
+        test_hittest(canvas, path);
 
-    test_hittest(canvas, path);
+        canvas->translate(SkIntToScalar(scale), 0);
+        path.setFillType(SkPath::kWinding_FillType);
 
-    canvas->translate(SkIntToScalar(scale), 0);
-    path.setFillType(SkPathFillType::kWinding);
-
-    test_hittest(canvas, path);
-    return skiagm::DrawResult::kOk;
+        test_hittest(canvas, path);
 }

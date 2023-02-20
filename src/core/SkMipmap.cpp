@@ -5,17 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkTypes.h"
-#include "include/private/SkColorData.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkHalf.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkVx.h"
-#include "src/core/SkImageInfoPriv.h"
-#include "src/core/SkMipmap.h"
-#include "src/core/SkMipmapBuilder.h"
-#include <new>
+#include "SkMipMap.h"
+#include "SkBitmap.h"
+#include "SkColorPriv.h"
+#include "SkHalf.h"
+#include "SkMathPriv.h"
+#include "SkNx.h"
+#include "SkPM4fPriv.h"
+#include "SkTypes.h"
 
 //
 // ColorTypeFilter is the "Type" we pass to some downsample template functions.
@@ -26,13 +23,32 @@
 
 struct ColorTypeFilter_8888 {
     typedef uint32_t Type;
-    static skvx::Vec<4, uint16_t> Expand(uint32_t x) {
-        return skvx::cast<uint16_t>(skvx::byte4::Load(&x));
+#if defined(SKNX_IS_FAST)
+    static Sk4h Expand(uint32_t x) {
+        return SkNx_cast<uint16_t>(Sk4b::Load(&x));
     }
-    static uint32_t Compact(const skvx::Vec<4, uint16_t>& x) {
+    static uint32_t Compact(const Sk4h& x) {
         uint32_t r;
-        skvx::cast<uint8_t>(x).store(&r);
+        SkNx_cast<uint8_t>(x).store(&r);
         return r;
+    }
+#else
+    static uint64_t Expand(uint32_t x) {
+        return (x & 0xFF00FF) | ((uint64_t)(x & 0xFF00FF00) << 24);
+    }
+    static uint32_t Compact(uint64_t x) {
+        return (uint32_t)((x & 0xFF00FF) | ((x >> 24) & 0xFF00FF00));
+    }
+#endif
+};
+
+struct ColorTypeFilter_S32 {
+    typedef uint32_t Type;
+    static Sk4f Expand(uint32_t x) {
+        return Sk4f_fromS32(x);
+    }
+    static uint32_t Compact(const Sk4f& x) {
+        return Sk4f_toS32(x);
     }
 };
 
@@ -42,7 +58,7 @@ struct ColorTypeFilter_565 {
         return (x & ~SK_G16_MASK_IN_PLACE) | ((x & SK_G16_MASK_IN_PLACE) << 16);
     }
     static uint16_t Compact(uint32_t x) {
-        return ((x & ~SK_G16_MASK_IN_PLACE) & 0xFFFF) | ((x >> 16) & SK_G16_MASK_IN_PLACE);
+        return (x & ~SK_G16_MASK_IN_PLACE) | ((x >> 16) & SK_G16_MASK_IN_PLACE);
     }
 };
 
@@ -66,98 +82,15 @@ struct ColorTypeFilter_8 {
     }
 };
 
-struct ColorTypeFilter_Alpha_F16 {
-    typedef uint16_t Type;
-    static skvx::float4 Expand(uint16_t x) {
-        return SkHalfToFloat_finite_ftz((uint64_t) x); // expand out to four lanes
-
-    }
-    static uint16_t Compact(const skvx::float4& x) {
-        uint64_t r;
-        SkFloatToHalf_finite_ftz(x).store(&r);
-        return r & 0xFFFF;  // but ignore the extra 3 here
-    }
-};
-
-struct ColorTypeFilter_RGBA_F16 {
+struct ColorTypeFilter_F16 {
     typedef uint64_t Type; // SkHalf x4
-    static skvx::float4 Expand(uint64_t x) {
+    static Sk4f Expand(uint64_t x) {
         return SkHalfToFloat_finite_ftz(x);
     }
-    static uint64_t Compact(const skvx::float4& x) {
+    static uint64_t Compact(const Sk4f& x) {
         uint64_t r;
         SkFloatToHalf_finite_ftz(x).store(&r);
         return r;
-    }
-};
-
-struct ColorTypeFilter_88 {
-    typedef uint16_t Type;
-    static uint32_t Expand(uint16_t x) {
-        return (x & 0xFF) | ((x & ~0xFF) << 8);
-    }
-    static uint16_t Compact(uint32_t x) {
-        return (x & 0xFF) | ((x >> 8) & ~0xFF);
-    }
-};
-
-struct ColorTypeFilter_1616 {
-    typedef uint32_t Type;
-    static uint64_t Expand(uint32_t x) {
-        return (x & 0xFFFF) | ((x & ~0xFFFF) << 16);
-    }
-    static uint16_t Compact(uint64_t x) {
-        return (x & 0xFFFF) | ((x >> 16) & ~0xFFFF);
-    }
-};
-
-struct ColorTypeFilter_F16F16 {
-    typedef uint32_t Type;
-    static skvx::float4 Expand(uint32_t x) {
-        return SkHalfToFloat_finite_ftz((uint64_t) x); // expand out to four lanes
-    }
-    static uint32_t Compact(const skvx::float4& x) {
-        uint64_t r;
-        SkFloatToHalf_finite_ftz(x).store(&r);
-        return (uint32_t) (r & 0xFFFFFFFF);  // but ignore the extra 2 here
-    }
-};
-
-struct ColorTypeFilter_16161616 {
-    typedef uint64_t Type;
-    static skvx::Vec<4, uint32_t> Expand(uint64_t x) {
-        return skvx::cast<uint32_t>(skvx::Vec<4, uint16_t>::Load(&x));
-    }
-    static uint64_t Compact(const skvx::Vec<4, uint32_t>& x) {
-        uint64_t r;
-        skvx::cast<uint16_t>(x).store(&r);
-        return r;
-    }
-};
-
-struct ColorTypeFilter_16 {
-    typedef uint16_t Type;
-    static uint32_t Expand(uint16_t x) {
-        return x;
-    }
-    static uint16_t Compact(uint32_t x) {
-        return (uint16_t) x;
-    }
-};
-
-struct ColorTypeFilter_1010102 {
-    typedef uint32_t Type;
-    static uint64_t Expand(uint64_t x) {
-        return (((x      ) & 0x3ff)      ) |
-               (((x >> 10) & 0x3ff) << 20) |
-               (((x >> 20) & 0x3ff) << 40) |
-               (((x >> 30) & 0x3  ) << 60);
-    }
-    static uint32_t Compact(uint64_t x) {
-        return (((x      ) & 0x3ff)      ) |
-               (((x >> 20) & 0x3ff) << 10) |
-               (((x >> 40) & 0x3ff) << 20) |
-               (((x >> 60) & 0x3  ) << 30);
     }
 };
 
@@ -169,7 +102,7 @@ template <typename T> T shift_right(const T& x, int bits) {
     return x >> bits;
 }
 
-skvx::float4 shift_right(const skvx::float4& x, int bits) {
+Sk4f shift_right(const Sk4f& x, int bits) {
     return x * (1.0f / (1 << bits));
 }
 
@@ -177,7 +110,7 @@ template <typename T> T shift_left(const T& x, int bits) {
     return x << bits;
 }
 
-skvx::float4 shift_left(const skvx::float4& x, int bits) {
+Sk4f shift_left(const Sk4f& x, int bits) {
     return x * (1 << bits);
 }
 
@@ -311,30 +244,18 @@ template <typename F> void downsample_3_2(void* dst, const void* src, size_t src
     auto p1 = (const typename F::Type*)((const char*)p0 + srcRB);
     auto d = static_cast<typename F::Type*>(dst);
 
-    // Given pixels:
-    // a0 b0 c0 d0 e0 ...
-    // a1 b1 c1 d1 e1 ...
-    // We want:
-    // (a0 + 2*b0 + c0 + a1 + 2*b1 + c1) / 8
-    // (c0 + 2*d0 + e0 + c1 + 2*d1 + e1) / 8
-    // ...
-
-    auto c0 = F::Expand(p0[0]);
-    auto c1 = F::Expand(p1[0]);
-    auto c = c0 + c1;
+    auto c02 = F::Expand(p0[0]);
+    auto c12 = F::Expand(p1[0]);
     for (int i = 0; i < count; ++i) {
-        auto a = c;
+        auto c00 = c02;
+        auto c01 = F::Expand(p0[1]);
+             c02 = F::Expand(p0[2]);
+        auto c10 = c12;
+        auto c11 = F::Expand(p1[1]);
+             c12 = F::Expand(p1[2]);
 
-        auto b0 = F::Expand(p0[1]);
-        auto b1 = F::Expand(p1[1]);
-        auto b = b0 + b0 + b1 + b1;
-
-        c0 = F::Expand(p0[2]);
-        c1 = F::Expand(p1[2]);
-        c = c0 + c1;
-
-        auto sum = a + b + c;
-        d[i] = F::Compact(shift_right(sum, 3));
+        auto c = add_121(c00, c01, c02) + add_121(c10, c11, c12);
+        d[i] = F::Compact(shift_right(c, 3));
         p0 += 2;
         p1 += 2;
     }
@@ -347,34 +268,25 @@ template <typename F> void downsample_3_3(void* dst, const void* src, size_t src
     auto p2 = (const typename F::Type*)((const char*)p1 + srcRB);
     auto d = static_cast<typename F::Type*>(dst);
 
-    // Given pixels:
-    // a0 b0 c0 d0 e0 ...
-    // a1 b1 c1 d1 e1 ...
-    // a2 b2 c2 d2 e2 ...
-    // We want:
-    // (a0 + 2*b0 + c0 + 2*a1 + 4*b1 + 2*c1 + a2 + 2*b2 + c2) / 16
-    // (c0 + 2*d0 + e0 + 2*c1 + 4*d1 + 2*e1 + c2 + 2*d2 + e2) / 16
-    // ...
-
-    auto c0 = F::Expand(p0[0]);
-    auto c1 = F::Expand(p1[0]);
-    auto c2 = F::Expand(p2[0]);
-    auto c = add_121(c0, c1, c2);
+    auto c02 = F::Expand(p0[0]);
+    auto c12 = F::Expand(p1[0]);
+    auto c22 = F::Expand(p2[0]);
     for (int i = 0; i < count; ++i) {
-        auto a = c;
+        auto c00 = c02;
+        auto c01 = F::Expand(p0[1]);
+             c02 = F::Expand(p0[2]);
+        auto c10 = c12;
+        auto c11 = F::Expand(p1[1]);
+             c12 = F::Expand(p1[2]);
+        auto c20 = c22;
+        auto c21 = F::Expand(p2[1]);
+             c22 = F::Expand(p2[2]);
 
-        auto b0 = F::Expand(p0[1]);
-        auto b1 = F::Expand(p1[1]);
-        auto b2 = F::Expand(p2[1]);
-        auto b = shift_left(add_121(b0, b1, b2), 1);
-
-        c0 = F::Expand(p0[2]);
-        c1 = F::Expand(p1[2]);
-        c2 = F::Expand(p2[2]);
-        c = add_121(c0, c1, c2);
-
-        auto sum = a + b + c;
-        d[i] = F::Compact(shift_right(sum, 4));
+        auto c =
+            add_121(c00, c01, c02) +
+            shift_left(add_121(c10, c11, c12), 1) +
+            add_121(c20, c21, c22);
+        d[i] = F::Compact(shift_right(c, 4));
         p0 += 2;
         p1 += 2;
         p2 += 2;
@@ -383,24 +295,19 @@ template <typename F> void downsample_3_3(void* dst, const void* src, size_t src
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-SkMipmap::SkMipmap(void* malloc, size_t size) : SkCachedData(malloc, size) {}
-SkMipmap::SkMipmap(size_t size, SkDiscardableMemory* dm) : SkCachedData(size, dm) {}
-
-SkMipmap::~SkMipmap() = default;
-
-size_t SkMipmap::AllocLevelsSize(int levelCount, size_t pixelSize) {
+size_t SkMipMap::AllocLevelsSize(int levelCount, size_t pixelSize) {
     if (levelCount < 0) {
         return 0;
     }
     int64_t size = sk_64_mul(levelCount + 1, sizeof(Level)) + pixelSize;
-    if (!SkTFitsIn<int32_t>(size)) {
+    if (!sk_64_isS32(size)) {
         return 0;
     }
-    return SkTo<int32_t>(size);
+    return sk_64_asS32(size);
 }
 
-SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
-                          bool computeContents) {
+SkMipMap* SkMipMap::Build(const SkPixmap& src, SkDestinationSurfaceColorMode colorMode,
+                          SkDiscardableFactoryProc fact) {
     typedef void FilterProc(void*, const void* srcPtr, size_t srcRB, int count);
 
     FilterProc* proc_1_2 = nullptr;
@@ -414,18 +321,31 @@ SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
 
     const SkColorType ct = src.colorType();
     const SkAlphaType at = src.alphaType();
+    const bool srgbGamma = (SkDestinationSurfaceColorMode::kGammaAndColorSpaceAware == colorMode)
+                            && src.info().gammaCloseToSRGB();
 
     switch (ct) {
         case kRGBA_8888_SkColorType:
         case kBGRA_8888_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_8888>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_8888>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_8888>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_8888>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_8888>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_8888>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_8888>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_8888>;
+            if (srgbGamma) {
+                proc_1_2 = downsample_1_2<ColorTypeFilter_S32>;
+                proc_1_3 = downsample_1_3<ColorTypeFilter_S32>;
+                proc_2_1 = downsample_2_1<ColorTypeFilter_S32>;
+                proc_2_2 = downsample_2_2<ColorTypeFilter_S32>;
+                proc_2_3 = downsample_2_3<ColorTypeFilter_S32>;
+                proc_3_1 = downsample_3_1<ColorTypeFilter_S32>;
+                proc_3_2 = downsample_3_2<ColorTypeFilter_S32>;
+                proc_3_3 = downsample_3_3<ColorTypeFilter_S32>;
+            } else {
+                proc_1_2 = downsample_1_2<ColorTypeFilter_8888>;
+                proc_1_3 = downsample_1_3<ColorTypeFilter_8888>;
+                proc_2_1 = downsample_2_1<ColorTypeFilter_8888>;
+                proc_2_2 = downsample_2_2<ColorTypeFilter_8888>;
+                proc_2_3 = downsample_2_3<ColorTypeFilter_8888>;
+                proc_3_1 = downsample_3_1<ColorTypeFilter_8888>;
+                proc_3_2 = downsample_3_2<ColorTypeFilter_8888>;
+                proc_3_3 = downsample_3_3<ColorTypeFilter_8888>;
+            }
             break;
         case kRGB_565_SkColorType:
             proc_1_2 = downsample_1_2<ColorTypeFilter_565>;
@@ -449,7 +369,6 @@ SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
             break;
         case kAlpha_8_SkColorType:
         case kGray_8_SkColorType:
-        case kR8_unorm_SkColorType:
             proc_1_2 = downsample_1_2<ColorTypeFilter_8>;
             proc_1_3 = downsample_1_3<ColorTypeFilter_8>;
             proc_2_1 = downsample_2_1<ColorTypeFilter_8>;
@@ -459,98 +378,19 @@ SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
             proc_3_2 = downsample_3_2<ColorTypeFilter_8>;
             proc_3_3 = downsample_3_3<ColorTypeFilter_8>;
             break;
-        case kRGBA_F16Norm_SkColorType:
         case kRGBA_F16_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_RGBA_F16>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_RGBA_F16>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_RGBA_F16>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_RGBA_F16>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_RGBA_F16>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_RGBA_F16>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_RGBA_F16>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_RGBA_F16>;
+            proc_1_2 = downsample_1_2<ColorTypeFilter_F16>;
+            proc_1_3 = downsample_1_3<ColorTypeFilter_F16>;
+            proc_2_1 = downsample_2_1<ColorTypeFilter_F16>;
+            proc_2_2 = downsample_2_2<ColorTypeFilter_F16>;
+            proc_2_3 = downsample_2_3<ColorTypeFilter_F16>;
+            proc_3_1 = downsample_3_1<ColorTypeFilter_F16>;
+            proc_3_2 = downsample_3_2<ColorTypeFilter_F16>;
+            proc_3_3 = downsample_3_3<ColorTypeFilter_F16>;
             break;
-        case kR8G8_unorm_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_88>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_88>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_88>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_88>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_88>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_88>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_88>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_88>;
-            break;
-        case kR16G16_unorm_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_1616>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_1616>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_1616>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_1616>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_1616>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_1616>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_1616>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_1616>;
-            break;
-        case kA16_unorm_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_16>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_16>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_16>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_16>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_16>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_16>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_16>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_16>;
-            break;
-        case kRGBA_1010102_SkColorType:
-        case kBGRA_1010102_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_1010102>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_1010102>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_1010102>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_1010102>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_1010102>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_1010102>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_1010102>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_1010102>;
-            break;
-        case kA16_float_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_Alpha_F16>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_Alpha_F16>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_Alpha_F16>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_Alpha_F16>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_Alpha_F16>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_Alpha_F16>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_Alpha_F16>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_Alpha_F16>;
-            break;
-        case kR16G16_float_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_F16F16>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_F16F16>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_F16F16>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_F16F16>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_F16F16>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_F16F16>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_F16F16>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_F16F16>;
-            break;
-        case kR16G16B16A16_unorm_SkColorType:
-            proc_1_2 = downsample_1_2<ColorTypeFilter_16161616>;
-            proc_1_3 = downsample_1_3<ColorTypeFilter_16161616>;
-            proc_2_1 = downsample_2_1<ColorTypeFilter_16161616>;
-            proc_2_2 = downsample_2_2<ColorTypeFilter_16161616>;
-            proc_2_3 = downsample_2_3<ColorTypeFilter_16161616>;
-            proc_3_1 = downsample_3_1<ColorTypeFilter_16161616>;
-            proc_3_2 = downsample_3_2<ColorTypeFilter_16161616>;
-            proc_3_3 = downsample_3_3<ColorTypeFilter_16161616>;
-            break;
-
-        case kUnknown_SkColorType:
-        case kRGB_888x_SkColorType:     // TODO: use 8888?
-        case kRGB_101010x_SkColorType:  // TODO: use 1010102?
-        case kBGR_101010x_SkColorType:  // TODO: use 1010102?
-        case kBGR_101010x_XR_SkColorType:  // TODO: use 1010102?
-        case kRGBA_F32_SkColorType:
-            return nullptr;
-
-        case kSRGBA_8888_SkColorType:  // TODO: needs careful handling
+        default:
+            // TODO: We could build miplevels for kIndex8 if the levels were in 8888.
+            //       Means using more ram, but the quality would be fine.
             return nullptr;
     }
 
@@ -565,20 +405,20 @@ SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
         size += SkColorTypeMinRowBytes(ct, mipSize.fWidth) * mipSize.fHeight;
     }
 
-    size_t storageSize = SkMipmap::AllocLevelsSize(countLevels, size);
+    size_t storageSize = SkMipMap::AllocLevelsSize(countLevels, size);
     if (0 == storageSize) {
         return nullptr;
     }
 
-    SkMipmap* mipmap;
+    SkMipMap* mipmap;
     if (fact) {
         SkDiscardableMemory* dm = fact(storageSize);
         if (nullptr == dm) {
             return nullptr;
         }
-        mipmap = new SkMipmap(storageSize, dm);
+        mipmap = new SkMipMap(storageSize, dm);
     } else {
-        mipmap = new SkMipmap(sk_malloc_throw(storageSize), storageSize);
+        mipmap = new SkMipMap(sk_malloc_throw(storageSize), storageSize);
     }
 
     // init
@@ -594,10 +434,6 @@ SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
     int         height = src.height();
     uint32_t    rowBytes;
     SkPixmap    srcPM(src);
-
-    // Depending on architecture and other factors, the pixel data alignment may need to be as
-    // large as 8 (for F16 pixels). See the comment on SkMipmap::Level.
-    SkASSERT(SkIsAlign8((uintptr_t)addr));
 
     for (int i = 0; i < countLevels; ++i) {
         FilterProc* proc;
@@ -630,8 +466,8 @@ SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
                 proc = proc_2_2;
             }
         }
-        width = std::max(1, width >> 1);
-        height = std::max(1, height >> 1);
+        width = SkTMax(1, width >> 1);
+        height = SkTMax(1, height >> 1);
         rowBytes = SkToU32(SkColorTypeMinRowBytes(ct, width));
 
         // We make the Info w/o any colorspace, since that storage is not under our control, and
@@ -642,16 +478,14 @@ SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
                                          SkIntToScalar(height) / src.height());
 
         const SkPixmap& dstPM = levels[i].fPixmap;
-        if (computeContents) {
-            const void* srcBasePtr = srcPM.addr();
-            void* dstBasePtr = dstPM.writable_addr();
+        const void* srcBasePtr = srcPM.addr();
+        void* dstBasePtr = dstPM.writable_addr();
 
-            const size_t srcRB = srcPM.rowBytes();
-            for (int y = 0; y < height; y++) {
-                proc(dstBasePtr, srcBasePtr, srcRB, width);
-                srcBasePtr = (char*)srcBasePtr + srcRB * 2; // jump two rows
-                dstBasePtr = (char*)dstBasePtr + dstPM.rowBytes();
-            }
+        const size_t srcRB = srcPM.rowBytes();
+        for (int y = 0; y < height; y++) {
+            proc(dstBasePtr, srcBasePtr, srcRB, width);
+            srcBasePtr = (char*)srcBasePtr + srcRB * 2; // jump two rows
+            dstBasePtr = (char*)dstBasePtr + dstPM.rowBytes();
         }
         srcPM = dstPM;
         addr += height * rowBytes;
@@ -662,7 +496,7 @@ SkMipmap* SkMipmap::Build(const SkPixmap& src, SkDiscardableFactoryProc fact,
     return mipmap;
 }
 
-int SkMipmap::ComputeLevelCount(int baseWidth, int baseHeight) {
+int SkMipMap::ComputeLevelCount(int baseWidth, int baseHeight) {
     if (baseWidth < 1 || baseHeight < 1) {
         return 0;
     }
@@ -672,9 +506,9 @@ int SkMipmap::ComputeLevelCount(int baseWidth, int baseHeight) {
     // (or original_width) where i is the mipmap level.
     // Continue scaling down until both axes are size 1.
 
-    const int largestAxis = std::max(baseWidth, baseHeight);
+    const int largestAxis = SkTMax(baseWidth, baseHeight);
     if (largestAxis < 2) {
-        // SkMipmap::Build requires a minimum size of 2.
+        // SkMipMap::Build requires a minimum size of 2.
         return 0;
     }
     const int leadingZeros = SkCLZ(static_cast<uint32_t>(largestAxis));
@@ -685,9 +519,9 @@ int SkMipmap::ComputeLevelCount(int baseWidth, int baseHeight) {
     // and that sizeof(uint32_t)'s implementation-defined behavior is 4.
     int mipLevelCount = significantBits;
 
-    // SkMipmap does not include the base mip level.
+    // SkMipMap does not include the base mip level.
     // For example, it contains levels 1-x instead of 0-x.
-    // This is because the image used to create SkMipmap is the base level.
+    // This is because the image used to create SkMipMap is the base level.
     // So subtract 1 from the mip level count.
     if (mipLevelCount > 0) {
         --mipLevelCount;
@@ -696,7 +530,7 @@ int SkMipmap::ComputeLevelCount(int baseWidth, int baseHeight) {
     return mipLevelCount;
 }
 
-SkISize SkMipmap::ComputeLevelSize(int baseWidth, int baseHeight, int level) {
+SkISize SkMipMap::ComputeLevelSize(int baseWidth, int baseHeight, int level) {
     if (baseWidth < 1 || baseHeight < 1) {
         return SkISize::Make(0, 0);
     }
@@ -709,52 +543,47 @@ SkISize SkMipmap::ComputeLevelSize(int baseWidth, int baseHeight, int level) {
     // max(1, floor(original_height / 2^i)
     // (or original_width) where i is the mipmap level.
 
-    // SkMipmap does not include the base mip level.
+    // SkMipMap does not include the base mip level.
     // For example, it contains levels 1-x instead of 0-x.
-    // This is because the image used to create SkMipmap is the base level.
-    // So subtract 1 from the mip level to get the index stored by SkMipmap.
-    int width = std::max(1, baseWidth >> (level + 1));
-    int height = std::max(1, baseHeight >> (level + 1));
+    // This is because the image used to create SkMipMap is the base level.
+    // So subtract 1 from the mip level to get the index stored by SkMipMap.
+    int width = SkTMax(1, baseWidth >> (level + 1));
+    int height = SkTMax(1, baseHeight >> (level + 1));
 
     return SkISize::Make(width, height);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// Returns fractional level value. floor(level) is the index of the larger level.
-// < 0 means failure.
-float SkMipmap::ComputeLevel(SkSize scaleSize) {
-    SkASSERT(scaleSize.width() >= 0 && scaleSize.height() >= 0);
-
-#ifndef SK_SUPPORT_LEGACY_ANISOTROPIC_MIPMAP_SCALE
-    // Use the smallest scale to match the GPU impl.
-    const float scale = std::min(scaleSize.width(), scaleSize.height());
-#else
-    // Ideally we'd pick the smaller scale, to match Ganesh.  But ignoring one of the
-    // scales can produce some atrocious results, so for now we use the geometric mean.
-    // (https://bugs.chromium.org/p/skia/issues/detail?id=4863)
-    const float scale = sk_float_sqrt(scaleSize.width() * scaleSize.height());
-#endif
-
-    if (scale >= SK_Scalar1 || scale <= 0 || !SkScalarIsFinite(scale)) {
-        return -1;
-    }
-
-    // The -0.5 bias here is to emulate GPU's sharpen mipmap option.
-    float L = std::max(-SkScalarLog2(scale) - 0.5f, 0.f);
-    if (!SkScalarIsFinite(L)) {
-        return -1;
-    }
-    return L;
-}
-
-bool SkMipmap::extractLevel(SkSize scaleSize, Level* levelPtr) const {
+bool SkMipMap::extractLevel(const SkSize& scaleSize, Level* levelPtr) const {
     if (nullptr == fLevels) {
         return false;
     }
 
-    float L = ComputeLevel(scaleSize);
-    int level = sk_float_round2int(L);
+    SkASSERT(scaleSize.width() >= 0 && scaleSize.height() >= 0);
+
+#ifndef SK_SUPPORT_LEGACY_ANISOTROPIC_MIPMAP_SCALE
+    // Use the smallest scale to match the GPU impl.
+    const SkScalar scale = SkTMin(scaleSize.width(), scaleSize.height());
+#else
+    // Ideally we'd pick the smaller scale, to match Ganesh.  But ignoring one of the
+    // scales can produce some atrocious results, so for now we use the geometric mean.
+    // (https://bugs.chromium.org/p/skia/issues/detail?id=4863)
+    const SkScalar scale = SkScalarSqrt(scaleSize.width() * scaleSize.height());
+#endif
+
+    if (scale >= SK_Scalar1 || scale <= 0 || !SkScalarIsFinite(scale)) {
+        return false;
+    }
+
+    SkScalar L = -SkScalarLog2(scale);
+    if (!SkScalarIsFinite(L)) {
+        return false;
+    }
+    SkASSERT(L >= 0);
+    int level = SkScalarFloorToInt(L);
+
+    SkASSERT(level >= 0);
     if (level <= 0) {
         return false;
     }
@@ -770,46 +599,28 @@ bool SkMipmap::extractLevel(SkSize scaleSize, Level* levelPtr) const {
     return true;
 }
 
-bool SkMipmap::validForRootLevel(const SkImageInfo& root) const {
-    if (nullptr == fLevels) {
-        return false;
-    }
-
-    const SkISize dimension = root.dimensions();
-    if (dimension.width() <= 1 && dimension.height() <= 1) {
-        return false;
-    }
-
-    if (fLevels[0].fPixmap. width() != std::max(1, dimension. width() >> 1) ||
-        fLevels[0].fPixmap.height() != std::max(1, dimension.height() >> 1)) {
-        return false;
-    }
-
-    for (int i = 0; i < this->countLevels(); ++i) {
-        if (fLevels[i].fPixmap.colorType() != root.colorType() ||
-            fLevels[i].fPixmap.alphaType() != root.alphaType()) {
-            return false;
-        }
-    }
-    return true;
-}
-
 // Helper which extracts a pixmap from the src bitmap
 //
-SkMipmap* SkMipmap::Build(const SkBitmap& src, SkDiscardableFactoryProc fact) {
-    SkPixmap srcPixmap;
-    if (!src.peekPixels(&srcPixmap)) {
+SkMipMap* SkMipMap::Build(const SkBitmap& src, SkDestinationSurfaceColorMode colorMode,
+                          SkDiscardableFactoryProc fact) {
+    SkAutoPixmapUnlock srcUnlocker;
+    if (!src.requestLock(&srcUnlocker)) {
         return nullptr;
     }
-    return Build(srcPixmap, fact);
+    const SkPixmap& srcPixmap = srcUnlocker.pixmap();
+    // Try to catch where we might have returned nullptr for src crbug.com/492818
+    if (nullptr == srcPixmap.addr()) {
+        sk_throw();
+    }
+    return Build(srcPixmap, colorMode, fact);
 }
 
-int SkMipmap::countLevels() const {
+int SkMipMap::countLevels() const {
     return fCount;
 }
 
-bool SkMipmap::getLevel(int index, Level* levelPtr) const {
-    if (nullptr == fLevels) {
+bool SkMipMap::getLevel(int index, Level* levelPtr) const {
+    if (NULL == fLevels) {
         return false;
     }
     if (index < 0) {
@@ -820,76 +631,6 @@ bool SkMipmap::getLevel(int index, Level* levelPtr) const {
     }
     if (levelPtr) {
         *levelPtr = fLevels[index];
-        // need to augment with our colorspace
-        levelPtr->fPixmap.setColorSpace(fCS);
     }
     return true;
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-
-#include "include/core/SkImageGenerator.h"
-#include "include/core/SkStream.h"
-#include "include/encode/SkPngEncoder.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkWriteBuffer.h"
-
-static sk_sp<SkData> encode_to_data(const SkPixmap& pm) {
-    SkDynamicMemoryWStream stream;
-    if (SkPngEncoder::Encode(&stream, pm, SkPngEncoder::Options())) {
-        return stream.detachAsData();
-    }
-    return nullptr;
-}
-
-/*  Format
-        count_levels:32
-        for each level, starting with the biggest (index 0 in our iterator)
-            encoded_size:32
-            encoded_data (padded)
- */
-sk_sp<SkData> SkMipmap::serialize() const {
-    const int count = this->countLevels();
-
-    SkBinaryWriteBuffer buffer;
-    buffer.write32(count);
-    for (int i = 0; i < count; ++i) {
-        Level level;
-        if (this->getLevel(i, &level)) {
-            buffer.writeDataAsByteArray(encode_to_data(level.fPixmap).get());
-        } else {
-            return nullptr;
-        }
-    }
-    return buffer.snapshotAsData();
-}
-
-bool SkMipmap::Deserialize(SkMipmapBuilder* builder, const void* data, size_t length) {
-    SkReadBuffer buffer(data, length);
-
-    int count = buffer.read32();
-    if (builder->countLevels() != count) {
-        return false;
-    }
-    for (int i = 0; i < count; ++i) {
-        size_t size = buffer.read32();
-        const void* ptr = buffer.skip(size);
-        if (!ptr) {
-            return false;
-        }
-        auto gen = SkImageGenerator::MakeFromEncoded(
-                             SkData::MakeWithProc(ptr, size, nullptr, nullptr));
-        if (!gen) {
-            return false;
-        }
-
-        SkPixmap pm = builder->level(i);
-        if (gen->getInfo().dimensions() != pm.dimensions()) {
-            return false;
-        }
-        if (!gen->getPixels(pm)) {
-            return false;
-        }
-    }
-    return buffer.isValid();
 }

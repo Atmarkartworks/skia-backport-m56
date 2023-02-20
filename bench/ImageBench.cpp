@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkSurface.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkImage.h"
+#include "SkSurface.h"
 
 class Image2RasterBench : public Benchmark {
 public:
@@ -30,14 +30,13 @@ protected:
     //
     void onPerCanvasPreDraw(SkCanvas* canvas) override {
         // create an Image reflecting the canvas (gpu or cpu)
-        SkImageInfo info = canvas->imageInfo().makeWH(100, 100);
+        SkImageInfo info = SkImageInfo::MakeN32Premul(100, 100);
         auto surface(canvas->makeSurface(info));
         canvas->drawColor(SK_ColorRED);
         fImage = surface->makeImageSnapshot();
 
         // create a cpu-backed Surface
-        SkImageInfo n32Info = SkImageInfo::MakeN32Premul(100, 100);
-        fRasterSurface = SkSurface::MakeRaster(n32Info);
+        fRasterSurface = SkSurface::MakeRaster(info);
     }
 
     void onPerCanvasPostDraw(SkCanvas*) override {
@@ -60,6 +59,6 @@ private:
     sk_sp<SkImage>   fImage;
     sk_sp<SkSurface> fRasterSurface;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 DEF_BENCH( return new Image2RasterBench; )

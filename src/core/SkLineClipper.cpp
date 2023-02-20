@@ -5,21 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkLineClipper.h"
-
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTo.h"
-
-#include <cstring>
-#include <utility>
+#include "SkLineClipper.h"
 
 template <typename T> T pin_unsorted(T value, T limit0, T limit1) {
     if (limit1 < limit0) {
-        using std::swap;
-        swap(limit0, limit1);
+        SkTSwap(limit0, limit1);
     }
     // now the limits are sorted
     SkASSERT(limit0 <= limit1);
@@ -68,15 +58,6 @@ static SkScalar sect_with_vertical(const SkPoint src[2], SkScalar X) {
         double result = Y0 + ((double)X - X0) * (Y1 - Y0) / (X1 - X0);
         return (float)result;
     }
-}
-
-static SkScalar sect_clamp_with_vertical(const SkPoint src[2], SkScalar x) {
-    SkScalar y = sect_with_vertical(src, x);
-    // Our caller expects y to be between src[0].fY and src[1].fY (unsorted), but due to the
-    // numerics of floats/doubles, we might have computed a value slightly outside of that,
-    // so we have to manually clamp afterwards.
-    // See skbug.com/7491
-    return pin_unsorted(y, src[0].fY, src[1].fY);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -143,19 +124,17 @@ bool SkLineClipper::IntersectLine(const SkPoint src[2], const SkRect& clip,
     }
 
     // check for quick-reject in X again, now that we may have been chopped
-    if ((tmp[index1].fX <= clip.fLeft || tmp[index0].fX >= clip.fRight)) {
-        // usually we will return false, but we don't if the line is vertical and coincident
-        // with the clip.
-        if (tmp[0].fX != tmp[1].fX || tmp[0].fX < clip.fLeft || tmp[0].fX > clip.fRight) {
-            return false;
-        }
+    if ((tmp[index1].fX <= clip.fLeft || tmp[index0].fX >= clip.fRight) &&
+        tmp[index0].fX < tmp[index1].fX) {
+        // only reject if we have a non-zero width
+        return false;
     }
 
     if (tmp[index0].fX < clip.fLeft) {
-        tmp[index0].set(clip.fLeft, sect_with_vertical(tmp, clip.fLeft));
+        tmp[index0].set(clip.fLeft, sect_with_vertical(src, clip.fLeft));
     }
     if (tmp[index1].fX > clip.fRight) {
-        tmp[index1].set(clip.fRight, sect_with_vertical(tmp, clip.fRight));
+        tmp[index1].set(clip.fRight, sect_with_vertical(src, clip.fRight));
     }
 #ifdef SK_DEBUG
     bounds.set(tmp[0], tmp[1]);
@@ -178,7 +157,7 @@ static bool is_between_unsorted(SkScalar value,
 }
 #endif
 
-int SkLineClipper::ClipLine(const SkPoint pts[2], const SkRect& clip, SkPoint lines[kMaxPoints],
+int SkLineClipper::ClipLine(const SkPoint pts[], const SkRect& clip, SkPoint lines[],
                             bool canCullToTheRight) {
     int index0, index1;
 
@@ -250,7 +229,7 @@ int SkLineClipper::ClipLine(const SkPoint pts[2], const SkRect& clip, SkPoint li
         if (tmp[index0].fX < clip.fLeft) {
             r->set(clip.fLeft, tmp[index0].fY);
             r += 1;
-            r->set(clip.fLeft, sect_clamp_with_vertical(tmp, clip.fLeft));
+            r->set(clip.fLeft, sect_with_vertical(tmp, clip.fLeft));
             SkASSERT(is_between_unsorted(r->fY, tmp[0].fY, tmp[1].fY));
         } else {
             *r = tmp[index0];
@@ -258,7 +237,7 @@ int SkLineClipper::ClipLine(const SkPoint pts[2], const SkRect& clip, SkPoint li
         r += 1;
 
         if (tmp[index1].fX > clip.fRight) {
-            r->set(clip.fRight, sect_clamp_with_vertical(tmp, clip.fRight));
+            r->set(clip.fRight, sect_with_vertical(tmp, clip.fRight));
             SkASSERT(is_between_unsorted(r->fY, tmp[0].fY, tmp[1].fY));
             r += 1;
             r->set(clip.fRight, tmp[index1].fY);

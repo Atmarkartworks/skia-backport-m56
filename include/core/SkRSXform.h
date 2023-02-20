@@ -8,8 +8,7 @@
 #ifndef SkRSXform_DEFINED
 #define SkRSXform_DEFINED
 
-#include "include/core/SkPoint.h"
-#include "include/core/SkSize.h"
+#include "SkScalar.h"
 
 /**
  *  A compressed form of a rotation+scale matrix.
@@ -18,7 +17,7 @@
  *  [ fSSin      fSCos    fTy ]
  *  [     0          0      1 ]
  */
-struct SK_API SkRSXform {
+struct SkRSXform {
     static SkRSXform Make(SkScalar scos, SkScalar ssin, SkScalar tx, SkScalar ty) {
         SkRSXform xform = { scos, ssin, tx, ty };
         return xform;
@@ -45,7 +44,7 @@ struct SK_API SkRSXform {
     bool rectStaysRect() const {
         return 0 == fSCos || 0 == fSSin;
     }
-
+    
     void setIdentity() {
         fSCos = 1;
         fSSin = fTx = fTy = 0;
@@ -62,7 +61,6 @@ struct SK_API SkRSXform {
     void toQuad(const SkSize& size, SkPoint quad[4]) const {
         this->toQuad(size.width(), size.height(), quad);
     }
-    void toTriStrip(SkScalar width, SkScalar height, SkPoint strip[4]) const;
 };
 
 #endif

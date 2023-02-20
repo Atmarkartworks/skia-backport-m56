@@ -5,23 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-
-#if !defined(SK_TEST_CANVAS_STATE_CROSS_LIBRARY)
-
-#include "tests/CanvasStateHelpers.h"
-
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRegion.h"
-#include "include/core/SkScalar.h"
-#include "include/utils/SkCanvasStateUtils.h"
-
-#include <memory>
-
-enum class SkClipOp;
+#include "CanvasStateHelpers.h"
+#ifdef SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
+#include "SkCanvas.h"
+#include "SkCanvasStateUtils.h"
+#include "SkPaint.h"
+#include "SkRect.h"
+#include "SkRegion.h"
 
 void complex_layers_draw(SkCanvas* canvas, float left, float top,
                          float right, float bottom, int32_t spacer) {
@@ -54,7 +44,7 @@ void complex_clips_draw(SkCanvas* canvas, int32_t left, int32_t top,
     canvas->drawColor(SK_ColorBLUE);
     canvas->restore();
 
-    canvas->clipRegion(localRegion, (SkClipOp) clipOp);
+    canvas->clipRegion(localRegion, (SkCanvas::ClipOp) clipOp);
     canvas->drawColor(SK_ColorBLUE);
 }
 
@@ -68,7 +58,7 @@ extern "C" bool complex_clips_draw_from_canvas_state(SkCanvasState* state,
 
     SkRegion localRegion;
     for (int32_t i = 0; i < regionRects; ++i) {
-        localRegion.op({rectCoords[0], rectCoords[1], rectCoords[2], rectCoords[3]},
+        localRegion.op(rectCoords[0], rectCoords[1], rectCoords[2], rectCoords[3],
                        SkRegion::kUnion_Op);
         rectCoords += 4;
     }
@@ -76,5 +66,4 @@ extern "C" bool complex_clips_draw_from_canvas_state(SkCanvasState* state,
     complex_clips_draw(canvas.get(), left, top, right, bottom, clipOp, localRegion);
     return true;
 }
-
-#endif // SK_TEST_CANVAS_STATE_CROSS_LIBRARY
+#endif // SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG

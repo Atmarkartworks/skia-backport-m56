@@ -36,6 +36,7 @@ public class StateAdapter extends BaseAdapter implements AdapterView.OnItemSelec
     private static final String VALUE = "value";
     private static final String OPTIONS = "options";
     private static final String BACKEND_STATE_NAME = "Backend";
+    private static final String FPS_STATE_NAME = "FPS";
     private static final String REFRESH_STATE_NAME = "Refresh";
     private static final String ON = "ON";
     private static final String OFF = "OFF";
@@ -44,9 +45,11 @@ public class StateAdapter extends BaseAdapter implements AdapterView.OnItemSelec
     private ViewerActivity mViewerActivity;
     private LinearLayout mLayout;
     private JSONArray mStateJson;
+    private TextView mFPSFloatText;
 
     public StateAdapter(ViewerActivity viewerActivity) {
         mViewerActivity = viewerActivity;
+        mFPSFloatText = (TextView) viewerActivity.findViewById(R.id.fpsFloatText);
         try {
             mStateJson = new JSONArray("[{\"name\": \"Please\", " +
                     "\"value\": \"Initialize\", \"options\": []}]");
@@ -69,9 +72,10 @@ public class StateAdapter extends BaseAdapter implements AdapterView.OnItemSelec
     }
 
     // The first list item is the mLayout that contains a list of state items
+    // The second list item is the toggle for float FPS
     @Override
     public int getCount() {
-        return 1;
+        return 2;
     }
 
     @Override
@@ -95,23 +99,39 @@ public class StateAdapter extends BaseAdapter implements AdapterView.OnItemSelec
                 }
                 return mLayout;
             }
+            case 1: {
+                View view = LayoutInflater.from(mViewerActivity).inflate(R.layout.fps_toggle, null);
+                Switch theSwitch = (Switch) view.findViewById(R.id.theSwitch);
+                theSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener(){
+                    @Override
+                    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                        mFPSFloatText.setVisibility(isChecked ? View.VISIBLE : View.INVISIBLE);
+                        // Quickly set the bool fRefresh in native Viewer app for continuous refresh
+                        mViewerActivity.onStateChanged(REFRESH_STATE_NAME, isChecked ? ON : OFF);
+                    }
+                });
+                return view;
+            }
             default: {
                 return null;
             }
         }
     }
 
-    private void populateView(JSONObject item, View view) throws JSONException {
-        LinearLayout itemView = (LinearLayout) view;
+    private View inflateItemView(JSONObject item) throws JSONException {
+        LinearLayout itemView = (LinearLayout)
+                LayoutInflater.from(mViewerActivity).inflate(R.layout.state_item, null);
         TextView nameText = (TextView) itemView.findViewById(R.id.nameText);
         TextView valueText = (TextView) itemView.findViewById(R.id.valueText);
         Spinner optionSpinner = (Spinner) itemView.findViewById(R.id.optionSpinner);
-
-        String value = item.getString(VALUE);
-        itemView.setTag(item.toString()); // To save unnecessary view update
-        itemView.setTag(R.integer.value_tag_key, value);
-
         nameText.setText(item.getString(NAME));
+        String value = item.getString(VALUE);
+
+        if (nameText.getText().equals(FPS_STATE_NAME) && mFPSFloatText != null) {
+            mFPSFloatText.setText(value);
+            // Don't show FPS in the drawer. We'll show it in the float text.
+            itemView.setVisibility(View.GONE);
+        }
 
         JSONArray options = item.getJSONArray(OPTIONS);
         if (options.length() == 0) {
@@ -129,38 +149,27 @@ public class StateAdapter extends BaseAdapter implements AdapterView.OnItemSelec
             adapter.setCurrentOption(value);
             optionSpinner.setAdapter(adapter);
             if (optionStrings.length >= FILTER_LENGTH) {
-                View existingView = itemView.getChildAt(1);
-                if (!(existingView instanceof EditText)) {
-                    EditText filterText = new EditText(mViewerActivity);
-                    filterText.setHint("Filter");
-                    itemView.addView(filterText, 1);
-                    filterText.addTextChangedListener(new TextWatcher() {
-                        @Override
-                        public void beforeTextChanged(CharSequence s, int start, int cnt,
-                                int after) {
-                        }
-
-                        @Override
-                        public void onTextChanged(CharSequence s, int start, int before, int cnt) {
-                        }
-
-                        @Override
-                        public void afterTextChanged(Editable s) {
-                            adapter.getFilter().filter(s.toString());
-                        }
-                    });
-                }
+                EditText filterText = new EditText(mViewerActivity);
+                filterText.setHint("Filter");
+                itemView.addView(filterText, 1);
+                filterText.addTextChangedListener(new TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence s, int start, int cnt, int after) {}
+                    @Override
+                    public void onTextChanged(CharSequence s, int start, int before, int cnt) {}
+                    @Override
+                    public void afterTextChanged(Editable s) {
+                        adapter.getFilter().filter(s.toString());
+                    }
+                });
             }
             optionSpinner.setSelection(optionList.indexOf(value));
             optionSpinner.setOnItemSelectedListener(this);
             optionSpinner.setVisibility(View.VISIBLE);
             valueText.setVisibility(View.GONE);
         }
-    }
-    private View inflateItemView(JSONObject item) throws JSONException {
-        LinearLayout itemView = (LinearLayout)
-                LayoutInflater.from(mViewerActivity).inflate(R.layout.state_item, null);
-        populateView(item, itemView);
+        itemView.setTag(item.toString()); // To save unnecessary view update
+        itemView.setTag(R.integer.value_tag_key, value); // To save unnecessary state change event
         return itemView;
     }
 
@@ -172,16 +181,15 @@ public class StateAdapter extends BaseAdapter implements AdapterView.OnItemSelec
             }
             for (int i = 0; i < mStateJson.length(); i++) {
                 JSONObject stateObject = mStateJson.getJSONObject(i);
-                View childView = mLayout.getChildAt(i);
-                if (childView != null) {
+                if (mLayout.getChildCount() > i) {
+                    View childView = mLayout.getChildAt(i);
                     if (stateObject.toString().equals(childView.getTag())) {
                         continue; // No update, reuse the old view and skip the remaining step
                     } else {
-                        populateView(stateObject, childView);
+                        mLayout.removeViewAt(i);
                     }
-                } else {
-                    mLayout.addView(inflateItemView(stateObject), i);
                 }
+                mLayout.addView(inflateItemView(stateObject), i);
             }
         } catch (JSONException e) {
             e.printStackTrace();
@@ -190,9 +198,6 @@ public class StateAdapter extends BaseAdapter implements AdapterView.OnItemSelec
 
     @Override
     public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-        if (view == null) {
-            return;
-        }
         View stateItem = (View) parent.getParent();
         String stateName = ((TextView) stateItem.findViewById(R.id.nameText)).getText().toString();
         String stateValue = ((TextView) view).getText().toString();

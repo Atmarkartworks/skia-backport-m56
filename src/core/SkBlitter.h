@@ -8,19 +8,16 @@
 #ifndef SkBlitter_DEFINED
 #define SkBlitter_DEFINED
 
-#include "include/core/SkColor.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRegion.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkAutoMalloc.h"
-#include "src/shaders/SkShaderBase.h"
+#include "SkBitmapProcShader.h"
+#include "SkColor.h"
+#include "SkRect.h"
+#include "SkRegion.h"
+#include "SkShader.h"
+#include "SkTypes.h"
 
-class SkArenaAlloc;
 class SkMatrix;
-class SkMatrixProvider;
 class SkPaint;
 class SkPixmap;
-class SkSurfaceProps;
 struct SkMask;
 
 /** SkBlitter and its subclasses are responsible for actually writing pixels
@@ -63,9 +60,6 @@ public:
     */
     virtual void blitAntiRect(int x, int y, int width, int height,
                               SkAlpha leftAlpha, SkAlpha rightAlpha);
-
-    // Blit a rect in AA with size at least 3 x 3 (small rect has too many edge cases...)
-    void blitFatAntiRect(const SkRect& rect);
 
     /// Blit a pattern of pixels defined by a rectangle-clipped mask;
     /// typically used for text.
@@ -114,6 +108,12 @@ public:
     virtual bool isNullBlitter() const;
 
     /**
+     *  Special methods for SkShaderBlitter. On all other classes this is a no-op.
+     */
+    virtual bool resetShaderContext(const SkShader::ContextRec&);
+    virtual SkShader::Context* getShaderContext() const;
+
+    /**
      * Special methods for blitters that can blit more than one row at a time.
      * This function returns the number of rows that this blitter could optimally
      * process at a time. It is still required to support blitting one scanline
@@ -132,9 +132,7 @@ public:
     }
 
     ///@name non-virtual helpers
-#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
     void blitMaskRegion(const SkMask& mask, const SkRegion& clip);
-#endif
     void blitRectRegion(const SkIRect& rect, const SkRegion& clip);
     void blitRegion(const SkRegion& clip);
     ///@}
@@ -143,21 +141,19 @@ public:
         Return the correct blitter to use given the specified context.
      */
     static SkBlitter* Choose(const SkPixmap& dst,
-                             const SkMatrix& ctm,
+                             const SkMatrix& matrix,
                              const SkPaint& paint,
-                             SkArenaAlloc*,
-                             bool drawCoverage,
-                             sk_sp<SkShader> clipShader,
-                             const SkSurfaceProps& props);
+                             SkTBlitterAllocator*,
+                             bool drawCoverage = false);
 
     static SkBlitter* ChooseSprite(const SkPixmap& dst,
                                    const SkPaint&,
                                    const SkPixmap& src,
                                    int left, int top,
-                                   SkArenaAlloc*, sk_sp<SkShader> clipShader);
+                                   SkTBlitterAllocator*);
     ///@}
 
-    static bool UseLegacyBlitter(const SkPixmap&, const SkPaint&, const SkMatrix&);
+    static SkShader::ContextRec::DstType PreferredShaderDest(const SkImageInfo&);
 
 protected:
     SkAutoMalloc fBlitMemory;
@@ -192,8 +188,8 @@ public:
     void blitAntiH(int x, int y, const SkAlpha[], const int16_t runs[]) override;
     void blitV(int x, int y, int height, SkAlpha alpha) override;
     void blitRect(int x, int y, int width, int height) override;
-    void blitAntiRect(int x, int y, int width, int height,
-                      SkAlpha leftAlpha, SkAlpha rightAlpha) override;
+    virtual void blitAntiRect(int x, int y, int width, int height,
+                     SkAlpha leftAlpha, SkAlpha rightAlpha) override;
     void blitMask(const SkMask&, const SkIRect& clip) override;
     const SkPixmap* justAnOpaqueColor(uint32_t* value) override;
 
@@ -262,8 +258,6 @@ public:
                               SkAlpha leftAlpha, SkAlpha rightAlpha) override;
     void blitMask(const SkMask&, const SkIRect& clip) override;
     const SkPixmap* justAnOpaqueColor(uint32_t* value) override;
-    void blitAntiH2(int x, int y, U8CPU a0, U8CPU a1) override;
-    void blitAntiV2(int x, int y, U8CPU a0, U8CPU a1) override;
 
     int requestRowsPreserved() const override {
         return fBlitter->requestRowsPreserved();
@@ -293,8 +287,5 @@ private:
     SkRectClipBlitter   fRectBlitter;
     SkRgnClipBlitter    fRgnBlitter;
 };
-
-// A good size for creating shader contexts on the stack.
-enum {kSkBlitterContextSize = 3332};
 
 #endif

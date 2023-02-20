@@ -5,14 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "include/ports/SkRemotableFontMgr.h"
-#include "include/private/base/SkOnce.h"
+#include "SkOnce.h"
+#include "SkRemotableFontMgr.h"
 
 SkRemotableFontIdentitySet::SkRemotableFontIdentitySet(int count, SkFontIdentity** data)
       : fCount(count), fData(count)
 {
     SkASSERT(data);
-    *data = fData.get();
+    *data = fData;
 }
 
 SkRemotableFontIdentitySet* SkRemotableFontIdentitySet::NewEmpty() {

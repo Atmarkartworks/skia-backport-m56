@@ -5,12 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRandom.h"
+#include "SkTDArray.h"
 
 /**
  * This is a conversion of samplecode/SampleChart.cpp into a bench. It sure would be nice to be able
@@ -20,7 +20,7 @@
 // Generates y values for the chart plots.
 static void gen_data(SkScalar yAvg, SkScalar ySpread, int count,
                      SkRandom* random, SkTDArray<SkScalar>* dataPts) {
-    dataPts->resize(count);
+    dataPts->setCount(count);
     for (int i = 0; i < count; ++i) {
         (*dataPts)[i] = random->nextRangeScalar(yAvg - SkScalarHalf(ySpread),
                                                 yAvg + SkScalarHalf(ySpread));
@@ -39,18 +39,18 @@ static void gen_paths(const SkTDArray<SkScalar>& topData,
                       SkPath* plot, SkPath* fill) {
     plot->rewind();
     fill->rewind();
-    plot->incReserve(topData.size());
+    plot->incReserve(topData.count());
     if (nullptr == bottomData) {
-        fill->incReserve(topData.size() + 2);
+        fill->incReserve(topData.count() + 2);
     } else {
-        fill->incReserve(2 * topData.size());
+        fill->incReserve(2 * topData.count());
     }
 
-    leftShift %= topData.size();
+    leftShift %= topData.count();
     SkScalar x = xLeft;
 
     // Account for the leftShift using two loops
-    int shiftToEndCount = topData.size() - leftShift;
+    int shiftToEndCount = topData.count() - leftShift;
     plot->moveTo(x, topData[leftShift]);
     fill->moveTo(x, topData[leftShift]);
 
@@ -67,7 +67,7 @@ static void gen_paths(const SkTDArray<SkScalar>& topData,
     }
 
     if (bottomData) {
-        SkASSERT(bottomData->size() == topData.size());
+        SkASSERT(bottomData->count() == topData.count());
         // iterate backwards over the previous graph's data to generate the bottom of the filled
         // area (and account for leftShift).
         for (int i = 0; i < leftShift; ++i) {
@@ -76,7 +76,7 @@ static void gen_paths(const SkTDArray<SkScalar>& topData,
         }
         for (int i = 0; i < shiftToEndCount; ++i) {
             x -= xDelta;
-            fill->lineTo(x, (*bottomData)[bottomData->size() - 1 - i]);
+            fill->lineTo(x, (*bottomData)[bottomData->count() - 1 - i]);
         }
     } else {
         fill->lineTo(x - xDelta, yBase);
@@ -106,8 +106,8 @@ protected:
 
     void onDraw(int loops, SkCanvas* canvas) override {
         bool sizeChanged = false;
-        if (canvas->getBaseLayerSize() != fSize) {
-            fSize = canvas->getBaseLayerSize();
+        if (canvas->getDeviceSize() != fSize) {
+            fSize = canvas->getDeviceSize();
             sizeChanged = true;
         }
 
@@ -115,7 +115,7 @@ protected:
 
         SkScalar height = SkIntToScalar(fSize.fHeight);
         if (sizeChanged) {
-            int dataPointCount = std::max(fSize.fWidth / kPixelsPerTick + 1, 2);
+            int dataPointCount = SkMax32(fSize.fWidth / kPixelsPerTick + 1, 2);
 
             SkRandom random;
             for (int i = 0; i < kNumGraphs; ++i) {
@@ -132,6 +132,9 @@ protected:
         }
 
         for (int frame = 0; frame < loops; ++frame) {
+
+            canvas->clear(0xFFE0F0E0);
+
             SkPath plotPath;
             SkPath fillPath;
 
@@ -182,7 +185,7 @@ private:
     SkTDArray<SkScalar> fData[kNumGraphs];
     bool                fAA;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////

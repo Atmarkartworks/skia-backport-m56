@@ -5,22 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPath.h"
-#include "include/core/SkRegion.h"
-#include "include/private/base/SkMacros.h"
-#include "include/private/base/SkSafe32.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkTSort.h"
-#include "src/core/SkBlitter.h"
-#include "src/core/SkEdge.h"
-#include "src/core/SkEdgeBuilder.h"
-#include "src/core/SkGeometry.h"
-#include "src/core/SkQuadClipper.h"
-#include "src/core/SkRasterClip.h"
-#include "src/core/SkRectPriv.h"
-#include "src/core/SkScanPriv.h"
-
-#include <utility>
+#include "SkScanPriv.h"
+#include "SkBlitter.h"
+#include "SkEdge.h"
+#include "SkEdgeBuilder.h"
+#include "SkGeometry.h"
+#include "SkPath.h"
+#include "SkQuadClipper.h"
+#include "SkRasterClip.h"
+#include "SkRegion.h"
+#include "SkTemplates.h"
+#include "SkTSort.h"
 
 #define kEDGE_HEAD_Y    SK_MinS32
 #define kEDGE_TAIL_Y    SK_MaxS32
@@ -40,6 +35,42 @@
 #else
     #define validate_sort(edge)
 #endif
+
+static inline void remove_edge(SkEdge* edge) {
+    edge->fPrev->fNext = edge->fNext;
+    edge->fNext->fPrev = edge->fPrev;
+}
+
+static inline void insert_edge_after(SkEdge* edge, SkEdge* afterMe) {
+    edge->fPrev = afterMe;
+    edge->fNext = afterMe->fNext;
+    afterMe->fNext->fPrev = edge;
+    afterMe->fNext = edge;
+}
+
+static void backward_insert_edge_based_on_x(SkEdge* edge SkDECLAREPARAM(int, curr_y)) {
+    SkFixed x = edge->fX;
+
+    SkEdge* prev = edge->fPrev;
+    while (prev->fX > x) {
+        prev = prev->fPrev;
+    }
+    if (prev->fNext != edge) {
+        remove_edge(edge);
+        insert_edge_after(edge, prev);
+    }
+}
+
+// Start from the right side, searching backwards for the point to begin the new edge list
+// insertion, marching forwards from here. The implementation could have started from the left
+// of the prior insertion, and search to the right, or with some additional caching, binary
+// search the starting point. More work could be done to determine optimal new edge insertion.
+static SkEdge* backward_insert_start(SkEdge* prev, SkFixed x) {
+    while (prev->fX > x) {
+        prev = prev->fPrev;
+    }
+    return prev;
+}
 
 static void insert_new_edges(SkEdge* newEdge, int curr_y) {
     if (newEdge->fFirstY != curr_y) {
@@ -97,17 +128,19 @@ typedef void (*PrePostProc)(SkBlitter* blitter, int y, bool isStartOfScanline);
 #define PREPOST_START   true
 #define PREPOST_END     false
 
-static void walk_edges(SkEdge* prevHead, SkPathFillType fillType,
+static void walk_edges(SkEdge* prevHead, SkPath::FillType fillType,
                        SkBlitter* blitter, int start_y, int stop_y,
                        PrePostProc proc, int rightClip) {
     validate_sort(prevHead->fNext);
 
     int curr_y = start_y;
-    int windingMask = SkPathFillType_IsEvenOdd(fillType) ? 1 : -1;
+    // returns 1 for evenodd, -1 for winding, regardless of inverse-ness
+    int windingMask = (fillType & 1) ? 1 : -1;
 
     for (;;) {
         int     w = 0;
         int     left SK_INIT_TO_AVOID_WARNING;
+        bool    in_interval = false;
         SkEdge* currE = prevHead->fNext;
         SkFixed prevX = prevHead->fX;
 
@@ -121,34 +154,32 @@ static void walk_edges(SkEdge* prevHead, SkPathFillType fillType,
             SkASSERT(currE->fLastY >= curr_y);
 
             int x = SkFixedRoundToInt(currE->fX);
-
-            if ((w & windingMask) == 0) { // we're starting interval
-                left = x;
-            }
-
             w += currE->fWinding;
-
             if ((w & windingMask) == 0) { // we finished an interval
+                SkASSERT(in_interval);
                 int width = x - left;
                 SkASSERT(width >= 0);
-                if (width > 0) {
+                if (width)
                     blitter->blitH(left, curr_y, width);
-                }
+                in_interval = false;
+            } else if (!in_interval) {
+                left = x;
+                in_interval = true;
             }
 
             SkEdge* next = currE->fNext;
             SkFixed newX;
 
             if (currE->fLastY == curr_y) {    // are we done with this edge?
-                if (currE->fCurveCount > 0) {
-                    if (((SkQuadraticEdge*)currE)->updateQuadratic()) {
-                        newX = currE->fX;
-                        goto NEXT_X;
-                    }
-                } else if (currE->fCurveCount < 0) {
+                if (currE->fCurveCount < 0) {
                     if (((SkCubicEdge*)currE)->updateCubic()) {
                         SkASSERT(currE->fFirstY == curr_y + 1);
 
+                        newX = currE->fX;
+                        goto NEXT_X;
+                    }
+                } else if (currE->fCurveCount > 0) {
+                    if (((SkQuadraticEdge*)currE)->updateQuadratic()) {
                         newX = currE->fX;
                         goto NEXT_X;
                     }
@@ -160,7 +191,7 @@ static void walk_edges(SkEdge* prevHead, SkPathFillType fillType,
                 currE->fX = newX;
             NEXT_X:
                 if (newX < prevX) { // ripple currE backwards until it is x-sorted
-                    backward_insert_edge_based_on_x(currE);
+                    backward_insert_edge_based_on_x(currE  SkPARAM(curr_y));
                 } else {
                     prevX = newX;
                 }
@@ -169,7 +200,8 @@ static void walk_edges(SkEdge* prevHead, SkPathFillType fillType,
             SkASSERT(currE);
         }
 
-        if ((w & windingMask) != 0) { // was our right-edge culled away?
+        // was our right-edge culled away?
+        if (in_interval) {
             int width = rightClip - left;
             if (width > 0) {
                 blitter->blitH(left, curr_y, width);
@@ -189,69 +221,67 @@ static void walk_edges(SkEdge* prevHead, SkPathFillType fillType,
     }
 }
 
-// return true if we're NOT done with this edge
+// return true if we're done with this edge
 static bool update_edge(SkEdge* edge, int last_y) {
     SkASSERT(edge->fLastY >= last_y);
     if (last_y == edge->fLastY) {
         if (edge->fCurveCount < 0) {
             if (((SkCubicEdge*)edge)->updateCubic()) {
                 SkASSERT(edge->fFirstY == last_y + 1);
-                return true;
+                return false;
             }
         } else if (edge->fCurveCount > 0) {
             if (((SkQuadraticEdge*)edge)->updateQuadratic()) {
                 SkASSERT(edge->fFirstY == last_y + 1);
-                return true;
+                return false;
             }
         }
-        return false;
+        return true;
     }
-    return true;
+    return false;
 }
 
-// Unexpected conditions for which we need to return
-#define ASSERT_RETURN(cond)                    \
-    do {                                       \
-        if (!(cond)) {                         \
-            SkDEBUGFAILF("assert(%s)", #cond); \
-            return;                            \
-        }                                      \
-    } while (0)
-
-// Needs Y to only change once (looser than convex in X)
-static void walk_simple_edges(SkEdge* prevHead, SkBlitter* blitter, int start_y, int stop_y) {
+static void walk_convex_edges(SkEdge* prevHead, SkPath::FillType,
+                              SkBlitter* blitter, int start_y, int stop_y,
+                              PrePostProc proc) {
     validate_sort(prevHead->fNext);
 
     SkEdge* leftE = prevHead->fNext;
     SkEdge* riteE = leftE->fNext;
     SkEdge* currE = riteE->fNext;
 
+#if 0
+    int local_top = leftE->fFirstY;
+    SkASSERT(local_top == riteE->fFirstY);
+#else
     // our edge choppers for curves can result in the initial edges
     // not lining up, so we take the max.
-    int local_top = std::max(leftE->fFirstY, riteE->fFirstY);
-    ASSERT_RETURN(local_top >= start_y);
+    int local_top = SkMax32(leftE->fFirstY, riteE->fFirstY);
+#endif
+    SkASSERT(local_top >= start_y);
 
-    while (local_top < stop_y) {
+    for (;;) {
         SkASSERT(leftE->fFirstY <= stop_y);
         SkASSERT(riteE->fFirstY <= stop_y);
 
-        int local_bot = std::min(leftE->fLastY, riteE->fLastY);
-        local_bot = std::min(local_bot, stop_y - 1);
-        ASSERT_RETURN(local_top <= local_bot);
+        if (leftE->fX > riteE->fX || (leftE->fX == riteE->fX &&
+                                      leftE->fDX > riteE->fDX)) {
+            SkTSwap(leftE, riteE);
+        }
+
+        int local_bot = SkMin32(leftE->fLastY, riteE->fLastY);
+        local_bot = SkMin32(local_bot, stop_y - 1);
+        SkASSERT(local_top <= local_bot);
 
         SkFixed left = leftE->fX;
         SkFixed dLeft = leftE->fDX;
         SkFixed rite = riteE->fX;
         SkFixed dRite = riteE->fDX;
         int count = local_bot - local_top;
-        ASSERT_RETURN(count >= 0);
-
+        SkASSERT(count >= 0);
         if (0 == (dLeft | dRite)) {
             int L = SkFixedRoundToInt(left);
             int R = SkFixedRoundToInt(rite);
-            if (L > R) {
-                std::swap(L, R);
-            }
             if (L < R) {
                 count += 1;
                 blitter->blitRect(L, local_top, R - L, count);
@@ -261,18 +291,11 @@ static void walk_simple_edges(SkEdge* prevHead, SkBlitter* blitter, int start_y,
             do {
                 int L = SkFixedRoundToInt(left);
                 int R = SkFixedRoundToInt(rite);
-                if (L > R) {
-                    std::swap(L, R);
-                }
                 if (L < R) {
                     blitter->blitH(L, local_top, R - L);
                 }
-                // Either/both of these might overflow, since we perform this step even if
-                // (later) we determine that we are done with the edge, and so the computed
-                // left or rite edge will not be used (see update_edge). Use this helper to
-                // silence UBSAN when we perform the add.
-                left = Sk32_can_overflow_add(left, dLeft);
-                rite = Sk32_can_overflow_add(rite, dRite);
+                left += dLeft;
+                rite += dRite;
                 local_top += 1;
             } while (--count >= 0);
         }
@@ -280,28 +303,35 @@ static void walk_simple_edges(SkEdge* prevHead, SkBlitter* blitter, int start_y,
         leftE->fX = left;
         riteE->fX = rite;
 
-        if (!update_edge(leftE, local_bot)) {
+        if (update_edge(leftE, local_bot)) {
             if (currE->fFirstY >= stop_y) {
-                return; // we're done
+                break;
             }
             leftE = currE;
             currE = currE->fNext;
-            ASSERT_RETURN(leftE->fFirstY == local_top);
         }
-        if (!update_edge(riteE, local_bot)) {
+        if (update_edge(riteE, local_bot)) {
             if (currE->fFirstY >= stop_y) {
-                return; // we're done
+                break;
             }
             riteE = currE;
             currE = currE->fNext;
-            ASSERT_RETURN(riteE->fFirstY == local_top);
+        }
+
+        SkASSERT(leftE);
+        SkASSERT(riteE);
+
+        // check our bottom clip
+        SkASSERT(local_top == local_bot + 1);
+        if (local_top >= stop_y) {
+            break;
         }
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// this overrides blitH, and will call its proxy blitter with the inverse
+// this guy overrides blitH, and will call its proxy blitter with the inverse
 // of the spans it is given (clipped to the left/right of the cliprect)
 //
 // used to implement inverse filltypes on paths
@@ -379,7 +409,7 @@ static bool operator<(const SkEdge& a, const SkEdge& b) {
 }
 
 static SkEdge* sort_edges(SkEdge* list[], int count, SkEdge** last) {
-    SkTQSort(list, list + count);
+    SkTQSort(list, list + count - 1);
 
     // now make the edges linked in sorted order
     for (int i = 1; i < count; i++) {
@@ -397,14 +427,21 @@ void sk_fill_path(const SkPath& path, const SkIRect& clipRect, SkBlitter* blitte
     SkASSERT(blitter);
 
     SkIRect shiftedClip = clipRect;
-    shiftedClip.fLeft = SkLeftShift(shiftedClip.fLeft, shiftEdgesUp);
-    shiftedClip.fRight = SkLeftShift(shiftedClip.fRight, shiftEdgesUp);
-    shiftedClip.fTop = SkLeftShift(shiftedClip.fTop, shiftEdgesUp);
-    shiftedClip.fBottom = SkLeftShift(shiftedClip.fBottom, shiftEdgesUp);
+    shiftedClip.fLeft <<= shiftEdgesUp;
+    shiftedClip.fRight <<= shiftEdgesUp;
+    shiftedClip.fTop <<= shiftEdgesUp;
+    shiftedClip.fBottom <<= shiftEdgesUp;
 
-    SkBasicEdgeBuilder builder(shiftEdgesUp);
-    int count = builder.buildEdges(path, pathContainedInClip ? nullptr : &shiftedClip);
-    SkEdge** list = builder.edgeList();
+    SkEdgeBuilder   builder;
+
+    // If we're convex, then we need both edges, even the right edge is past the clip
+    const bool canCullToTheRight = !path.isConvex();
+
+    SkIRect* builderClip = pathContainedInClip ? nullptr : &shiftedClip;
+    int count = builder.build(path, builderClip, shiftEdgesUp, canCullToTheRight);
+    SkASSERT(count >= 0);
+
+    SkEdge**    list = builder.edgeList();
 
     if (0 == count) {
         if (path.isInverseFillType()) {
@@ -466,12 +503,12 @@ void sk_fill_path(const SkPath& path, const SkIRect& clipRect, SkBlitter* blitte
         proc = PrePostInverseBlitterProc;
     }
 
-    // count >= 2 is required as the convex walker does not handle missing right edges
-    if (path.isConvex() && (nullptr == proc) && count >= 2) {
-        walk_simple_edges(&headEdge, blitter, start_y, stop_y);
+    if (path.isConvex() && (nullptr == proc)) {
+        SkASSERT(count >= 2);   // convex walker does not handle missing right edges
+        walk_convex_edges(&headEdge, path.getFillType(), blitter, start_y, stop_y, nullptr);
     } else {
         walk_edges(&headEdge, path.getFillType(), blitter, start_y, stop_y, proc,
-                   shiftedClip.right());
+                shiftedClip.right());
     }
 }
 
@@ -509,7 +546,7 @@ void sk_blit_below(SkBlitter* blitter, const SkIRect& ir, const SkRegion& clip) 
  *  is outside of the clip.
  */
 SkScanClipper::SkScanClipper(SkBlitter* blitter, const SkRegion* clip,
-                             const SkIRect& ir, bool skipRejectTest, bool irPreClipped) {
+                             const SkIRect& ir, bool skipRejectTest) {
     fBlitter = nullptr;     // null means blit nothing
     fClipRect = nullptr;
 
@@ -520,7 +557,7 @@ SkScanClipper::SkScanClipper(SkBlitter* blitter, const SkRegion* clip,
         }
 
         if (clip->isRect()) {
-            if (!irPreClipped && fClipRect->contains(ir)) {
+            if (fClipRect->contains(ir)) {
 #ifdef SK_DEBUG
                 fRectClipCheckBlitter.init(blitter, *fClipRect);
                 blitter = &fRectClipCheckBlitter;
@@ -528,8 +565,7 @@ SkScanClipper::SkScanClipper(SkBlitter* blitter, const SkRegion* clip,
                 fClipRect = nullptr;
             } else {
                 // only need a wrapper blitter if we're horizontally clipped
-                if (irPreClipped ||
-                    fClipRect->fLeft > ir.fLeft || fClipRect->fRight < ir.fRight) {
+                if (fClipRect->fLeft > ir.fLeft || fClipRect->fRight < ir.fRight) {
                     fRectBlitter.init(blitter, *fClipRect);
                     blitter = &fRectBlitter;
                 } else {
@@ -550,12 +586,10 @@ SkScanClipper::SkScanClipper(SkBlitter* blitter, const SkRegion* clip,
 ///////////////////////////////////////////////////////////////////////////////
 
 static bool clip_to_limit(const SkRegion& orig, SkRegion* reduced) {
-    // need to limit coordinates such that the width/height of our rect can be represented
-    // in SkFixed (16.16). See skbug.com/7998
-    const int32_t limit = 32767 >> 1;
+    const int32_t limit = 32767;
 
     SkIRect limitR;
-    limitR.setLTRB(-limit, -limit, limit, limit);
+    limitR.set(-limit, -limit, limit, limit);
     if (limitR.contains(orig.getBounds())) {
         return false;
     }
@@ -563,54 +597,40 @@ static bool clip_to_limit(const SkRegion& orig, SkRegion* reduced) {
     return true;
 }
 
-// Bias used for conservative rounding of float rects to int rects, to nudge the irects a little
-// larger, so we don't "think" a path's bounds are inside a clip, when (due to numeric drift in
-// the scan-converter) we might walk beyond the predicted limits.
-//
-// This value has been determined trial and error: pick the smallest value (after the 0.5) that
-// fixes any problematic cases (e.g. crbug.com/844457)
-// NOTE: cubics appear to be the main reason for needing this slop. If we could (perhaps) have a
-// more accurate walker for cubics, we may be able to reduce this fudge factor.
-static const double kConservativeRoundBias = 0.5 + 1.5 / SK_FDot6One;
-
 /**
- *  Round the value down. This is used to round the top and left of a rectangle,
- *  and corresponds to the way the scan converter treats the top and left edges.
- *  It has a slight bias to make the "rounded" int smaller than a normal round, to create a more
- *  conservative int-bounds (larger) from a float rect.
- */
+  * Variant of SkScalarRoundToInt, identical to SkDScalarRoundToInt except when the input fraction
+  * is 0.5. In this case only, round the value down. This is used to round the top and left
+  * of a rectangle, and corresponds to the way the scan converter treats the top and left edges.
+  */
 static inline int round_down_to_int(SkScalar x) {
     double xx = x;
-    xx -= kConservativeRoundBias;
-    return sk_double_saturate2int(ceil(xx));
+    xx += 0.5;
+    double floorXX = floor(xx);
+    return (int)floorXX - (xx == floorXX);
 }
 
 /**
- *  Round the value up. This is used to round the right and bottom of a rectangle.
- *  It has a slight bias to make the "rounded" int smaller than a normal round, to create a more
- *  conservative int-bounds (larger) from a float rect.
+  *  Variant of SkRect::round() that explicitly performs the rounding step (i.e. floor(x + 0.5))
+  *  using double instead of SkScalar (float). It does this by calling SkDScalarRoundToInt(),
+  *  which may be slower than calling SkScalarRountToInt(), but gives slightly more accurate
+  *  results. Also rounds top and left using double, flooring when the fraction is exactly 0.5f.
+  *
+  *  e.g.
+  *      SkScalar left = 0.5f;
+  *      int ileft = SkScalarRoundToInt(left);
+  *      SkASSERT(0 == ileft);  // <--- fails
+  *      int ileft = round_down_to_int(left);
+  *      SkASSERT(0 == ileft);  // <--- succeeds
+  *      SkScalar right = 0.49999997f;
+  *      int iright = SkScalarRoundToInt(right);
+  *      SkASSERT(0 == iright);  // <--- fails
+  *      iright = SkDScalarRoundToInt(right);
+  *      SkASSERT(0 == iright);  // <--- succeeds
   */
-static inline int round_up_to_int(SkScalar x) {
-    double xx = x;
-    xx += kConservativeRoundBias;
-    return sk_double_saturate2int(floor(xx));
-}
-
-/*
- *  Conservative rounding function, which effectively nudges the int-rect to be slightly larger
- *  than SkRect::round() might have produced. This is a safety-net for the scan-converter, which
- *  inspects the returned int-rect, and may disable clipping (for speed) if it thinks all of the
- *  edges will fit inside the clip's bounds. The scan-converter introduces slight numeric errors
- *  due to accumulated += of the slope, so this function is used to return a conservatively large
- *  int-bounds, and thus we will only disable clipping if we're sure the edges will stay in-bounds.
-  */
-static SkIRect conservative_round_to_int(const SkRect& src) {
-    return {
-        round_down_to_int(src.fLeft),
-        round_down_to_int(src.fTop),
-        round_up_to_int(src.fRight),
-        round_up_to_int(src.fBottom),
-    };
+static void round_asymmetric_to_int(const SkRect& src, SkIRect* dst) {
+    SkASSERT(dst);
+    dst->set(round_down_to_int(src.fLeft), round_down_to_int(src.fTop),
+             SkDScalarRoundToInt(src.fRight), SkDScalarRoundToInt(src.fBottom));
 }
 
 void SkScan::FillPath(const SkPath& path, const SkRegion& origClip,
@@ -629,19 +649,14 @@ void SkScan::FillPath(const SkPath& path, const SkRegion& origClip,
         }
         clipPtr = &finiteClip;
     }
-    // don't reference "origClip" any more, just use clipPtr
+        // don't reference "origClip" any more, just use clipPtr
 
-
-    SkRect bounds = path.getBounds();
-    bool irPreClipped = false;
-    if (!SkRectPriv::MakeLargeS32().contains(bounds)) {
-        if (!bounds.intersect(SkRectPriv::MakeLargeS32())) {
-            bounds.setEmpty();
-        }
-        irPreClipped = true;
-    }
-
-    SkIRect ir = conservative_round_to_int(bounds);
+    SkIRect ir;
+    // We deliberately call round_asymmetric_to_int() instead of round(), since we can't afford
+    // to generate a bounds that is tighter than the corresponding SkEdges. The edge code basically
+    // converts the floats to fixed, and then "rounds". If we called round() instead of
+    // round_asymmetric_to_int() here, we could generate the wrong ir for values like 0.4999997.
+    round_asymmetric_to_int(path.getBounds(), &ir);
     if (ir.isEmpty()) {
         if (path.isInverseFillType()) {
             blitter->blitRegion(*clipPtr);
@@ -649,7 +664,7 @@ void SkScan::FillPath(const SkPath& path, const SkRegion& origClip,
         return;
     }
 
-    SkScanClipper clipper(blitter, clipPtr, ir, path.isInverseFillType(), irPreClipped);
+    SkScanClipper clipper(blitter, clipPtr, ir, path.isInverseFillType());
 
     blitter = clipper.getBlitter();
     if (blitter) {
@@ -674,11 +689,6 @@ void SkScan::FillPath(const SkPath& path, const SkIRect& ir,
                       SkBlitter* blitter) {
     SkRegion rgn(ir);
     FillPath(path, rgn, blitter);
-}
-
-bool SkScan::DowngradeClipAA(const SkIRect& bounds) {
-    SkRegion out;  // ignored
-    return clip_to_limit(SkRegion(bounds), &out);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -739,7 +749,8 @@ static void sk_fill_triangle(const SkPoint pts[], const SkIRect* clipRect,
     if (clipRect && start_y < clipRect->fTop) {
         start_y = clipRect->fTop;
     }
-    walk_simple_edges(&headEdge, blitter, start_y, stop_y);
+    walk_convex_edges(&headEdge, SkPath::kEvenOdd_FillType, blitter, start_y, stop_y, nullptr);
+//    walk_edges(&headEdge, SkPath::kEvenOdd_FillType, blitter, start_y, stop_y, nullptr);
 }
 
 void SkScan::FillTriangle(const SkPoint pts[], const SkRasterClip& clip,
@@ -749,19 +760,9 @@ void SkScan::FillTriangle(const SkPoint pts[], const SkRasterClip& clip,
     }
 
     SkRect  r;
-    r.setBounds(pts, 3);
-    // If r is too large (larger than can easily fit in SkFixed) then we need perform geometric
-    // clipping. This is a bit of work, so we just call the general FillPath() to handle it.
-    // Use FixedMax/2 as the limit so we can subtract two edges and still store that in Fixed.
-    const SkScalar limit = SK_MaxS16 >> 1;
-    if (!SkRect::MakeLTRB(-limit, -limit, limit, limit).contains(r)) {
-        SkPath path;
-        path.addPoly(pts, 3, false);
-        FillPath(path, clip, blitter);
-        return;
-    }
-
-    SkIRect ir = conservative_round_to_int(r);
+    SkIRect ir;
+    r.set(pts, 3);
+    r.round(&ir);
     if (ir.isEmpty() || !SkIRect::Intersects(ir, clip.getBounds())) {
         return;
     }

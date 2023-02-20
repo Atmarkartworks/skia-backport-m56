@@ -5,27 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPathBuilder.h"
-#include "include/core/SkPathEffect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "include/private/base/SkFloatBits.h"
-#include "include/private/base/SkTArray.h"
-
 #include <functional>
-
-#include "include/effects/SkStrokeAndFillPathEffect.h"
-static void set_strokeandfill(SkPaint* paint) {
-    SkASSERT(paint->getPathEffect() == nullptr);
-    paint->setPathEffect(SkStrokeAndFillPathEffect::Make());
-    paint->setStroke(true);
-}
+#include "SkCanvas.h"
+#include "SkDashPathEffect.h"
+#include "gm.h"
 
 constexpr SkScalar kStarts[] = {0.f, 10.f, 30.f, 45.f, 90.f, 165.f, 180.f, 270.f};
 constexpr SkScalar kSweeps[] = {1.f, 45.f, 90.f, 130.f, 180.f, 184.f, 300.f, 355.f};
@@ -84,13 +67,13 @@ void draw_arcs(SkCanvas* canvas, std::function<void(SkPaint*)> configureStyle) {
 #define DEF_ARC_GM(name) DEF_SIMPLE_GM(circular_arcs_##name, canvas, kW, kH)
 
 DEF_ARC_GM(fill) {
-    auto setFill = [] (SkPaint*p) { p->setStroke(false); };
+    auto setFill = [] (SkPaint*p) { p->setStyle(SkPaint::kFill_Style); };
     draw_arcs(canvas, setFill);
 }
 
 DEF_ARC_GM(hairline) {
     auto setHairline = [] (SkPaint* p) {
-        p->setStroke(true);
+        p->setStyle(SkPaint::kStroke_Style);
         p->setStrokeWidth(0.f);
     };
     draw_arcs(canvas, setHairline);
@@ -98,7 +81,7 @@ DEF_ARC_GM(hairline) {
 
 DEF_ARC_GM(stroke_butt) {
     auto setStroke = [](SkPaint* p) {
-        p->setStroke(true);
+        p->setStyle(SkPaint::kStroke_Style);
         p->setStrokeCap(SkPaint::kButt_Cap);
     };
     draw_arcs(canvas, setStroke);
@@ -106,7 +89,7 @@ DEF_ARC_GM(stroke_butt) {
 
 DEF_ARC_GM(stroke_square) {
     auto setStroke = [] (SkPaint* p) {
-        p->setStroke(true);
+        p->setStyle(SkPaint::kStroke_Style);
         p->setStrokeCap(SkPaint::kSquare_Cap);
     };
     draw_arcs(canvas, setStroke);
@@ -114,7 +97,7 @@ DEF_ARC_GM(stroke_square) {
 
 DEF_ARC_GM(stroke_round) {
     auto setStroke = [] (SkPaint* p) {
-        p->setStroke(true);
+        p->setStyle(SkPaint::kStroke_Style);
         p->setStrokeCap(SkPaint::kRound_Cap);
     };
     draw_arcs(canvas, setStroke);
@@ -122,7 +105,7 @@ DEF_ARC_GM(stroke_round) {
 
 DEF_ARC_GM(stroke_and_fill_butt) {
     auto setStroke = [] (SkPaint* p) {
-        set_strokeandfill(p);
+        p->setStyle(SkPaint::kStrokeAndFill_Style);
         p->setStrokeCap(SkPaint::kButt_Cap);
     };
     draw_arcs(canvas, setStroke);
@@ -130,7 +113,7 @@ DEF_ARC_GM(stroke_and_fill_butt) {
 
 DEF_ARC_GM(stroke_and_fill_square) {
     auto setStroke = [] (SkPaint* p) {
-        set_strokeandfill(p);
+        p->setStyle(SkPaint::kStrokeAndFill_Style);
         p->setStrokeCap(SkPaint::kSquare_Cap);
     };
     draw_arcs(canvas, setStroke);
@@ -138,7 +121,7 @@ DEF_ARC_GM(stroke_and_fill_square) {
 
 DEF_ARC_GM(stroke_and_fill_round) {
     auto setStroke = [] (SkPaint* p) {
-        set_strokeandfill(p);
+        p->setStyle(SkPaint::kStrokeAndFill_Style);
         p->setStrokeCap(SkPaint::kRound_Cap);
     };
     draw_arcs(canvas, setStroke);
@@ -181,16 +164,16 @@ DEF_SIMPLE_GM(circular_arcs_weird, canvas, 1000, 400) {
     // fill
     paints.push_back();
     // stroke
-    paints.push_back().setStroke(true);
+    paints.push_back().setStyle(SkPaint::kStroke_Style);
     paints.back().setStrokeWidth(kS / 6.f);
     // hairline
-    paints.push_back().setStroke(true);
+    paints.push_back().setStyle(SkPaint::kStroke_Style);
     paints.back().setStrokeWidth(0.f);
     // stroke and fill
     paints.push_back().setStyle(SkPaint::kStrokeAndFill_Style);
     paints.back().setStrokeWidth(kS / 6.f);
     // dash effect
-    paints.push_back().setStroke(true);
+    paints.push_back().setStyle(SkPaint::kStroke_Style);
     paints.back().setStrokeWidth(kS / 6.f);
     constexpr SkScalar kDashIntervals[] = {kS / 15, 2 * kS / 15};
     paints.back().setPathEffect(SkDashPathEffect::Make(kDashIntervals, 2, 0.f));
@@ -208,8 +191,8 @@ DEF_SIMPLE_GM(circular_arcs_weird, canvas, 1000, 400) {
     SkPaint linePaint;
     linePaint.setAntiAlias(true);
     linePaint.setColor(SK_ColorRED);
-    SkScalar midX   = std::size(arcs) * (kS + kPad) - kPad/2.f;
-    SkScalar height = paints.size() * (kS + kPad);
+    SkScalar midX   = SK_ARRAY_COUNT(arcs) * (kS + kPad) - kPad/2.f;
+    SkScalar height = paints.count() * (kS + kPad);
     canvas->drawLine(midX, -kPad, midX, height, linePaint);
 
     for (auto paint : paints) {
@@ -229,7 +212,7 @@ DEF_SIMPLE_GM(circular_arcs_weird, canvas, 1000, 400) {
 }
 
 DEF_SIMPLE_GM(onebadarc, canvas, 100, 100) {
-    SkPathBuilder path;
+    SkPath path;
     path.moveTo(SkBits2Float(0x41a00000), SkBits2Float(0x41a00000));  // 20, 20
     path.lineTo(SkBits2Float(0x4208918c), SkBits2Float(0x4208918c));  // 34.1421f, 34.1421f
     path.conicTo(SkBits2Float(0x41a00000), SkBits2Float(0x42412318),  // 20, 48.2843f
@@ -242,110 +225,11 @@ DEF_SIMPLE_GM(onebadarc, canvas, 100, 100) {
     SkPaint p0;
     p0.setColor(SK_ColorRED);
     p0.setStrokeWidth(15.f);
-    p0.setStroke(true);
+    p0.setStyle(SkPaint::kStroke_Style);
     p0.setAlpha(100);
     canvas->translate(20, 0);
-    canvas->drawPath(path.detach(), p0);
+    canvas->drawPath(path, p0);
 
-    canvas->drawArc(SkRect{60, 0, 100, 40}, 45, 90, true, p0);
-}
-
-DEF_SIMPLE_GM(crbug_888453, canvas, 480, 150) {
-    // Two GPU path renderers were using a too-large tolerance when chopping connics to quads.
-    // This manifested as not-very-round circular arcs at certain radii. All the arcs being drawn
-    // here should look like circles.
-    SkPaint fill;
-    fill.setAntiAlias(true);
-    SkPaint hairline = fill;
-    hairline.setStroke(true);
-    SkPaint stroke = hairline;
-    stroke.setStrokeWidth(2.0f);
-    int x = 4;
-    int y0 = 25, y1 = 75, y2 = 125;
-    for (int r = 2; r <= 20; ++r) {
-        canvas->drawArc(SkRect::MakeXYWH(x - r, y0 - r, 2 * r, 2 * r), 0, 360, false, fill);
-        canvas->drawArc(SkRect::MakeXYWH(x - r, y1 - r, 2 * r, 2 * r), 0, 360, false, hairline);
-        canvas->drawArc(SkRect::MakeXYWH(x - r, y2 - r, 2 * r, 2 * r), 0, 360, false, stroke);
-        x += 2 * r + 4;
-    }
-}
-
-DEF_SIMPLE_GM(circular_arc_stroke_matrix, canvas, 820, 1090) {
-    static constexpr SkScalar kRadius = 40.f;
-    static constexpr SkScalar kStrokeWidth = 5.f;
-    static constexpr SkScalar kStart = 89.f;
-    static constexpr SkScalar kSweep = 180.f/SK_ScalarPI; // one radian
-
-    SkTArray<SkMatrix> matrices;
-    matrices.push_back().setRotate(kRadius, kRadius, 45.f);
-    matrices.push_back(SkMatrix::I());
-    matrices.push_back().setAll(-1,  0,  2*kRadius,
-                                 0,  1,  0,
-                                 0,  0,  1);
-    matrices.push_back().setAll( 1,  0,  0,
-                                 0, -1,  2*kRadius,
-                                 0,  0,  1);
-    matrices.push_back().setAll( 1,  0,  0,
-                                 0, -1,  2*kRadius,
-                                 0,  0,  1);
-    matrices.push_back().setAll( 0, -1,  2*kRadius,
-                                -1,  0,  2*kRadius,
-                                 0,  0,  1);
-    matrices.push_back().setAll( 0, -1,  2*kRadius,
-                                 1,  0,  0,
-                                 0,  0,  1);
-    matrices.push_back().setAll( 0,  1,  0,
-                                 1,  0,  0,
-                                 0,  0,  1);
-    matrices.push_back().setAll( 0,  1,  0,
-                                -1,  0,  2*kRadius,
-                                 0,  0,  1);
-    int baseMatrixCnt = matrices.size();
-
-
-    SkMatrix tinyCW;
-    tinyCW.setRotate(0.001f, kRadius, kRadius);
-    for (int i = 0; i < baseMatrixCnt; ++i) {
-        matrices.push_back().setConcat(matrices[i], tinyCW);
-    }
-    SkMatrix tinyCCW;
-    tinyCCW.setRotate(-0.001f, kRadius, kRadius);
-    for (int i = 0; i < baseMatrixCnt; ++i) {
-        matrices.push_back().setConcat(matrices[i], tinyCCW);
-    }
-    SkMatrix cw45;
-    cw45.setRotate(45.f, kRadius, kRadius);
-    for (int i = 0; i < baseMatrixCnt; ++i) {
-        matrices.push_back().setConcat(matrices[i], cw45);
-    }
-
-    int x = 0;
-    int y = 0;
-    static constexpr SkScalar kPad = 2*kStrokeWidth;
-    canvas->translate(kPad, kPad);
-    auto bounds = SkRect::MakeWH(2*kRadius, 2*kRadius);
-    for (auto cap : {SkPaint::kRound_Cap, SkPaint::kButt_Cap, SkPaint::kSquare_Cap}) {
-        for (const auto& m : matrices) {
-            SkPaint paint;
-            paint.setStrokeCap(cap);
-            paint.setAntiAlias(true);
-            paint.setStroke(true);
-            paint.setStrokeWidth(kStrokeWidth);
-            canvas->save();
-                canvas->translate(x * (2*kRadius + kPad), y * (2*kRadius + kPad));
-                canvas->concat(m);
-                paint.setColor(SK_ColorRED);
-                paint.setAlpha(0x80);
-                canvas->drawArc(bounds, kStart, kSweep, false, paint);
-                paint.setColor(SK_ColorBLUE);
-                paint.setAlpha(0x80);
-                canvas->drawArc(bounds, kStart, kSweep - 360.f, false, paint);
-            canvas->restore();
-            ++x;
-            if (x == baseMatrixCnt) {
-                x = 0;
-                ++y;
-            }
-        }
-    }
+    SkRect kRect = { 60, 0, 100, 40};
+    canvas->drawArc(kRect, 45, 90, true, p0);
 }

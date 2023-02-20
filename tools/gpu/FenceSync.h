@@ -8,7 +8,7 @@
 #ifndef FenceSync_DEFINED
 #define FenceSync_DEFINED
 
-#include "include/core/SkTypes.h"
+#include "SkTypes.h"
 
 namespace sk_gpu_test {
 
@@ -25,8 +25,6 @@ public:
     virtual PlatformFence SK_WARN_UNUSED_RESULT insertFence() const = 0;
     virtual bool waitFence(PlatformFence) const = 0;
     virtual void deleteFence(PlatformFence) const = 0;
-
-    virtual bool validate() const { return true; }
 
     virtual ~FenceSync() {}
 };

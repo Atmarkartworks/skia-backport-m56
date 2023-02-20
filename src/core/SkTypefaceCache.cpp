@@ -5,33 +5,35 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/base/SkMutex.h"
-#include "src/core/SkTypefaceCache.h"
-#include <atomic>
+
+
+#include "SkTypefaceCache.h"
+#include "SkAtomics.h"
+#include "SkMutex.h"
 
 #define TYPEFACE_CACHE_LIMIT    1024
 
 SkTypefaceCache::SkTypefaceCache() {}
 
-void SkTypefaceCache::add(sk_sp<SkTypeface> face) {
-    if (fTypefaces.size() >= TYPEFACE_CACHE_LIMIT) {
+void SkTypefaceCache::add(SkTypeface* face) {
+    if (fTypefaces.count() >= TYPEFACE_CACHE_LIMIT) {
         this->purge(TYPEFACE_CACHE_LIMIT >> 2);
     }
 
-    fTypefaces.emplace_back(std::move(face));
+    fTypefaces.emplace_back(SkRef(face));
 }
 
-sk_sp<SkTypeface> SkTypefaceCache::findByProcAndRef(FindProc proc, void* ctx) const {
+SkTypeface* SkTypefaceCache::findByProcAndRef(FindProc proc, void* ctx) const {
     for (const sk_sp<SkTypeface>& typeface : fTypefaces) {
         if (proc(typeface.get(), ctx)) {
-            return typeface;
+            return SkRef(typeface.get());
         }
     }
     return nullptr;
 }
 
 void SkTypefaceCache::purge(int numToPurge) {
-    int count = fTypefaces.size();
+    int count = fTypefaces.count();
     int i = 0;
     while (i < count) {
         if (fTypefaces[i]->unique()) {
@@ -47,7 +49,7 @@ void SkTypefaceCache::purge(int numToPurge) {
 }
 
 void SkTypefaceCache::purgeAll() {
-    this->purge(fTypefaces.size());
+    this->purge(fTypefaces.count());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -57,28 +59,25 @@ SkTypefaceCache& SkTypefaceCache::Get() {
     return gCache;
 }
 
-SkTypefaceID SkTypefaceCache::NewTypefaceID() {
-    static std::atomic<int32_t> nextID{1};
-    return nextID.fetch_add(1, std::memory_order_relaxed);
+SkFontID SkTypefaceCache::NewFontID() {
+    static int32_t gFontID;
+    return sk_atomic_inc(&gFontID) + 1;
 }
 
-static SkMutex& typeface_cache_mutex() {
-    static SkMutex& mutex = *(new SkMutex);
-    return mutex;
+SK_DECLARE_STATIC_MUTEX(gMutex);
+
+void SkTypefaceCache::Add(SkTypeface* face) {
+    SkAutoMutexAcquire ama(gMutex);
+    Get().add(face);
 }
 
-void SkTypefaceCache::Add(sk_sp<SkTypeface> face) {
-    SkAutoMutexExclusive ama(typeface_cache_mutex());
-    Get().add(std::move(face));
-}
-
-sk_sp<SkTypeface> SkTypefaceCache::FindByProcAndRef(FindProc proc, void* ctx) {
-    SkAutoMutexExclusive ama(typeface_cache_mutex());
+SkTypeface* SkTypefaceCache::FindByProcAndRef(FindProc proc, void* ctx) {
+    SkAutoMutexAcquire ama(gMutex);
     return Get().findByProcAndRef(proc, ctx);
 }
 
 void SkTypefaceCache::PurgeAll() {
-    SkAutoMutexExclusive ama(typeface_cache_mutex());
+    SkAutoMutexAcquire ama(gMutex);
     Get().purgeAll();
 }
 
@@ -89,9 +88,9 @@ static bool DumpProc(SkTypeface* face, void* ctx) {
     SkString n;
     face->getFamilyName(&n);
     SkFontStyle s = face->fontStyle();
-    SkTypefaceID id = face->uniqueID();
-    SkDebugf("SkTypefaceCache: face %p typefaceID %d weight %d width %d style %d name %s\n",
-             face, id, s.weight(), s.width(), s.slant(), n.c_str());
+    SkFontID id = face->uniqueID();
+    SkDebugf("SkTypefaceCache: face %p fontID %d weight %d width %d style %d refcnt %d name %s\n",
+             face, id, s.weight(), s.width(), s.slant(), face->getRefCnt(), n.c_str());
     return false;
 }
 #endif

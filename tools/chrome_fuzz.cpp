@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "include/core/SkCanvas.h"
+#include "SkCanvas.h"
 #include "SkFlattenableSerialization.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkString.h"
-#include "src/core/SkOSFile.h"
-
-#include <stdio.h>
+#include "SkImageFilter.h"
+#include "SkOSFile.h"
+#include "SkString.h"
 
 static const int kBitmapSize = 24;
 
@@ -24,7 +22,7 @@ static bool read_test_case(const char* filename, SkString* testdata) {
     return false;
   }
   testdata->resize(len);
-  (void) fread(testdata->data(), len, file);
+  (void) sk_fread(testdata->writable_str(), len, file);
   return true;
 }
 

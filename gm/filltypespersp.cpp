@@ -5,21 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPathBuilder.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "gm.h"
+#include "SkGradientShader.h"
+#include "SkPath.h"
 
 namespace skiagm {
 
@@ -31,9 +19,8 @@ public:
     void makePath() {
         if (fPath.isEmpty()) {
             const SkScalar radius = SkIntToScalar(45);
-            fPath = SkPathBuilder().addCircle(SkIntToScalar(50), SkIntToScalar(50), radius)
-                                   .addCircle(SkIntToScalar(100), SkIntToScalar(100), radius)
-                                   .detach();
+            fPath.addCircle(SkIntToScalar(50), SkIntToScalar(50), radius);
+            fPath.addCircle(SkIntToScalar(100), SkIntToScalar(100), radius);
         }
     }
 
@@ -47,7 +34,7 @@ protected:
         return SkISize::Make(835, 840);
     }
 
-    void showPath(SkCanvas* canvas, int x, int y, SkPathFillType ft,
+    void showPath(SkCanvas* canvas, int x, int y, SkPath::FillType ft,
                   SkScalar scale, const SkPaint& paint) {
         const SkRect r = { 0, 0, SkIntToScalar(150), SkIntToScalar(150) };
 
@@ -72,17 +59,17 @@ protected:
                                                      SkIntToScalar(100),
                                                      colors,
                                                      pos,
-                                                     std::size(colors),
-                                                     SkTileMode::kClamp));
+                                                     SK_ARRAY_COUNT(colors),
+                                                     SkShader::kClamp_TileMode));
         paint.setAntiAlias(aa);
 
-        showPath(canvas,   0,   0, SkPathFillType::kWinding,
+        showPath(canvas,   0,   0, SkPath::kWinding_FillType,
                  scale, paint);
-        showPath(canvas, 200,   0, SkPathFillType::kEvenOdd,
+        showPath(canvas, 200,   0, SkPath::kEvenOdd_FillType,
                  scale, paint);
-        showPath(canvas,  00, 200, SkPathFillType::kInverseWinding,
+        showPath(canvas,  00, 200, SkPath::kInverseWinding_FillType,
                  scale, paint);
-        showPath(canvas, 200, 200, SkPathFillType::kInverseEvenOdd,
+        showPath(canvas, 200, 200, SkPath::kInverseEvenOdd_FillType,
                  scale, paint);
     }
 
@@ -101,8 +88,8 @@ protected:
                                                       SkIntToScalar(1000),
                                                       colors,
                                                       pos,
-                                                      std::size(colors),
-                                                      SkTileMode::kClamp));
+                                                      SK_ARRAY_COUNT(colors),
+                                                      SkShader::kClamp_TileMode));
         canvas->save();
             canvas->translate(SkIntToScalar(100), SkIntToScalar(100));
             SkMatrix mat;
@@ -133,11 +120,12 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new FillTypePerspGM; )
+static GM* MyFactory(void*) { return new FillTypePerspGM; }
+static GMRegistry reg(MyFactory);
 
-}  // namespace skiagm
+}

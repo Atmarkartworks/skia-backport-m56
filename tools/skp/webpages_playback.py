@@ -33,10 +33,11 @@ The --browser_executable flag should point to the browser binary you want to use
 to capture archives and/or capture SKP files. Majority of the time it should be
 a newly built chrome binary.
 
-The --data_store flag controls where the needed artifacts are downloaded from.
-It also controls where the generated artifacts, such as recorded webpages and
-resulting skp renderings, are uploaded to. URLs with scheme 'gs://' use Google
-Storage. Otherwise use local filesystem.
+The --data_store flag controls where the needed artifacts, such as
+credential files, are downloaded from. It also controls where the
+generated artifacts, such as recorded webpages and resulting skp renderings,
+are uploaded to. URLs with scheme 'gs://' use Google Storage. Otherwise
+use local filesystem.
 
 The --upload=True flag means generated artifacts will be
 uploaded or copied to the location specified by --data_store. (default value is
@@ -51,9 +52,6 @@ SKP(s). The tools are run after all SKPs are succesfully captured to make sure
 they can be added to the buildbots with no breakages.
 """
 
-
-from __future__ import print_function
-import datetime
 import glob
 import optparse
 import os
@@ -94,14 +92,14 @@ MAX_SKP_BASE_NAME_LEN = 31
 # Dictionary of device to platform prefixes for SKP files.
 DEVICE_TO_PLATFORM_PREFIX = {
     'desktop': 'desk',
-    'mobile': 'mobi',
-    'tablet': 'tabl'
+    'galaxynexus': 'mobi',
+    'nexus10': 'tabl'
 }
 
 # How many times the record_wpr binary should be retried.
 RETRY_RECORD_WPR_COUNT = 5
 # How many times the run_benchmark binary should be retried.
-RETRY_RUN_MEASUREMENT_COUNT = 3
+RETRY_RUN_MEASUREMENT_COUNT = 5
 
 # Location of the credentials.json file in Google Storage.
 CREDENTIALS_GS_PATH = 'playback/credentials/credentials.json'
@@ -113,19 +111,9 @@ CHROMIUM_PAGE_SETS_PATH = os.path.join('tools', 'perf', 'page_sets')
 
 # Dictionary of supported Chromium page sets to their file prefixes.
 CHROMIUM_PAGE_SETS_TO_PREFIX = {
+    'key_mobile_sites_smooth.py': 'keymobi',
+    'top_25_smooth.py': 'top25desk',
 }
-
-PAGE_SETS_TO_EXCLUSIONS = {
-    # See skbug.com/7348
-    'key_mobile_sites_smooth.py': '"(digg|worldjournal|twitter|espn)"',
-    # See skbug.com/7421
-    'top_25_smooth.py': '"(mail\.google\.com)"',
-}
-
-
-class InvalidSKPException(Exception):
-  """Raised when the created SKP is invalid."""
-  pass
 
 
 def remove_prefix(s, prefix):
@@ -212,14 +200,19 @@ class SkPicturePlayback(object):
       self.gs.download_file(CREDENTIALS_GS_PATH, CREDENTIALS_FILE_PATH)
 
     if not os.path.isfile(CREDENTIALS_FILE_PATH):
-      raise Exception("""Could not locate credentials file in the storage.
-      Please create a credentials file in gs://%s that contains:
+      print """\n\nCould not locate credentials file in the storage.
+      Please create a %s file that contains:
       {
         "google": {
           "username": "google_testing_account_username",
           "password": "google_testing_account_password"
+        },
+        "facebook": {
+          "username": "facebook_testing_account_username",
+          "password": "facebook_testing_account_password"
         }
-      }\n\n""" % CREDENTIALS_GS_PATH)
+      }\n\n""" % CREDENTIALS_FILE_PATH
+      raw_input("Please press a key when you are ready to proceed...")
 
     # Delete any left over data files in the data directory.
     for archive_file in glob.glob(
@@ -234,16 +227,14 @@ class SkPicturePlayback(object):
 
     # Loop through all page_sets.
     for page_set in self._page_sets:
-      if os.path.basename(page_set) == '__init__.py':
-        continue
+
       page_set_basename = os.path.basename(page_set).split('.')[0]
       page_set_json_name = page_set_basename + '.json'
-      wpr_data_file_glob = (
-          page_set.split(os.path.sep)[-1].split('.')[0] + '_*.wprgo')
+      wpr_data_file = page_set.split(os.path.sep)[-1].split('.')[0] + '_000.wpr'
       page_set_dir = os.path.dirname(page_set)
 
       if self._IsChromiumPageSet(page_set):
-        print('Using Chromium\'s captured archives for Chromium\'s page sets.')
+        print 'Using Chromium\'s captured archives for Chromium\'s page sets.'
       elif self._record:
         # Create an archive of the specified webpages if '--record=True' is
         # specified.
@@ -261,14 +252,12 @@ class SkPicturePlayback(object):
           try:
             subprocess.check_call(' '.join(record_wpr_cmd), shell=True)
 
-            # Copy over the created archive into the local webpages archive
+            # Move over the created archive into the local webpages archive
             # directory.
-            for wpr_data_file in glob.glob(os.path.join(
-                LOCAL_REPLAY_WEBPAGES_ARCHIVE_DIR, wpr_data_file_glob)):
-              shutil.copy(
-                os.path.join(LOCAL_REPLAY_WEBPAGES_ARCHIVE_DIR, wpr_data_file),
-                self._local_record_webpages_archive_dir)
-            shutil.copy(
+            shutil.move(
+              os.path.join(LOCAL_REPLAY_WEBPAGES_ARCHIVE_DIR, wpr_data_file),
+              self._local_record_webpages_archive_dir)
+            shutil.move(
               os.path.join(LOCAL_REPLAY_WEBPAGES_ARCHIVE_DIR,
                            page_set_json_name),
               self._local_record_webpages_archive_dir)
@@ -285,9 +274,9 @@ class SkPicturePlayback(object):
 
       else:
         # Get the webpages archive so that it can be replayed.
-        self._DownloadWebpagesArchive(wpr_data_file_glob, page_set_json_name)
+        self._DownloadWebpagesArchive(wpr_data_file, page_set_json_name)
 
-      run_benchmark_cmd = [
+      run_benchmark_cmd = (
           'PYTHONPATH=%s:%s:$PYTHONPATH' % (page_set_dir, self._catapult_dir),
           'DISPLAY=%s' % X11_DISPLAY,
           'timeout', '1800',
@@ -299,43 +288,35 @@ class SkPicturePlayback(object):
           '--page-set-name=%s' % page_set_basename,
           '--page-set-base-dir=%s' % page_set_dir,
           '--skp-outdir=%s' % TMP_SKP_DIR,
-          '--also-run-disabled-tests',
-      ]
-
-      exclusions = PAGE_SETS_TO_EXCLUSIONS.get(os.path.basename(page_set))
-      if exclusions:
-        run_benchmark_cmd.append('--story-filter-exclude=' + exclusions)
+          '--also-run-disabled-tests'
+      )
 
       for _ in range(RETRY_RUN_MEASUREMENT_COUNT):
         try:
-          print('\n\n=======Capturing SKP of %s=======\n\n' % page_set)
+          print '\n\n=======Capturing SKP of %s=======\n\n' % page_set
           subprocess.check_call(' '.join(run_benchmark_cmd), shell=True)
         except subprocess.CalledProcessError:
-          # There was a failure continue with the loop.
-          traceback.print_exc()
-          print('\n\n=======Retrying %s=======\n\n' % page_set)
-          time.sleep(10)
-          continue
+          # skpicture_printer sometimes fails with AssertionError but the
+          # captured SKP is still valid. This is a known issue.
+          pass
 
+        # Rename generated SKP files into more descriptive names.
         try:
-          # Rename generated SKP files into more descriptive names.
           self._RenameSkpFiles(page_set)
-        except InvalidSKPException:
+          # Break out of the retry loop since there were no errors.
+          break
+        except Exception:
           # There was a failure continue with the loop.
           traceback.print_exc()
-          print('\n\n=======Retrying %s=======\n\n' % page_set)
+          print '\n\n=======Retrying %s=======\n\n' % page_set
           time.sleep(10)
-          continue
-
-        # Break out of the retry loop since there were no errors.
-        break
       else:
         # If we get here then run_benchmark did not succeed and thus did not
         # break out of the loop.
         raise Exception('run_benchmark failed for page_set: %s' % page_set)
 
-    print('\n\n=======Capturing SKP files took %s seconds=======\n\n' % (
-          time.time() - start_time))
+    print '\n\n=======Capturing SKP files took %s seconds=======\n\n' % (
+        time.time() - start_time)
 
     if self._skia_tools:
       render_pictures_cmd = [
@@ -348,18 +329,18 @@ class SkPicturePlayback(object):
       ]
 
       for tools_cmd in (render_pictures_cmd, render_pdfs_cmd):
-        print('\n\n=======Running %s=======' % ' '.join(tools_cmd))
+        print '\n\n=======Running %s=======' % ' '.join(tools_cmd)
         subprocess.check_call(tools_cmd)
 
       if not self._non_interactive:
-        print('\n\n=======Running debugger=======')
+        print '\n\n=======Running debugger======='
         os.system('%s %s' % (os.path.join(self._skia_tools, 'debugger'),
                              self._local_skp_dir))
 
-    print('\n\n')
+    print '\n\n'
 
     if self._upload:
-      print('\n\n=======Uploading to %s=======\n\n' % self.gs.target_type())
+      print '\n\n=======Uploading to %s=======\n\n' % self.gs.target_type()
       # Copy the directory structure in the root directory into Google Storage.
       dest_dir_name = ROOT_PLAYBACK_DIR_NAME
       if self._alternate_upload_dir:
@@ -368,28 +349,24 @@ class SkPicturePlayback(object):
       self.gs.upload_dir_contents(
           self._local_skp_dir, dest_dir=dest_dir_name)
 
-      print('\n\n=======New SKPs have been uploaded to %s =======\n\n' %
-            posixpath.join(self.gs.target_name(), dest_dir_name,
-                           SKPICTURES_DIR_NAME))
+      print '\n\n=======New SKPs have been uploaded to %s =======\n\n' % (
+          posixpath.join(self.gs.target_name(), dest_dir_name,
+                         SKPICTURES_DIR_NAME))
 
     else:
-      print('\n\n=======Not Uploading to %s=======\n\n' % self.gs.target_type())
-      print('Generated resources are available in %s\n\n' % self._local_skp_dir)
+      print '\n\n=======Not Uploading to %s=======\n\n' % self.gs.target_type()
+      print 'Generated resources are available in %s\n\n' % (
+          self._local_skp_dir)
 
     if self._upload_to_partner_bucket:
-      print('\n\n=======Uploading to Partner bucket %s =======\n\n' %
-            PARTNERS_GS_BUCKET)
+      print '\n\n=======Uploading to Partner bucket %s =======\n\n' % (
+          PARTNERS_GS_BUCKET)
       partner_gs = GoogleStorageDataStore(PARTNERS_GS_BUCKET)
-      timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%d')
-      upload_dir = posixpath.join(SKPICTURES_DIR_NAME, timestamp)
-      try:
-        partner_gs.delete_path(upload_dir)
-      except subprocess.CalledProcessError:
-        print('Cannot delete %s because it does not exist yet.' % upload_dir)
-      print('Uploading %s to %s' % (self._local_skp_dir, upload_dir))
-      partner_gs.upload_dir_contents(self._local_skp_dir, upload_dir)
-      print('\n\n=======New SKPs have been uploaded to %s =======\n\n' %
-            posixpath.join(partner_gs.target_name(), upload_dir))
+      partner_gs.delete_path(SKPICTURES_DIR_NAME)
+      print 'Uploading %s to %s' % (self._local_skp_dir, SKPICTURES_DIR_NAME)
+      partner_gs.upload_dir_contents(self._local_skp_dir, SKPICTURES_DIR_NAME)
+      print '\n\n=======New SKPs have been uploaded to %s =======\n\n' % (
+          posixpath.join(partner_gs.target_name(), SKPICTURES_DIR_NAME))
 
     return 0
 
@@ -423,10 +400,6 @@ class SkPicturePlayback(object):
 
     Look into the subdirectory of TMP_SKP_DIR and find the most interesting
     .skp in there to be this page_set's representative .skp.
-
-    Throws InvalidSKPException if the chosen .skp is less than 1KB. This
-    typically happens when there is a 404 or a redirect loop. Anything greater
-    than 1KB seems to have captured at least some useful information.
     """
     subdirs = glob.glob(os.path.join(TMP_SKP_DIR, '*'))
     for site in subdirs:
@@ -443,15 +416,10 @@ class SkPicturePlayback(object):
       largest_skp = max(glob.glob(os.path.join(site, '*.skp')),
                         key=lambda path: os.stat(path).st_size)
       dest = os.path.join(self._local_skp_dir, filename)
-      print('Moving', largest_skp, 'to', dest)
+      print 'Moving', largest_skp, 'to', dest
       shutil.move(largest_skp, dest)
       self._skp_files.append(filename)
       shutil.rmtree(site)
-      skp_size = os.path.getsize(dest)
-      if skp_size < 1024:
-        raise InvalidSKPException(
-            'Size of %s is only %d. Something is wrong.' % (dest, skp_size))
-
 
   def _CreateLocalStorageDirs(self):
     """Creates required local storage directories for this script."""
@@ -471,7 +439,9 @@ class SkPicturePlayback(object):
     gs = self.gs
     if (gs.does_storage_object_exist(wpr_source) and
         gs.does_storage_object_exist(page_set_source)):
-      gs.download_file(wpr_source, LOCAL_REPLAY_WEBPAGES_ARCHIVE_DIR)
+      gs.download_file(wpr_source,
+                       os.path.join(LOCAL_REPLAY_WEBPAGES_ARCHIVE_DIR,
+                                    wpr_data_file))
       gs.download_file(page_set_source,
                        os.path.join(LOCAL_REPLAY_WEBPAGES_ARCHIVE_DIR,
                                     page_set_json_name))

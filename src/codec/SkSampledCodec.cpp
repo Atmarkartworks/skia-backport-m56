@@ -5,24 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "src/codec/SkSampledCodec.h"
-
-#include "include/codec/SkCodec.h"
-#include "include/core/SkEncodedImageFormat.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkMathPriv.h"
-#include "src/codec/SkCodecPriv.h"
-#include "src/codec/SkSampler.h"
+#include "SkCodec.h"
+#include "SkCodecPriv.h"
+#include "SkMath.h"
+#include "SkSampledCodec.h"
+#include "SkSampler.h"
+#include "SkTemplates.h"
 
 SkSampledCodec::SkSampledCodec(SkCodec* codec)
     : INHERITED(codec)
 {}
 
 SkISize SkSampledCodec::accountForNativeScaling(int* sampleSizePtr, int* nativeSampleSize) const {
-    SkISize preSampledSize = this->codec()->dimensions();
+    SkISize preSampledSize = this->codec()->getInfo().dimensions();
     int sampleSize = *sampleSizePtr;
     SkASSERT(sampleSize > 1);
 
@@ -31,7 +26,7 @@ SkISize SkSampledCodec::accountForNativeScaling(int* sampleSizePtr, int* nativeS
     }
 
     // Only JPEG supports native downsampling.
-    if (this->codec()->getEncodedFormat() == SkEncodedImageFormat::kJPEG) {
+    if (this->codec()->getEncodedFormat() == kJPEG_SkEncodedFormat) {
         // See if libjpeg supports this scale directly
         switch (sampleSize) {
             case 2:
@@ -77,10 +72,15 @@ SkISize SkSampledCodec::onGetSampledDimensions(int sampleSize) const {
 
 SkCodec::Result SkSampledCodec::onGetAndroidPixels(const SkImageInfo& info, void* pixels,
         size_t rowBytes, const AndroidOptions& options) {
-    const SkIRect* subset = options.fSubset;
-    if (!subset || subset->size() == this->codec()->dimensions()) {
+    // Create an Options struct for the codec.
+    SkCodec::Options codecOptions;
+    codecOptions.fZeroInitialized = options.fZeroInitialized;
+
+    SkIRect* subset = options.fSubset;
+    if (!subset || subset->size() == this->codec()->getInfo().dimensions()) {
         if (this->codec()->dimensionsSupported(info.dimensions())) {
-            return this->codec()->getPixels(info, pixels, rowBytes, &options);
+            return this->codec()->getPixels(info, pixels, rowBytes, &codecOptions,
+                    options.fColorPtr, options.fColorCount);
         }
 
         // If the native codec does not support the requested scale, scale by sampling.
@@ -101,46 +101,45 @@ SkCodec::Result SkSampledCodec::onGetAndroidPixels(const SkImageInfo& info, void
     int scaledSubsetWidth = info.width();
     int scaledSubsetHeight = info.height();
 
-    const SkImageInfo scaledInfo = info.makeDimensions(scaledSize);
+    const SkImageInfo scaledInfo = info.makeWH(scaledSize.width(), scaledSize.height());
 
-    // Copy so we can use a different fSubset.
-    AndroidOptions subsetOptions = options;
     {
         // Although startScanlineDecode expects the bottom and top to match the
         // SkImageInfo, startIncrementalDecode uses them to determine which rows to
         // decode.
         SkIRect incrementalSubset = SkIRect::MakeXYWH(scaledSubsetX, scaledSubsetY,
                                                       scaledSubsetWidth, scaledSubsetHeight);
-        subsetOptions.fSubset = &incrementalSubset;
+        codecOptions.fSubset = &incrementalSubset;
         const SkCodec::Result startResult = this->codec()->startIncrementalDecode(
-                scaledInfo, pixels, rowBytes, &subsetOptions);
+                scaledInfo, pixels, rowBytes, &codecOptions,
+                options.fColorPtr, options.fColorCount);
         if (SkCodec::kSuccess == startResult) {
-            int rowsDecoded = 0;
+            int rowsDecoded;
             const SkCodec::Result incResult = this->codec()->incrementalDecode(&rowsDecoded);
             if (incResult == SkCodec::kSuccess) {
                 return SkCodec::kSuccess;
             }
-            SkASSERT(incResult == SkCodec::kIncompleteInput || incResult == SkCodec::kErrorInInput);
+            SkASSERT(SkCodec::kIncompleteInput == incResult);
 
             // FIXME: Can zero initialized be read from SkCodec::fOptions?
             this->codec()->fillIncompleteImage(scaledInfo, pixels, rowBytes,
                     options.fZeroInitialized, scaledSubsetHeight, rowsDecoded);
-            return incResult;
+            return SkCodec::kIncompleteInput;
         } else if (startResult != SkCodec::kUnimplemented) {
             return startResult;
         }
         // Otherwise fall down to use the old scanline decoder.
-        // subsetOptions.fSubset will be reset below, so it will not continue to
+        // codecOptions.fSubset will be reset below, so it will not continue to
         // point to the object that is no longer on the stack.
     }
 
     // Start the scanline decode.
     SkIRect scanlineSubset = SkIRect::MakeXYWH(scaledSubsetX, 0, scaledSubsetWidth,
             scaledSize.height());
-    subsetOptions.fSubset = &scanlineSubset;
+    codecOptions.fSubset = &scanlineSubset;
 
     SkCodec::Result result = this->codec()->startScanlineDecode(scaledInfo,
-            &subsetOptions);
+            &codecOptions, options.fColorPtr, options.fColorCount);
     if (SkCodec::kSuccess != result) {
         return result;
     }
@@ -169,6 +168,10 @@ SkCodec::Result SkSampledCodec::sampledDecode(const SkImageInfo& info, void* pix
     // We should only call this function when sampling.
     SkASSERT(options.fSampleSize > 1);
 
+    // Create options struct for the codec.
+    SkCodec::Options sampledOptions;
+    sampledOptions.fZeroInitialized = options.fZeroInitialized;
+
     // FIXME: This was already called by onGetAndroidPixels. Can we reduce that?
     int sampleSize = options.fSampleSize;
     int nativeSampleSize;
@@ -196,6 +199,7 @@ SkCodec::Result SkSampledCodec::sampledDecode(const SkImageInfo& info, void* pix
 
         // The scanline decoder only needs to be aware of subsetting in the x-dimension.
         subset.setXYWH(subsetX, 0, subsetWidth, nativeSize.height());
+        sampledOptions.fSubset = &subset;
     }
 
     // Since we guarantee that output dimensions are always at least one (even if the sampleSize
@@ -208,23 +212,23 @@ SkCodec::Result SkSampledCodec::sampledDecode(const SkImageInfo& info, void* pix
     const int startY = samplingOffsetY + subsetY;
     const int dstHeight = info.height();
 
-    const SkImageInfo nativeInfo = info.makeDimensions(nativeSize);
+    const SkImageInfo nativeInfo = info.makeWH(nativeSize.width(), nativeSize.height());
 
     {
         // Although startScanlineDecode expects the bottom and top to match the
         // SkImageInfo, startIncrementalDecode uses them to determine which rows to
         // decode.
-        AndroidOptions incrementalOptions = options;
+        SkCodec::Options incrementalOptions = sampledOptions;
         SkIRect incrementalSubset;
-        if (options.fSubset) {
-            incrementalSubset.fTop     = subsetY;
-            incrementalSubset.fBottom  = subsetY + subsetHeight;
-            incrementalSubset.fLeft    = subset.fLeft;
-            incrementalSubset.fRight   = subset.fRight;
+        if (sampledOptions.fSubset) {
+            incrementalSubset.fTop = subsetY;
+            incrementalSubset.fBottom = subsetY + subsetHeight;
+            incrementalSubset.fLeft = sampledOptions.fSubset->fLeft;
+            incrementalSubset.fRight = sampledOptions.fSubset->fRight;
             incrementalOptions.fSubset = &incrementalSubset;
         }
         const SkCodec::Result startResult = this->codec()->startIncrementalDecode(nativeInfo,
-                pixels, rowBytes, &incrementalOptions);
+                pixels, rowBytes, &incrementalOptions, options.fColorPtr, options.fColorCount);
         if (SkCodec::kSuccess == startResult) {
             SkSampler* sampler = this->codec()->getSampler(true);
             if (!sampler) {
@@ -240,41 +244,32 @@ SkCodec::Result SkSampledCodec::sampledDecode(const SkImageInfo& info, void* pix
 
             sampler->setSampleY(sampleY);
 
-            int rowsDecoded = 0;
+            int rowsDecoded;
             const SkCodec::Result incResult = this->codec()->incrementalDecode(&rowsDecoded);
             if (incResult == SkCodec::kSuccess) {
                 return SkCodec::kSuccess;
             }
-            SkASSERT(incResult == SkCodec::kIncompleteInput || incResult == SkCodec::kErrorInInput);
+            SkASSERT(incResult == SkCodec::kIncompleteInput);
 
             SkASSERT(rowsDecoded <= info.height());
             this->codec()->fillIncompleteImage(info, pixels, rowBytes, options.fZeroInitialized,
                                                info.height(), rowsDecoded);
-            return incResult;
-        } else if (startResult == SkCodec::kIncompleteInput
-                || startResult == SkCodec::kErrorInInput) {
-            return SkCodec::kInvalidInput;
+            return SkCodec::kIncompleteInput;
         } else if (startResult != SkCodec::kUnimplemented) {
             return startResult;
         } // kUnimplemented means use the old method.
     }
 
     // Start the scanline decode.
-    AndroidOptions sampledOptions = options;
-    if (options.fSubset) {
-        sampledOptions.fSubset = &subset;
-    }
     SkCodec::Result result = this->codec()->startScanlineDecode(nativeInfo,
-            &sampledOptions);
-    if (SkCodec::kIncompleteInput == result || SkCodec::kErrorInInput == result) {
-        return SkCodec::kInvalidInput;
-    } else if (SkCodec::kSuccess != result) {
+            &sampledOptions, options.fColorPtr, options.fColorCount);
+    if (SkCodec::kSuccess != result) {
         return result;
     }
 
     SkSampler* sampler = this->codec()->getSampler(true);
     if (!sampler) {
-        return SkCodec::kInternalError;
+        return SkCodec::kUnimplemented;
     }
 
     if (sampler->setSampleX(sampleX) != info.width()) {
@@ -334,6 +329,7 @@ SkCodec::Result SkSampledCodec::sampledDecode(const SkImageInfo& info, void* pix
 
             // We handle filling uninitialized memory here instead of using this->codec().
             // this->codec() does not know that we are sampling.
+            const uint64_t fillValue = this->codec()->getFillValue(info);
             const SkImageInfo fillInfo = info.makeWH(info.width(), 1);
             for (; y < nativeSize.height(); y++) {
                 int srcY = this->codec()->outputScanline(y);
@@ -342,7 +338,7 @@ SkCodec::Result SkSampledCodec::sampledDecode(const SkImageInfo& info, void* pix
                 }
 
                 void* rowPtr = SkTAddOffset<void>(pixels, rowBytes * get_dst_coord(srcY, sampleY));
-                SkSampler::Fill(fillInfo, rowPtr, rowBytes, options.fZeroInitialized);
+                SkSampler::Fill(fillInfo, rowPtr, rowBytes, fillValue, options.fZeroInitialized);
             }
             return SkCodec::kIncompleteInput;
         }

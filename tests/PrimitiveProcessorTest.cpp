@@ -5,245 +5,142 @@
  * found in the LICENSE file.
  */
 
-// This is a GPU-backend specific test. It relies on static initializers to work
+// This is a GPU-backend specific test. It relies on static intializers to work
 
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurfaceProps.h"
-#include "include/core/SkTypes.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/core/SkPointPriv.h"
-#include "src/core/SkSLTypeShared.h"
-#include "src/gpu/KeyBuilder.h"
-#include "src/gpu/SkBackingFit.h"
-#include "src/gpu/ganesh/GrAppliedClip.h"
-#include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGeometryProcessor.h"
-#include "src/gpu/ganesh/GrGpu.h"
-#include "src/gpu/ganesh/GrOpFlushState.h"
-#include "src/gpu/ganesh/GrPaint.h"
-#include "src/gpu/ganesh/GrPipeline.h"
-#include "src/gpu/ganesh/GrProcessorSet.h"
-#include "src/gpu/ganesh/GrProgramInfo.h"
-#include "src/gpu/ganesh/SurfaceDrawContext.h"
-#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
-#include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
-#include "src/gpu/ganesh/ops/GrOp.h"
-#include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
-#include "tests/CtsEnforcement.h"
-#include "tests/Test.h"
+#include "SkTypes.h"
+#include "Test.h"
 
-#include <cstddef>
-#include <memory>
-#include <utility>
-
-class GrDstProxyView;
-class GrGLSLProgramDataManager;
-class GrMeshDrawTarget;
-class GrRecordingContext;
-class GrSurfaceProxyView;
-enum class GrXferBarrierFlags;
-struct GrContextOptions;
-struct GrShaderCaps;
-struct GrSimpleMesh;
-struct SkPoint;
+#if SK_SUPPORT_GPU
+#include "GrBatchFlushState.h"
+#include "GrRenderTargetContext.h"
+#include "GrRenderTargetContextPriv.h"
+#include "GrContext.h"
+#include "GrGeometryProcessor.h"
+#include "GrGpu.h"
+#include "GrTextureProvider.h"
+#include "glsl/GrGLSLGeometryProcessor.h"
+#include "glsl/GrGLSLFragmentShaderBuilder.h"
+#include "glsl/GrGLSLVarying.h"
+#include "batches/GrVertexBatch.h"
+#include "SkString.h"
 
 namespace {
-class Op : public GrMeshDrawOp {
+class Batch : public GrVertexBatch {
 public:
-    DEFINE_OP_CLASS_ID
+    DEFINE_BATCH_CLASS_ID
 
-    const char* name() const override { return "Test Op"; }
-
-    static GrOp::Owner Make(GrRecordingContext* rContext, int numAttribs) {
-        return GrOp::Make<Op>(rContext, numAttribs);
+    const char* name() const override { return "Dummy Batch"; }
+    void computePipelineOptimizations(GrInitInvariantOutput* color,
+                                      GrInitInvariantOutput* coverage,
+                                      GrBatchToXPOverrides* overrides) const override {
+        color->setUnknownFourComponents();
+        coverage->setUnknownSingleComponent();
     }
 
-    FixedFunctionFlags fixedFunctionFlags() const override {
-        return FixedFunctionFlags::kNone;
-    }
+    void initBatchTracker(const GrXPOverridesForBatch& overrides) override {}
 
-    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrClampType) override {
-        return GrProcessorSet::EmptySetAnalysis();
+    Batch(int numAttribs)
+        : INHERITED(ClassID())
+        , fNumAttribs(numAttribs) {
+        this->setBounds(SkRect::MakeWH(1.f, 1.f), HasAABloat::kNo, IsZeroArea::kNo);
     }
 
 private:
-    friend class ::GrOp;
-
-    Op(int numAttribs) : INHERITED(ClassID()), fNumAttribs(numAttribs) {
-        this->setBounds(SkRect::MakeWH(1.f, 1.f), HasAABloat::kNo, IsHairline::kNo);
-    }
-
-    GrProgramInfo* programInfo() override { return fProgramInfo; }
-
-    void onCreateProgramInfo(const GrCaps* caps,
-                             SkArenaAlloc* arena,
-                             const GrSurfaceProxyView& writeView,
-                             bool usesMSAASurface,
-                             GrAppliedClip&& appliedClip,
-                             const GrDstProxyView& dstProxyView,
-                             GrXferBarrierFlags renderPassXferBarriers,
-                             GrLoadOp colorLoadOp) override {
+    bool onCombineIfPossible(GrBatch*, const GrCaps&) override { return false; }
+    void onPrepareDraws(Target* target) const override {
         class GP : public GrGeometryProcessor {
         public:
-            static GrGeometryProcessor* Make(SkArenaAlloc* arena, int numAttribs) {
-                return arena->make([&](void* ptr) {
-                    return new (ptr) GP(numAttribs);
-                });
+            GP(int numAttribs) {
+                this->initClassID<GP>();
+                SkASSERT(numAttribs > 1);
+                for (auto i = 0; i < numAttribs; ++i) {
+                    fAttribNames.push_back().printf("attr%d", i);
+                }
+                for (auto i = 0; i < numAttribs; ++i) {
+                    this->addVertexAttrib(fAttribNames[i].c_str(), kVec2f_GrVertexAttribType);
+                }
             }
+            const char* name() const override { return "Dummy GP"; }
 
-            const char* name() const override { return "Test GP"; }
-
-            std::unique_ptr<ProgramImpl> makeProgramImpl(const GrShaderCaps&) const override {
-                class Impl : public ProgramImpl {
+            GrGLSLPrimitiveProcessor* createGLSLInstance(const GrGLSLCaps&) const override {
+                class GLSLGP : public GrGLSLGeometryProcessor {
                 public:
-                    void setData(const GrGLSLProgramDataManager&,
-                                 const GrShaderCaps&,
-                                 const GrGeometryProcessor&) override {}
-
-                private:
                     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
-                        const GP& gp = args.fGeomProc.cast<GP>();
+                        const GP& gp = args.fGP.cast<GP>();
                         args.fVaryingHandler->emitAttributes(gp);
-                        WriteOutputPosition(args.fVertBuilder, gpArgs, gp.fAttributes[0].name());
-                        GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
-                        fragBuilder->codeAppendf("const half4 %s = half4(1);", args.fOutputColor);
-                        fragBuilder->codeAppendf("const half4 %s = half4(1);",
-                                                 args.fOutputCoverage);
+                        this->setupPosition(args.fVertBuilder, gpArgs, gp.fAttribs[0].fName);
+                        GrGLSLPPFragmentBuilder* fragBuilder = args.fFragBuilder;
+                        fragBuilder->codeAppendf("%s = vec4(1);", args.fOutputColor);
+                        fragBuilder->codeAppendf("%s = vec4(1);", args.fOutputCoverage);
                     }
+                    void setData(const GrGLSLProgramDataManager& pdman,
+                                 const GrPrimitiveProcessor& primProc,
+                                 FPCoordTransformIter&&) override {}
                 };
-
-                return std::make_unique<Impl>();
+                return new GLSLGP();
             }
-            void addToKey(const GrShaderCaps&, skgpu::KeyBuilder* builder) const override {
-                builder->add32(fNumAttribs);
+            void getGLSLProcessorKey(const GrGLSLCaps&,
+                                     GrProcessorKeyBuilder* builder) const override {
+                builder->add32(this->numAttribs());
             }
 
         private:
-            GP(int numAttribs) : INHERITED(kGP_ClassID), fNumAttribs(numAttribs) {
-                SkASSERT(numAttribs > 1);
-                fAttribNames = std::make_unique<SkString[]>(numAttribs);
-                fAttributes = std::make_unique<Attribute[]>(numAttribs);
-                for (auto i = 0; i < numAttribs; ++i) {
-                    fAttribNames[i].printf("attr%d", i);
-                    // This gives us more of a mix of attribute types, and allows the
-                    // component count to fit within the limits for iOS Metal.
-                    if (i & 0x1) {
-                        fAttributes[i] = {fAttribNames[i].c_str(), kFloat_GrVertexAttribType,
-                                                                   SkSLType::kFloat};
-                    } else {
-                        fAttributes[i] = {fAttribNames[i].c_str(), kFloat2_GrVertexAttribType,
-                                                                   SkSLType::kFloat2};
-                    }
-                }
-                this->setVertexAttributesWithImplicitOffsets(fAttributes.get(), numAttribs);
-            }
-
-            int fNumAttribs;
-            std::unique_ptr<SkString[]> fAttribNames;
-            std::unique_ptr<Attribute[]> fAttributes;
-
-            using INHERITED = GrGeometryProcessor;
+            SkTArray<SkString> fAttribNames;
         };
-
-        GrGeometryProcessor* gp = GP::Make(arena, fNumAttribs);
-
-        fProgramInfo = GrSimpleMeshDrawOpHelper::CreateProgramInfo(caps,
-                                                                   arena,
-                                                                   writeView,
-                                                                   usesMSAASurface,
-                                                                   std::move(appliedClip),
-                                                                   dstProxyView,
-                                                                   gp,
-                                                                   GrProcessorSet::MakeEmptySet(),
-                                                                   GrPrimitiveType::kTriangles,
-                                                                   renderPassXferBarriers,
-                                                                   colorLoadOp,
-                                                                   GrPipeline::InputFlags::kNone);
+        sk_sp<GrGeometryProcessor> gp(new GP(fNumAttribs));
+        QuadHelper helper;
+        size_t vertexStride = gp->getVertexStride();
+        SkPoint* vertices = reinterpret_cast<SkPoint*>(helper.init(target, vertexStride, 1));
+        vertices->setRectFan(0.f, 0.f, 1.f, 1.f, vertexStride);
+        helper.recordDraw(target, gp.get());
     }
 
-    void onPrepareDraws(GrMeshDrawTarget* target) override {
-        if (!fProgramInfo) {
-            this->createProgramInfo(target);
-        }
+    int fNumAttribs;
 
-        size_t vertexStride = fProgramInfo->geomProc().vertexStride();
-        QuadHelper helper(target, vertexStride, 1);
-        SkPoint* vertices = reinterpret_cast<SkPoint*>(helper.vertices());
-        SkPointPriv::SetRectTriStrip(vertices, 0.f, 0.f, 1.f, 1.f, vertexStride);
-        fMesh = helper.mesh();
-    }
-
-    void onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) override {
-        if (!fProgramInfo || !fMesh) {
-            return;
-        }
-
-        flushState->bindPipelineAndScissorClip(*fProgramInfo, chainBounds);
-        flushState->bindTextures(fProgramInfo->geomProc(), nullptr, fProgramInfo->pipeline());
-        flushState->drawMesh(*fMesh);
-    }
-
-    int            fNumAttribs;
-    GrSimpleMesh*  fMesh = nullptr;
-    GrProgramInfo* fProgramInfo = nullptr;
-
-    using INHERITED = GrMeshDrawOp;
+    typedef GrVertexBatch INHERITED;
 };
-}  // namespace
+}
 
-DEF_GANESH_TEST_FOR_ALL_CONTEXTS(VertexAttributeCount,
-                                 reporter,
-                                 ctxInfo,
-                                 CtsEnforcement::kApiLevel_T) {
-    auto dContext = ctxInfo.directContext();
-#if GR_GPU_STATS
-    GrGpu* gpu = dContext->priv().getGpu();
-#endif
+DEF_GPUTEST_FOR_ALL_CONTEXTS(VertexAttributeCount, reporter, ctxInfo) {
+    GrContext* context = ctxInfo.grContext();
 
-    auto sdc = skgpu::v1::SurfaceDrawContext::Make(dContext,
-                                                   GrColorType::kRGBA_8888,
-                                                   nullptr,
-                                                   SkBackingFit::kApprox,
-                                                   {1, 1},
-                                                   SkSurfaceProps(),
-                                                   /*label=*/{});
-    if (!sdc) {
+    sk_sp<GrRenderTargetContext> renderTargetContext(context->makeRenderTargetContext(
+                                                                     SkBackingFit::kApprox,
+                                                                     1, 1, kRGBA_8888_GrPixelConfig,
+                                                                     nullptr));
+    if (!renderTargetContext) {
         ERRORF(reporter, "Could not create render target context.");
         return;
     }
-    int attribCnt = dContext->priv().caps()->maxVertexAttributes();
+    int attribCnt = context->caps()->maxVertexAttributes();
     if (!attribCnt) {
         ERRORF(reporter, "No attributes allowed?!");
         return;
     }
-    dContext->flushAndSubmit();
-    dContext->priv().resetGpuStats();
+    context->flush();
+    context->resetGpuStats();
 #if GR_GPU_STATS
-    REPORTER_ASSERT(reporter, gpu->stats()->numDraws() == 0);
-    REPORTER_ASSERT(reporter, gpu->stats()->numFailedDraws() == 0);
+    REPORTER_ASSERT(reporter, context->getGpu()->stats()->numDraws() == 0);
+    REPORTER_ASSERT(reporter, context->getGpu()->stats()->numFailedDraws() == 0);
 #endif
-    // Adding discard to appease vulkan validation warning about loading uninitialized data on draw
-    sdc->discard();
-
+    sk_sp<GrDrawBatch> batch;
     GrPaint grPaint;
     // This one should succeed.
-    sdc->addDrawOp(Op::Make(dContext, attribCnt));
-    dContext->flushAndSubmit();
+    batch.reset(new Batch(attribCnt));
+    renderTargetContext->priv().testingOnly_drawBatch(grPaint, batch.get());
+    context->flush();
 #if GR_GPU_STATS
-    REPORTER_ASSERT(reporter, gpu->stats()->numDraws() == 1);
-    REPORTER_ASSERT(reporter, gpu->stats()->numFailedDraws() == 0);
+    REPORTER_ASSERT(reporter, context->getGpu()->stats()->numDraws() == 1);
+    REPORTER_ASSERT(reporter, context->getGpu()->stats()->numFailedDraws() == 0);
 #endif
-    dContext->priv().resetGpuStats();
-    sdc->addDrawOp(Op::Make(dContext, attribCnt + 1));
-    dContext->flushAndSubmit();
+    context->resetGpuStats();
+    // This one should fail.
+    batch.reset(new Batch(attribCnt+1));
+    renderTargetContext->priv().testingOnly_drawBatch(grPaint, batch.get());
+    context->flush();
 #if GR_GPU_STATS
-    REPORTER_ASSERT(reporter, gpu->stats()->numDraws() == 0);
-    REPORTER_ASSERT(reporter, gpu->stats()->numFailedDraws() == 1);
+    REPORTER_ASSERT(reporter, context->getGpu()->stats()->numDraws() == 0);
+    REPORTER_ASSERT(reporter, context->getGpu()->stats()->numFailedDraws() == 1);
 #endif
 }
+#endif

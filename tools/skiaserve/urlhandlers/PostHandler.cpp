@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "tools/skiaserve/urlhandlers/UrlHandler.h"
+#include "UrlHandler.h"
 
 #include "microhttpd.h"
-#include "tools/skiaserve/Request.h"
-#include "tools/skiaserve/Response.h"
+#include "../Request.h"
+#include "../Response.h"
 
 using namespace Response;
 
@@ -62,8 +62,7 @@ int PostHandler::handle(Request* request, MHD_Connection* connection,
     MHD_destroy_post_processor(uc->fPostProcessor);
     uc->fPostProcessor = nullptr;
 
-    std::unique_ptr<SkStreamAsset> stream(request->fUploadContext->fStream.detachAsStream());
-    if (!request->initPictureFromStream(stream.get())) {
+    if (!request->initPictureFromStream(request->fUploadContext->fStream.detachAsStream())) {
         fprintf(stderr, "Could not create picture from stream.\n");
         return MHD_NO;
     }

@@ -5,26 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorType.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageGenerator.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkTypes.h"
-#include "include/private/SkColorData.h"
-#include "src/core/SkOpts.h"
-#include "tests/Test.h"
-#include "tools/ToolUtils.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkData.h"
+#include "SkDiscardableMemoryPool.h"
+#include "SkImage.h"
+#include "SkImageEncoder.h"
+#include "SkImageGenerator.h"
+#include "SkResourceCache.h"
+#include "SkStream.h"
+#include "SkUtils.h"
 
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <utility>
+#include "Test.h"
 
 class TestImageGenerator : public SkImageGenerator {
 public:
@@ -36,7 +28,7 @@ public:
     static int Width() { return 10; }
     static int Height() { return 10; }
     // value choosen so that there is no loss when converting to to RGB565 and back
-    static SkColor   Color() { return ToolUtils::color_to_565(0xffaabbcc); }
+    static SkColor Color() { return 0xff10345a; }
     static SkPMColor PMColor() { return SkPreMultiplyColor(Color()); }
 
     TestImageGenerator(TestType type, skiatest::Reporter* reporter,
@@ -44,7 +36,7 @@ public:
     : INHERITED(GetMyInfo(colorType)), fType(type), fReporter(reporter) {
         SkASSERT((fType <= kLast_TestType) && (fType >= 0));
     }
-    ~TestImageGenerator() override {}
+    virtual ~TestImageGenerator() { }
 
 protected:
     static SkImageInfo GetMyInfo(SkColorType colorType) {
@@ -53,7 +45,7 @@ protected:
     }
 
     bool onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
-                     const Options& options) override {
+                     SkPMColor ctable[], int* ctableCount) override {
         REPORTER_ASSERT(fReporter, pixels != nullptr);
         REPORTER_ASSERT(fReporter, rowBytes >= info.minRowBytes());
         if (fType != kSucceedGetPixels_TestType) {
@@ -66,14 +58,22 @@ protected:
         switch (info.colorType()) {
             case kN32_SkColorType:
                 for (int y = 0; y < info.height(); ++y) {
-                    SkOpts::memset32((uint32_t*)bytePtr,
+                    sk_memset32((uint32_t*)bytePtr,
                                 TestImageGenerator::PMColor(), info.width());
+                    bytePtr += rowBytes;
+                }
+                break;
+            case kIndex_8_SkColorType:
+                *ctableCount = 1;
+                ctable[0] = TestImageGenerator::PMColor();
+                for (int y = 0; y < info.height(); ++y) {
+                    memset(bytePtr, 0, info.width());
                     bytePtr += rowBytes;
                 }
                 break;
             case kRGB_565_SkColorType:
                 for (int y = 0; y < info.height(); ++y) {
-                    SkOpts::memset16((uint16_t*)bytePtr,
+                    sk_memset16((uint16_t*)bytePtr,
                         SkPixel32ToPixel16(TestImageGenerator::PMColor()), info.width());
                     bytePtr += rowBytes;
                 }
@@ -88,7 +88,7 @@ private:
     const TestType fType;
     skiatest::Reporter* const fReporter;
 
-    using INHERITED = SkImageGenerator;
+    typedef SkImageGenerator INHERITED;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,15 +100,17 @@ DEF_TEST(Image_NewFromGenerator, r) {
     };
     const SkColorType testColorTypes[] = {
         kN32_SkColorType,
+        kIndex_8_SkColorType,
         kRGB_565_SkColorType
     };
-    for (size_t i = 0; i < std::size(testTypes); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(testTypes); ++i) {
         TestImageGenerator::TestType test = testTypes[i];
         for (const SkColorType testColorType : testColorTypes) {
-            auto gen = std::make_unique<TestImageGenerator>(test, r, testColorType);
-            sk_sp<SkImage> image(SkImage::MakeFromGenerator(std::move(gen)));
+            SkImageGenerator* gen = new TestImageGenerator(test, r, testColorType);
+            sk_sp<SkImage> image(SkImage::MakeFromGenerator(gen));
             if (nullptr == image) {
-                ERRORF(r, "SkImage::NewFromGenerator unexpecedly failed [%zu]", i);
+                ERRORF(r, "SkImage::NewFromGenerator unexpecedly failed ["
+                    SK_SIZE_T_SPECIFIER "]", i);
                 continue;
             }
             REPORTER_ASSERT(r, TestImageGenerator::Width() == image->width());
@@ -120,7 +122,7 @@ DEF_TEST(Image_NewFromGenerator, r) {
             SkCanvas canvas(bitmap);
             const SkColor kDefaultColor = 0xffabcdef;
             canvas.clear(kDefaultColor);
-            canvas.drawImage(image, 0, 0);
+            canvas.drawImage(image, 0, 0, nullptr);
             if (TestImageGenerator::kSucceedGetPixels_TestType == test) {
                 REPORTER_ASSERT(
                     r, TestImageGenerator::Color() == bitmap.getColor(0, 0));

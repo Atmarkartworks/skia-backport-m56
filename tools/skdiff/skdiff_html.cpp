@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkStream.h"
-#include "include/core/SkTime.h"
-#include "tools/skdiff/skdiff.h"
-#include "tools/skdiff/skdiff_html.h"
+#include "skdiff.h"
+#include "skdiff_html.h"
+#include "SkStream.h"
+#include "SkTime.h"
 
 /// Make layout more consistent by scaling image to 240 height, 360 width,
 /// or natural size, whichever is smallest.
@@ -54,7 +54,7 @@ static void print_table_header(SkFILEWStream* stream,
     }
     stream->writeDecAsText(matchCount);
     stream->writeText(" of ");
-    stream->writeDecAsText(differences.size());
+    stream->writeDecAsText(differences.count());
     stream->writeText(" diffs matched ");
     if (colorThreshold == 0) {
         stream->writeText("exactly");
@@ -178,20 +178,19 @@ static void print_link_cell(SkFILEWStream* stream, const SkString& path, const c
     stream->writeText("</a></td>");
 }
 
-static void print_diff_resource_cell(SkFILEWStream* stream, const DiffResource& resource,
+static void print_diff_resource_cell(SkFILEWStream* stream, DiffResource& resource,
                                      const SkString& relativePath, bool local) {
-    SkString fullPath = resource.fFullPath;
     if (resource.fBitmap.empty()) {
         if (DiffResource::kCouldNotDecode_Status == resource.fStatus) {
             if (local && !resource.fFilename.isEmpty()) {
                 print_link_cell(stream, resource.fFilename, "N/A");
                 return;
             }
-            if (!fullPath.isEmpty()) {
-                if (!fullPath.startsWith(PATH_DIV_STR)) {
-                    fullPath.prepend(relativePath);
+            if (!resource.fFullPath.isEmpty()) {
+                if (!resource.fFullPath.startsWith(PATH_DIV_STR)) {
+                    resource.fFullPath.prepend(relativePath);
                 }
-                print_link_cell(stream, fullPath, "N/A");
+                print_link_cell(stream, resource.fFullPath, "N/A");
                 return;
             }
         }
@@ -204,13 +203,13 @@ static void print_diff_resource_cell(SkFILEWStream* stream, const DiffResource& 
         print_image_cell(stream, resource.fFilename, height);
         return;
     }
-    if (!fullPath.startsWith(PATH_DIV_STR)) {
-        fullPath.prepend(relativePath);
+    if (!resource.fFullPath.startsWith(PATH_DIV_STR)) {
+        resource.fFullPath.prepend(relativePath);
     }
-    print_image_cell(stream, fullPath, height);
+    print_image_cell(stream, resource.fFullPath, height);
 }
 
-static void print_diff_row(SkFILEWStream* stream, const DiffRecord& diff, const SkString& relativePath) {
+static void print_diff_row(SkFILEWStream* stream, DiffRecord& diff, const SkString& relativePath) {
     stream->writeText("<tr>\n");
     print_checkbox_cell(stream, diff);
     print_label_cell(stream, diff);
@@ -246,7 +245,7 @@ void print_diff_page(const int matchCount,
     if (outputDir.size() > 0 && PATH_DIV_CHAR == outputDir[0]) {
         isPathAbsolute = true;
     }
-#ifdef SK_BUILD_FOR_WIN
+#ifdef SK_BUILD_FOR_WIN32
     // On Windows, absolute paths can also start with "x:", where x is any
     // drive letter.
     if (outputDir.size() > 1 && ':' == outputDir[1]) {
@@ -284,10 +283,10 @@ void print_diff_page(const int matchCount,
     print_table_header(&outputStream, matchCount, colorThreshold, differences,
                        baseDir, comparisonDir);
     int i;
-    for (i = 0; i < differences.size(); i++) {
-        const DiffRecord& diff = differences[i];
+    for (i = 0; i < differences.count(); i++) {
+        DiffRecord* diff = differences[i];
 
-        switch (diff.fResult) {
+        switch (diff->fResult) {
           // Cases in which there is no diff to report.
           case DiffRecord::kEqualBits_Result:
           case DiffRecord::kEqualPixels_Result:
@@ -296,7 +295,7 @@ void print_diff_page(const int matchCount,
           case DiffRecord::kDifferentPixels_Result:
           case DiffRecord::kDifferentSizes_Result:
           case DiffRecord::kCouldNotCompare_Result:
-            print_diff_row(&outputStream, diff, relativePath);
+            print_diff_row(&outputStream, *diff, relativePath);
             continue;
           default:
             SkDEBUGFAIL("encountered DiffRecord with unknown result type");

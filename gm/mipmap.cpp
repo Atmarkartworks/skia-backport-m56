@@ -5,24 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypes.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkImage.h"
+#include "SkRandom.h"
+#include "SkSurface.h"
 
 static sk_sp<SkImage> make_image() {
     const SkImageInfo info = SkImageInfo::MakeN32Premul(319, 52);
     auto surface(SkSurface::MakeRaster(info));
     SkCanvas* canvas = surface->getCanvas();
-    canvas->drawColor(0xFFF8F8F8);
+    canvas->drawColor(sk_tool_utils::color_to_565(0xFFF8F8F8));
 
     SkPaint paint;
     paint.setAntiAlias(true);
@@ -38,25 +31,21 @@ static sk_sp<SkImage> make_image() {
 DEF_SIMPLE_GM(mipmap, canvas, 400, 200) {
     sk_sp<SkImage> img(make_image());//SkImage::NewFromEncoded(data));
 
+    SkPaint paint;
     const SkRect dst = SkRect::MakeWH(177, 15);
 
+    paint.setTextSize(30);
     SkString str;
     str.printf("scale %g %g", dst.width() / img->width(), dst.height() / img->height());
-//    canvas->drawString(str, 300, 100, SkFont(nullptr, 30), paint);
-
-    const SkSamplingOptions samplings[] = {
-        SkSamplingOptions(SkFilterMode::kNearest),
-        SkSamplingOptions(SkFilterMode::kLinear),
-        SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear),
-        SkSamplingOptions(SkCubicResampler::Mitchell()),
-    };
+//    canvas->drawText(str.c_str(), str.size(), 300, 100, paint);
 
     canvas->translate(20, 20);
-    for (size_t i = 0; i < std::size(samplings); ++i) {
-        canvas->drawImageRect(img.get(), dst, samplings[i], nullptr);
+    for (int i = 0; i < 4; ++i) {
+        paint.setFilterQuality(SkFilterQuality(i));
+        canvas->drawImageRect(img.get(), dst, &paint);
         canvas->translate(0, 20);
     }
-    canvas->drawImage(img.get(), 20, 20);
+    canvas->drawImage(img.get(), 20, 20, nullptr);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -74,17 +63,17 @@ static sk_sp<SkImage> make(sk_sp<SkColorSpace> cs) {
         }
     }
     bm.setImmutable();
-    return bm.asImage();
+    return SkImage::MakeFromBitmap(bm);
 }
 
 static void show_mips(SkCanvas* canvas, SkImage* img) {
-    SkSamplingOptions sampling(SkFilterMode::kLinear,
-                               SkMipmapMode::kLinear);
+    SkPaint paint;
+    paint.setFilterQuality(kMedium_SkFilterQuality);
 
     // Want to ensure we never draw fractional pixels, so we use an IRect
     SkIRect dst = SkIRect::MakeWH(img->width(), img->height());
     while (dst.width() > 5) {
-        canvas->drawImageRect(img, SkRect::Make(dst), sampling, nullptr);
+        canvas->drawImageRect(img, SkRect::Make(dst), &paint);
         dst.offset(dst.width() + 10, 0);
         dst.fRight = dst.fLeft + dst.width()/2;
         dst.fBottom = dst.fTop + dst.height()/2;
@@ -100,7 +89,7 @@ static void show_mips(SkCanvas* canvas, SkImage* img) {
  */
 DEF_SIMPLE_GM(mipmap_srgb, canvas, 260, 230) {
     sk_sp<SkImage> limg = make(nullptr);
-    sk_sp<SkImage> simg = make(SkColorSpace::MakeSRGB());
+    sk_sp<SkImage> simg = make(SkColorSpace::MakeNamed(SkColorSpace::kSRGB_Named));
 
     canvas->translate(10, 10);
     show_mips(canvas, limg.get());
@@ -123,17 +112,17 @@ static sk_sp<SkImage> make_g8_gradient(sk_sp<SkColorSpace> cs) {
         }
     }
     bm.setImmutable();
-    return bm.asImage();
+    return SkImage::MakeFromBitmap(bm);
 }
 
 static void show_mips_only(SkCanvas* canvas, SkImage* img) {
-    SkSamplingOptions sampling(SkFilterMode::kLinear,
-                               SkMipmapMode::kLinear);
+    SkPaint paint;
+    paint.setFilterQuality(kMedium_SkFilterQuality);
 
     // Want to ensure we never draw fractional pixels, so we use an IRect
     SkIRect dst = SkIRect::MakeWH(img->width() / 2, img->height() / 2);
     while (dst.width() > 5) {
-        canvas->drawImageRect(img, SkRect::Make(dst), sampling, nullptr);
+        canvas->drawImageRect(img, SkRect::Make(dst), &paint);
         dst.offset(dst.width() + 10, 0);
         dst.fRight = dst.fLeft + dst.width() / 2;
         dst.fBottom = dst.fTop + dst.height() / 2;
@@ -146,10 +135,12 @@ static void show_mips_only(SkCanvas* canvas, SkImage* img) {
  *
  *  Ensure that in S32 drawing mode, all images/mips look the same, and look correct (i.e.
  *  the mip levels match the original in brightness).
+ *
+ *  This test also verifies handling of Gray_8 data in Ganesh, which is not done natively.
  */
 DEF_SIMPLE_GM(mipmap_gray8_srgb, canvas, 260, 230) {
     sk_sp<SkImage> limg = make_g8_gradient(nullptr);
-    sk_sp<SkImage> simg = make_g8_gradient(SkColorSpace::MakeSRGB());
+    sk_sp<SkImage> simg = make_g8_gradient(SkColorSpace::MakeNamed(SkColorSpace::kSRGB_Named));
 
     canvas->translate(10, 10);
     show_mips_only(canvas, limg.get());

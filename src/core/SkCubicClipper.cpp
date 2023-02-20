@@ -5,13 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkCubicClipper.h"
 
-#include "include/core/SkPoint.h"
-#include "src/core/SkGeometry.h"
-
-#include <cstring>
-#include <utility>
+#include "SkCubicClipper.h"
+#include "SkGeometry.h"
 
 SkCubicClipper::SkCubicClipper() {
     fClip.setEmpty();
@@ -84,6 +80,7 @@ bool SkCubicClipper::ChopMonoAtY(const SkPoint pts[4], SkScalar y, SkScalar* t) 
     }
 
     const SkScalar tol = SK_Scalar1 / 65536;  // 1 for fixed, 1e-5 for float.
+    int iters = 0;
     do {
         SkScalar tMid = (tPos + tNeg) / 2;
         SkScalar y01   = SkScalarInterp(ycrv[0], ycrv[1], tMid);
@@ -98,6 +95,7 @@ bool SkCubicClipper::ChopMonoAtY(const SkPoint pts[4], SkScalar y, SkScalar* t) 
         }
         if (y0123 < 0)  tNeg = tMid;
         else            tPos = tMid;
+        ++iters;
     } while (!(SkScalarAbs(tPos - tNeg) <= tol));   // Nan-safe
 
     *t = (tNeg + tPos) / 2;
@@ -148,9 +146,8 @@ bool SkCubicClipper::clipCubic(const SkPoint srcPts[4], SkPoint dst[4]) {
     }
 
     if (reverse) {
-        using std::swap;
-        swap(dst[0], dst[3]);
-        swap(dst[1], dst[2]);
+        SkTSwap<SkPoint>(dst[0], dst[3]);
+        SkTSwap<SkPoint>(dst[1], dst[2]);
     }
     return true;
 }

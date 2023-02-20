@@ -15,11 +15,9 @@ import os.path
 import shutil
 import subprocess
 
-
-NDK_VER = "android-ndk-r21d"
+NDK_VER = "android-ndk-r13"
 NDK_URL = \
     "https://dl.google.com/android/repository/%s-windows-x86_64.zip" % NDK_VER
-
 
 def create_asset(target_dir):
   """Create the asset."""
@@ -28,6 +26,11 @@ def create_asset(target_dir):
   for f in glob.glob(os.path.join(target_dir, NDK_VER, "*")):
     shutil.move(f, target_dir)
   subprocess.check_call(["rm", "ndk.zip"])
+
+  # Some of these files have paths that exceed 260 characters when downloaded
+  # as a CIPD package.  Luckily they're just tests.  We don't need them.
+  shutil.rmtree(os.path.join(target_dir,
+                             'sources', 'cxx-stl', 'llvm-libc++', 'test'))
 
 
 def main():

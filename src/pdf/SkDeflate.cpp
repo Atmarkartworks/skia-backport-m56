@@ -5,16 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "src/pdf/SkDeflate.h"
 
-#include "include/core/SkData.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkTo.h"
-#include "src/core/SkTraceEvent.h"
+#include "SkData.h"
+#include "SkDeflate.h"
+#include "SkMakeUnique.h"
 
 #include "zlib.h"
-
-#include <algorithm>
 
 namespace {
 
@@ -67,14 +63,7 @@ struct SkDeflateWStream::Impl {
 SkDeflateWStream::SkDeflateWStream(SkWStream* out,
                                    int compressionLevel,
                                    bool gzip)
-    : fImpl(std::make_unique<SkDeflateWStream::Impl>()) {
-
-    // There has existed at some point at least one zlib implementation which thought it was being
-    // clever by randomizing the compression level. This is actually not entirely incorrect, except
-    // for the no-compression level which should always be deterministically pass-through.
-    // Users should instead consider the zero compression level broken and handle it themselves.
-    SkASSERT(compressionLevel != 0);
-
+    : fImpl(skstd::make_unique<SkDeflateWStream::Impl>()) {
     fImpl->fOut = out;
     fImpl->fInBufferIndex = 0;
     if (!fImpl->fOut) {
@@ -94,7 +83,6 @@ SkDeflateWStream::SkDeflateWStream(SkWStream* out,
 SkDeflateWStream::~SkDeflateWStream() { this->finalize(); }
 
 void SkDeflateWStream::finalize() {
-    TRACE_EVENT0("skia", TRACE_FUNC);
     if (!fImpl->fOut) {
         return;
     }
@@ -105,14 +93,13 @@ void SkDeflateWStream::finalize() {
 }
 
 bool SkDeflateWStream::write(const void* void_buffer, size_t len) {
-    TRACE_EVENT0("skia", TRACE_FUNC);
     if (!fImpl->fOut) {
         return false;
     }
     const char* buffer = (const char*)void_buffer;
     while (len > 0) {
         size_t tocopy =
-                std::min(len, sizeof(fImpl->fInBuffer) - fImpl->fInBufferIndex);
+                SkTMin(len, sizeof(fImpl->fInBuffer) - fImpl->fInBufferIndex);
         memcpy(fImpl->fInBuffer + fImpl->fInBufferIndex, buffer, tocopy);
         len -= tocopy;
         buffer += tocopy;

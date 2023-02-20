@@ -4,6 +4,4 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#ifdef __APPLE__
-#include <unistd.h>
-#endif
+// A dummy file so microhttpd compiles

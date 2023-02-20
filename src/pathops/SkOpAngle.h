@@ -7,27 +7,17 @@
 #ifndef SkOpAngle_DEFINED
 #define SkOpAngle_DEFINED
 
-#include "include/core/SkPath.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/pathops/SkLineParameters.h"
-#include "src/pathops/SkPathOpsCurve.h"
-#include "src/pathops/SkPathOpsTypes.h"
-
+#include "SkLineParameters.h"
+#include "SkPathOpsCurve.h"
 #if DEBUG_ANGLE
-#include "include/core/SkString.h"
+#include "SkString.h"
 #endif
 
-#include <cstdint>
-
-class SkOpCoincidence;
 class SkOpContour;
 class SkOpPtT;
 class SkOpSegment;
-class SkOpSpan;
 class SkOpSpanBase;
-struct SkDPoint;
-struct SkDVector;
+class SkOpSpan;
 
 class SkOpAngle {
 public:
@@ -107,7 +97,7 @@ public:
 
 private:
     bool after(SkOpAngle* test);
-    void alignmentSameSide(const SkOpAngle* test, int* order) const;
+    int allOnOneSide(const SkOpAngle* test);
     bool checkCrossesZero() const;
     bool checkParallel(SkOpAngle* );
     bool computeSector();
@@ -116,15 +106,11 @@ private:
     bool endsIntersect(SkOpAngle* );
     int findSector(SkPath::Verb verb, double x, double y) const;
     SkOpGlobalState* globalState() const;
-    int lineOnOneSide(const SkDPoint& origin, const SkDVector& line, const SkOpAngle* test,
-                      bool useOriginal) const;
-    int lineOnOneSide(const SkOpAngle* test, bool useOriginal);
-    int linesOnOriginalSide(const SkOpAngle* test);
     bool merge(SkOpAngle* );
     double midT() const;
     bool midToSide(const SkOpAngle* rh, bool* inside) const;
     bool oppositePlanes(const SkOpAngle* rh) const;
-    int orderable(SkOpAngle* rh);  // false == this < rh ; true == this > rh; -1 == unorderable
+    bool orderable(SkOpAngle* rh);  // false == this < rh ; true == this > rh
     void setSector();
     void setSpans();
     bool tangentsDiverge(const SkOpAngle* rh, double s0xt0);

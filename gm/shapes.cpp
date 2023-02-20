@@ -5,21 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTArray.h"
-#include "src/base/SkRandom.h"
+#include "gm.h"
+#include "SkRandom.h"
+#include "SkRRect.h"
 
 namespace skiagm {
 
@@ -31,15 +19,6 @@ namespace skiagm {
 class ShapesGM : public GM {
 protected:
     ShapesGM(const char* name, bool antialias) : fName(name), fAntialias(antialias) {
-        if (!antialias) {
-            fName.append("_bw");
-        }
-    }
-
-    SkString onShortName() final { return fName; }
-    SkISize onISize() override { return SkISize::Make(500, 500); }
-
-    void onOnceBeforeDraw() override {
         fShapes.push_back().setOval(SkRect::MakeXYWH(-5, 25, 200, 100));
         fRotations.push_back(21);
 
@@ -52,7 +31,7 @@ protected:
         fShapes.push_back().setRectXY(SkRect::MakeXYWH(15, -20, 100, 100), 20, 15);
         fRotations.push_back(282);
 
-        fSimpleShapeCount = fShapes.size();
+        fSimpleShapeCount = fShapes.count();
 
         fShapes.push_back().setNinePatch(SkRect::MakeXYWH(140, -50, 90, 110), 10, 5, 25, 35);
         fRotations.push_back(0);
@@ -71,6 +50,15 @@ protected:
         fShapes.push_back().setRectRadii(SkRect::MakeXYWH(180, -30, 80, 60), radii2);
         fRotations.push_back(295);
 
+        if (!antialias) {
+            fName.append("_bw");
+        }
+    }
+
+    SkString onShortName() override final { return fName; }
+    SkISize onISize() override { return SkISize::Make(500, 500); }
+
+    void onOnceBeforeDraw() override {
         fPaint.setAntiAlias(fAntialias);
     }
 
@@ -94,7 +82,7 @@ protected:
     int                  fSimpleShapeCount;
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 class SimpleShapesGM : public ShapesGM {
@@ -104,10 +92,10 @@ public:
 private:
     void drawShapes(SkCanvas* canvas) const override {
         SkRandom rand(2);
-        for (int i = 0; i < fShapes.size(); i++) {
+        for (int i = 0; i < fShapes.count(); i++) {
             SkPaint paint(fPaint);
             paint.setColor(rand.nextU() & ~0x808080);
-            paint.setAlphaf(0.5f);  // Use alpha to detect double blends.
+            paint.setAlpha(128);  // Use alpha to detect double blends.
             const SkRRect& shape = fShapes[i];
             canvas->save();
             canvas->rotate(fRotations[i]);
@@ -126,7 +114,7 @@ private:
         }
     }
 
-    using INHERITED = ShapesGM;
+    typedef ShapesGM INHERITED;
 };
 
 class InnerShapesGM : public ShapesGM {
@@ -136,33 +124,14 @@ public:
 private:
     void drawShapes(SkCanvas* canvas) const override {
         SkRandom rand;
-        for (int i = 0; i < fShapes.size(); i++) {
+        for (int i = 0; i < fShapes.count(); i++) {
             const SkRRect& outer = fShapes[i];
             const SkRRect& inner = fShapes[(i * 7 + 11) % fSimpleShapeCount];
-            float s = 0.95f * std::min(outer.rect().width() / inner.rect().width(),
-                                       outer.rect().height() / inner.rect().height());
+            float s = 0.95f * SkTMin(outer.rect().width() / inner.rect().width(),
+                                     outer.rect().height() / inner.rect().height());
             SkMatrix innerXform;
             float dx = (rand.nextF() - 0.5f) * (outer.rect().width() - s * inner.rect().width());
             float dy = (rand.nextF() - 0.5f) * (outer.rect().height() - s * inner.rect().height());
-            // Fixup inner rects so they don't reach outside the outer rect.
-            switch (i) {
-                case 0:
-                    s *= .85f;
-                    break;
-                case 8:
-                    s *= .4f;
-                    dx = dy = 0;
-                    break;
-                case 5:
-                    s *= .75f;
-                    dx = dy = 0;
-                    break;
-                case 6:
-                    s *= .65f;
-                    dx = -5;
-                    dy = 10;
-                    break;
-            }
             innerXform.setTranslate(outer.rect().centerX() + dx, outer.rect().centerY() + dy);
             if (s < 1) {
                 innerXform.preScale(s, s);
@@ -172,7 +141,7 @@ private:
             inner.transform(innerXform, &xformedInner);
             SkPaint paint(fPaint);
             paint.setColor(rand.nextU() & ~0x808080);
-            paint.setAlphaf(0.5f);  // Use alpha to detect double blends.
+            paint.setAlpha(128);  // Use alpha to detect double blends.
             canvas->save();
             canvas->rotate(fRotations[i]);
             canvas->drawDRRect(outer, xformedInner, paint);
@@ -180,7 +149,7 @@ private:
         }
     }
 
-    using INHERITED = ShapesGM;
+    typedef ShapesGM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -190,4 +159,4 @@ DEF_GM( return new SimpleShapesGM(false); )
 DEF_GM( return new InnerShapesGM(true); )
 DEF_GM( return new InnerShapesGM(false); )
 
-}  // namespace skiagm
+}

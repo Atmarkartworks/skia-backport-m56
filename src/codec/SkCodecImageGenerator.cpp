@@ -5,106 +5,67 @@
  * found in the LICENSE file.
  */
 
-#include "src/codec/SkCodecImageGenerator.h"
+#include "SkCodecImageGenerator.h"
 
-#include "include/codec/SkEncodedOrigin.h"
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPixmap.h"
-#include "include/core/SkTypes.h"
-#include "src/codec/SkPixmapUtils.h"
-
-#include <utility>
-
-
-std::unique_ptr<SkImageGenerator> SkCodecImageGenerator::MakeFromEncodedCodec(
-        sk_sp<SkData> data, std::optional<SkAlphaType> at) {
-    auto codec = SkCodec::MakeFromData(data);
+SkImageGenerator* SkCodecImageGenerator::NewFromEncodedCodec(sk_sp<SkData> data) {
+    SkCodec* codec = SkCodec::NewFromData(data);
     if (nullptr == codec) {
         return nullptr;
     }
 
-    return std::unique_ptr<SkImageGenerator>(new SkCodecImageGenerator(std::move(codec), data, at));
+    return new SkCodecImageGenerator(codec, data);
 }
 
-std::unique_ptr<SkImageGenerator> SkCodecImageGenerator::MakeFromCodec(
-        std::unique_ptr<SkCodec> codec) {
-    return codec ? std::unique_ptr<SkImageGenerator>(
-                           new SkCodecImageGenerator(std::move(codec), nullptr, std::nullopt))
-                 : nullptr;
-}
+static SkImageInfo make_premul(const SkImageInfo& info) {
+    if (kUnpremul_SkAlphaType == info.alphaType()) {
+        return info.makeAlphaType(kPremul_SkAlphaType);
+    }
 
-static SkImageInfo adjust_info(SkCodec* codec, std::optional<SkAlphaType> at) {
-    SkASSERT(at != kOpaque_SkAlphaType);
-    SkImageInfo info = codec->getInfo();
-    if (at.has_value()) {
-        // If a specific alpha type was requested, use that.
-        info = info.makeAlphaType(*at);
-    } else if (kUnpremul_SkAlphaType == info.alphaType()) {
-        // Otherwise, prefer premul over unpremul (this produces better filtering in general)
-        info = info.makeAlphaType(kPremul_SkAlphaType);
-    }
-    if (SkEncodedOriginSwapsWidthHeight(codec->getOrigin())) {
-        info = SkPixmapUtils::SwapWidthHeight(info);
-    }
     return info;
 }
 
-SkCodecImageGenerator::SkCodecImageGenerator(std::unique_ptr<SkCodec> codec,
-                                             sk_sp<SkData> data,
-                                             std::optional<SkAlphaType> at)
-        : INHERITED(adjust_info(codec.get(), at))
-        , fCodec(std::move(codec))
-        , fData(std::move(data)) {}
+SkCodecImageGenerator::SkCodecImageGenerator(SkCodec* codec, sk_sp<SkData> data)
+    : INHERITED(make_premul(codec->getInfo()))
+    , fCodec(codec)
+    , fData(std::move(data))
+{}
 
-sk_sp<SkData> SkCodecImageGenerator::onRefEncodedData() {
-    return fData;
+SkData* SkCodecImageGenerator::onRefEncodedData(SK_REFENCODEDDATA_CTXPARAM) {
+    return SkRef(fData.get());
 }
 
-bool SkCodecImageGenerator::getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes, const SkCodec::Options* options) {
-    SkPixmap dst(info, pixels, rowBytes);
+bool SkCodecImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
+        SkPMColor ctable[], int* ctableCount) {
 
-    auto decode = [this, options](const SkPixmap& pm) {
-        SkCodec::Result result = fCodec->getPixels(pm, options);
-        switch (result) {
-            case SkCodec::kSuccess:
-            case SkCodec::kIncompleteInput:
-            case SkCodec::kErrorInInput:
-                return true;
-            default:
-                return false;
-        }
-    };
+    // FIXME (msarett):
+    // We don't give the client the chance to request an SkColorSpace.  Until we improve
+    // the API, let's assume that they want legacy mode.
+    SkImageInfo decodeInfo = info.makeColorSpace(nullptr);
 
-    return SkPixmapUtils::Orient(dst, fCodec->getOrigin(), decode);
-}
-
-bool SkCodecImageGenerator::onGetPixels(const SkImageInfo& requestInfo, void* requestPixels,
-                                        size_t requestRowBytes, const Options& options) {
-    return this->getPixels(requestInfo, requestPixels, requestRowBytes, nullptr);
-}
-
-bool SkCodecImageGenerator::onQueryYUVAInfo(
-        const SkYUVAPixmapInfo::SupportedDataTypes& supportedDataTypes,
-        SkYUVAPixmapInfo* yuvaPixmapInfo) const {
-    return fCodec->queryYUVAInfo(supportedDataTypes, yuvaPixmapInfo);
-}
-
-bool SkCodecImageGenerator::onGetYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps) {
-    switch (fCodec->getYUVAPlanes(yuvaPixmaps)) {
+    SkCodec::Result result = fCodec->getPixels(decodeInfo, pixels, rowBytes, nullptr, ctable,
+            ctableCount);
+    switch (result) {
         case SkCodec::kSuccess:
         case SkCodec::kIncompleteInput:
-        case SkCodec::kErrorInInput:
             return true;
         default:
             return false;
     }
 }
 
-SkISize SkCodecImageGenerator::getScaledDimensions(float desiredScale) const {
-    SkISize size = fCodec->getScaledDimensions(desiredScale);
-    if (SkEncodedOriginSwapsWidthHeight(fCodec->getOrigin())) {
-        std::swap(size.fWidth, size.fHeight);
+bool SkCodecImageGenerator::onQueryYUV8(SkYUVSizeInfo* sizeInfo, SkYUVColorSpace* colorSpace) const
+{
+    return fCodec->queryYUV8(sizeInfo, colorSpace);
+}
+
+bool SkCodecImageGenerator::onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo, void* planes[3]) {
+    SkCodec::Result result = fCodec->getYUV8Planes(sizeInfo, planes);
+
+    switch (result) {
+        case SkCodec::kSuccess:
+        case SkCodec::kIncompleteInput:
+            return true;
+        default:
+            return false;
     }
-    return size;
 }

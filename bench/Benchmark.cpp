@@ -5,15 +5,21 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
+#include "Benchmark.h"
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/utils/SkParse.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkParse.h"
+
+const char* SkTriState::Name[] = { "default", "true", "false" };
 
 template BenchRegistry* BenchRegistry::gHead;
 
-Benchmark::Benchmark() {}
+Benchmark::Benchmark() {
+    fForceAlpha = 0xFF;
+    fDither = SkTriState::kDefault;
+    fOrMask = fClearMask = 0;
+}
 
 const char* Benchmark::getName() {
     return this->onGetName();
@@ -53,7 +59,15 @@ void Benchmark::draw(int loops, SkCanvas* canvas) {
 }
 
 void Benchmark::setupPaint(SkPaint* paint) {
+    paint->setAlpha(fForceAlpha);
     paint->setAntiAlias(true);
+    paint->setFilterQuality(kNone_SkFilterQuality);
+
+    paint->setFlags((paint->getFlags() & ~fClearMask) | fOrMask);
+
+    if (SkTriState::kDefault != fDither) {
+        paint->setDither(SkTriState::kTrue == fDither);
+    }
 }
 
 SkIPoint Benchmark::onGetSize() {

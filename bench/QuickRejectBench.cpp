@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkRandom.h"
 
 class QuickRejectBench : public Benchmark {
     enum { N = 1000000 };
@@ -53,7 +53,7 @@ class ConcatBench : public Benchmark {
 
     void onDraw(int loops, SkCanvas* canvas) override {
         while (loops --> 0) {
-            canvas->setMatrix(SkMatrix::Scale(3, 3));
+            canvas->setMatrix(SkMatrix::MakeScale(3.0f));
             canvas->concat(fMatrix);
         }
     }

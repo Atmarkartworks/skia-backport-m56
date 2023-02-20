@@ -5,34 +5,71 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypes.h"
-#include "include/private/chromium/SkDiscardableMemory.h"
-#include "src/core/SkBitmapCache.h"
-#include "src/core/SkCachedData.h"
-#include "src/core/SkMipmap.h"
-#include "src/core/SkResourceCache.h"
-#include "src/image/SkImage_Base.h"
-#include "src/lazy/SkDiscardableMemoryPool.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <initializer_list>
-#include <memory>
+#include "Test.h"
+#include "SkBitmapCache.h"
+#include "SkCanvas.h"
+#include "SkDiscardableMemoryPool.h"
+#include "SkGraphics.h"
+#include "SkPicture.h"
+#include "SkPictureRecorder.h"
+#include "SkResourceCache.h"
+#include "SkSurface.h"
+#include "SkTypes.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////
+
+static void make_bitmap(SkBitmap* bitmap, const SkImageInfo& info, SkBitmap::Allocator* allocator) {
+    if (info.colorType() == kIndex_8_SkColorType) {
+        bitmap->setInfo(info);
+        SkPMColor ctStorage[256];
+        memset(ctStorage, 0xFF, sizeof(ctStorage)); // init with opaque-white for the moment
+        sk_sp<SkColorTable> ctable(new SkColorTable(ctStorage, 256));
+        bitmap->allocPixels(allocator, ctable.get());
+    } else if (allocator) {
+        bitmap->setInfo(info);
+        allocator->allocPixelRef(bitmap, 0);
+    } else {
+        bitmap->allocPixels(info);
+    }
+}
+
+// https://bug.skia.org/2894
+DEF_TEST(BitmapCache_add_rect, reporter) {
+    SkResourceCache::DiscardableFactory factory = SkResourceCache::GetDiscardableFactory();
+    SkBitmap::Allocator* allocator = SkBitmapCache::GetAllocator();
+
+    std::unique_ptr<SkResourceCache> cache;
+    if (factory) {
+        cache.reset(new SkResourceCache(factory));
+    } else {
+        const size_t byteLimit = 100 * 1024;
+        cache.reset(new SkResourceCache(byteLimit));
+    }
+    SkBitmap cachedBitmap;
+    make_bitmap(&cachedBitmap, SkImageInfo::MakeN32Premul(5, 5), allocator);
+    cachedBitmap.setImmutable();
+
+    SkBitmap bm;
+    SkIRect rect = SkIRect::MakeWH(5, 5);
+    uint32_t cachedID = cachedBitmap.getGenerationID();
+    SkPixelRef* cachedPR = cachedBitmap.pixelRef();
+
+    // Wrong subset size
+    REPORTER_ASSERT(reporter, !SkBitmapCache::Add(cachedPR, SkIRect::MakeWH(4, 6), cachedBitmap, cache.get()));
+    REPORTER_ASSERT(reporter, !SkBitmapCache::Find(cachedID, rect, &bm, cache.get()));
+    // Wrong offset value
+    REPORTER_ASSERT(reporter, !SkBitmapCache::Add(cachedPR, SkIRect::MakeXYWH(-1, 0, 5, 5), cachedBitmap, cache.get()));
+    REPORTER_ASSERT(reporter, !SkBitmapCache::Find(cachedID, rect, &bm, cache.get()));
+
+    // Should not be in the cache
+    REPORTER_ASSERT(reporter, !SkBitmapCache::Find(cachedID, rect, &bm, cache.get()));
+
+    REPORTER_ASSERT(reporter, SkBitmapCache::Add(cachedPR, rect, cachedBitmap, cache.get()));
+    // Should be in the cache, we just added it
+    REPORTER_ASSERT(reporter, SkBitmapCache::Find(cachedID, rect, &bm, cache.get()));
+}
+
+#include "SkMipMap.h"
 
 enum LockedState {
     kNotLocked,
@@ -58,17 +95,19 @@ static void test_mipmapcache(skiatest::Reporter* reporter, SkResourceCache* cach
     SkBitmap src;
     src.allocN32Pixels(5, 5);
     src.setImmutable();
-    sk_sp<SkImage> img = src.asImage();
-    const auto desc = SkBitmapCacheDesc::Make(img.get());
 
-    const SkMipmap* mipmap = SkMipmapCache::FindAndRef(desc, cache);
+    const SkDestinationSurfaceColorMode colorMode = SkDestinationSurfaceColorMode::kLegacy;
+
+    const SkMipMap* mipmap = SkMipMapCache::FindAndRef(SkBitmapCacheDesc::Make(src), colorMode,
+                                                       cache);
     REPORTER_ASSERT(reporter, nullptr == mipmap);
 
-    mipmap = SkMipmapCache::AddAndRef(as_IB(img.get()), cache);
+    mipmap = SkMipMapCache::AddAndRef(src, colorMode, cache);
     REPORTER_ASSERT(reporter, mipmap);
 
     {
-        const SkMipmap* mm = SkMipmapCache::FindAndRef(desc, cache);
+        const SkMipMap* mm = SkMipMapCache::FindAndRef(SkBitmapCacheDesc::Make(src), colorMode,
+                                                       cache);
         REPORTER_ASSERT(reporter, mm);
         REPORTER_ASSERT(reporter, mm == mipmap);
         mm->unref();
@@ -82,7 +121,7 @@ static void test_mipmapcache(skiatest::Reporter* reporter, SkResourceCache* cach
     check_data(reporter, mipmap, 1, kInCache, kNotLocked);
 
     // find us again
-    mipmap = SkMipmapCache::FindAndRef(desc, cache);
+    mipmap = SkMipMapCache::FindAndRef(SkBitmapCacheDesc::Make(src), colorMode, cache);
     check_data(reporter, mipmap, 2, kInCache, kLocked);
 
     cache->purgeAll();
@@ -92,48 +131,125 @@ static void test_mipmapcache(skiatest::Reporter* reporter, SkResourceCache* cach
 }
 
 static void test_mipmap_notify(skiatest::Reporter* reporter, SkResourceCache* cache) {
+    const SkDestinationSurfaceColorMode colorMode = SkDestinationSurfaceColorMode::kLegacy;
     const int N = 3;
 
     SkBitmap src[N];
-    sk_sp<SkImage> img[N];
-    SkBitmapCacheDesc desc[N];
     for (int i = 0; i < N; ++i) {
         src[i].allocN32Pixels(5, 5);
         src[i].setImmutable();
-        img[i] = src[i].asImage();
-        SkMipmapCache::AddAndRef(as_IB(img[i].get()), cache)->unref();
-        desc[i] = SkBitmapCacheDesc::Make(img[i].get());
+        SkMipMapCache::AddAndRef(src[i], colorMode, cache)->unref();
     }
 
     for (int i = 0; i < N; ++i) {
-        const SkMipmap* mipmap = SkMipmapCache::FindAndRef(desc[i], cache);
-        // We're always using a local cache, so we know we won't be purged by other threads
-        REPORTER_ASSERT(reporter, mipmap);
-        SkSafeUnref(mipmap);
-
-        img[i].reset(); // delete the image, which *should not* remove us from the cache
-        mipmap = SkMipmapCache::FindAndRef(desc[i], cache);
-        REPORTER_ASSERT(reporter, mipmap);
+        const SkMipMap* mipmap = SkMipMapCache::FindAndRef(SkBitmapCacheDesc::Make(src[i]),
+                                                           colorMode, cache);
+        if (cache) {
+            // if cache is null, we're working on the global cache, and other threads might purge
+            // it, making this check fragile.
+            REPORTER_ASSERT(reporter, mipmap);
+        }
         SkSafeUnref(mipmap);
 
         src[i].reset(); // delete the underlying pixelref, which *should* remove us from the cache
-        mipmap = SkMipmapCache::FindAndRef(desc[i], cache);
+
+        mipmap = SkMipMapCache::FindAndRef(SkBitmapCacheDesc::Make(src[i]), colorMode, cache);
         REPORTER_ASSERT(reporter, !mipmap);
     }
 }
 
-static SkDiscardableMemoryPool* gPool = nullptr;
-static int gFactoryCalls = 0;
+static void test_bitmap_notify(skiatest::Reporter* reporter, SkResourceCache* cache) {
+    const SkIRect subset = SkIRect::MakeWH(5, 5);
+    const int N = 3;
+    SkBitmap src[N], dst[N];
+    for (int i = 0; i < N; ++i) {
+        src[i].allocN32Pixels(5, 5);
+        src[i].setImmutable();
+        dst[i].allocN32Pixels(5, 5);
+        dst[i].setImmutable();
+        SkBitmapCache::Add(src[i].pixelRef(), subset, dst[i], cache);
+    }
 
+    for (int i = 0; i < N; ++i) {
+        const uint32_t genID = src[i].getGenerationID();
+        SkBitmap result;
+        bool found = SkBitmapCache::Find(genID, subset, &result, cache);
+        if (cache) {
+            // if cache is null, we're working on the global cache, and other threads might purge
+            // it, making this check fragile.
+            REPORTER_ASSERT(reporter, found);
+        }
+
+        src[i].reset(); // delete the underlying pixelref, which *should* remove us from the cache
+
+        found = SkBitmapCache::Find(genID, subset, &result, cache);
+        REPORTER_ASSERT(reporter, !found);
+    }
+}
+
+#include "SkDiscardableMemoryPool.h"
+
+static SkDiscardableMemoryPool* gPool = 0;
 static SkDiscardableMemory* pool_factory(size_t bytes) {
     SkASSERT(gPool);
-    gFactoryCalls++;
     return gPool->create(bytes);
 }
 
 static void testBitmapCache_discarded_bitmap(skiatest::Reporter* reporter, SkResourceCache* cache,
                                              SkResourceCache::DiscardableFactory factory) {
+    SkBitmap::Allocator* allocator = cache->allocator();
+    const SkColorType testTypes[] = {
+        kAlpha_8_SkColorType,
+        kRGB_565_SkColorType,
+        kRGBA_8888_SkColorType,
+        kBGRA_8888_SkColorType,
+        kIndex_8_SkColorType,
+        kGray_8_SkColorType
+    };
+    for (const SkColorType testType : testTypes) {
+        SkBitmap cachedBitmap;
+        make_bitmap(&cachedBitmap, SkImageInfo::Make(5, 5, testType, kPremul_SkAlphaType),
+                    allocator);
+        cachedBitmap.setImmutable();
+        cachedBitmap.unlockPixels();
+
+        SkBitmap bm;
+        SkIRect rect = SkIRect::MakeWH(5, 5);
+
+        // Add a bitmap to the cache.
+        REPORTER_ASSERT(reporter, SkBitmapCache::Add(cachedBitmap.pixelRef(), rect, cachedBitmap,
+                                                     cache));
+        REPORTER_ASSERT(reporter, SkBitmapCache::Find(cachedBitmap.getGenerationID(), rect, &bm,
+                                                      cache));
+
+        // Finding more than once works fine.
+        REPORTER_ASSERT(reporter, SkBitmapCache::Find(cachedBitmap.getGenerationID(), rect, &bm,
+                                                      cache));
+        bm.unlockPixels();
+
+        // Drop the pixels in the bitmap.
+        if (factory) {
+            REPORTER_ASSERT(reporter, gPool->getRAMUsed() > 0);
+            gPool->dumpPool();
+
+            // The bitmap is not in the cache since it has been dropped.
+            REPORTER_ASSERT(reporter, !SkBitmapCache::Find(cachedBitmap.getGenerationID(), rect,
+                                                           &bm, cache));
+        }
+
+        make_bitmap(&cachedBitmap, SkImageInfo::Make(5, 5, testType, kPremul_SkAlphaType),
+                    allocator);
+        cachedBitmap.setImmutable();
+        cachedBitmap.unlockPixels();
+
+        // We can add the bitmap back to the cache and find it again.
+        REPORTER_ASSERT(reporter, SkBitmapCache::Add(cachedBitmap.pixelRef(), rect, cachedBitmap,
+                                                     cache));
+        REPORTER_ASSERT(reporter, SkBitmapCache::Find(cachedBitmap.getGenerationID(), rect, &bm,
+                                                      cache));
+    }
     test_mipmapcache(reporter, cache);
+    test_bitmap_notify(reporter, cache);
     test_mipmap_notify(reporter, cache);
 }
 
@@ -144,13 +260,12 @@ DEF_TEST(BitmapCache_discarded_bitmap, reporter) {
         testBitmapCache_discarded_bitmap(reporter, &cache, nullptr);
     }
     {
-        sk_sp<SkDiscardableMemoryPool> pool(SkDiscardableMemoryPool::Make(byteLimit));
+        sk_sp<SkDiscardableMemoryPool> pool(SkDiscardableMemoryPool::Create(byteLimit, nullptr));
         gPool = pool.get();
         SkResourceCache::DiscardableFactory factory = pool_factory;
         SkResourceCache cache(factory);
         testBitmapCache_discarded_bitmap(reporter, &cache, factory);
     }
-    REPORTER_ASSERT(reporter, gFactoryCalls > 0);
 }
 
 static void test_discarded_image(skiatest::Reporter* reporter, const SkMatrix& transform,
@@ -166,20 +281,23 @@ static void test_discarded_image(skiatest::Reporter* reporter, const SkMatrix& t
 
         sk_sp<SkImage> image(buildImage());
 
+        // always use high quality to ensure caching when scaled
+        SkPaint paint;
+        paint.setFilterQuality(kHigh_SkFilterQuality);
+
         // draw the image (with a transform, to tickle different code paths) to ensure
         // any associated resources get cached
         canvas->concat(transform);
-        // always use high quality to ensure caching when scaled
-        canvas->drawImage(image, 0, 0, SkSamplingOptions({1.0f/3, 1.0f/3}));
+        canvas->drawImage(image, 0, 0, &paint);
 
-        const auto desc = SkBitmapCacheDesc::Make(image.get());
+        auto imageId = image->uniqueID();
 
         // delete the image
         image.reset(nullptr);
 
         // all resources should have been purged
         SkBitmap result;
-        REPORTER_ASSERT(reporter, !SkBitmapCache::Find(desc, &result));
+        REPORTER_ASSERT(reporter, !SkBitmapCache::Find(imageId, &result));
     }
 }
 
@@ -195,11 +313,11 @@ DEF_TEST(BitmapCache_discarded_image, reporter) {
     // To exercise the latter, we draw scaled bitmap images using HQ filters.
 
     const SkMatrix xforms[] = {
-        SkMatrix::Scale(1, 1),
-        SkMatrix::Scale(1.7f, 0.5f),
+        SkMatrix::MakeScale(1, 1),
+        SkMatrix::MakeScale(1.7f, 0.5f),
     };
 
-    for (size_t i = 0; i < std::size(xforms); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(xforms); ++i) {
         test_discarded_image(reporter, xforms[i], []() {
             auto surface(SkSurface::MakeRasterN32Premul(10, 10));
             surface->getCanvas()->clear(SK_ColorCYAN);
@@ -211,94 +329,7 @@ DEF_TEST(BitmapCache_discarded_image, reporter) {
             SkCanvas* canvas = recorder.beginRecording(10, 10);
             canvas->clear(SK_ColorCYAN);
             return SkImage::MakeFromPicture(recorder.finishRecordingAsPicture(),
-                                            SkISize::Make(10, 10), nullptr, nullptr,
-                                            SkImage::BitDepth::kU8,
-                                            SkColorSpace::MakeSRGB());
+                                            SkISize::Make(10, 10), nullptr, nullptr);
         });
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-static void* gTestNamespace;
-
-struct TestKey : SkResourceCache::Key {
-    int32_t fData;
-
-    TestKey(int sharedID, int32_t data) : fData(data) {
-        this->init(&gTestNamespace, sharedID, sizeof(fData));
-    }
-};
-
-struct TestRec : SkResourceCache::Rec {
-    enum {
-        kDidInstall = 1 << 0,
-    };
-
-    TestKey fKey;
-    int*    fFlags;
-    bool    fCanBePurged;
-
-    TestRec(int sharedID, int32_t data, int* flagPtr) : fKey(sharedID, data), fFlags(flagPtr) {
-        fCanBePurged = false;
-    }
-
-    const Key& getKey() const override { return fKey; }
-    size_t bytesUsed() const override { return 1024; /* just need a value */ }
-    bool canBePurged() override { return fCanBePurged; }
-    void postAddInstall(void*) override {
-        *fFlags |= kDidInstall;
-    }
-    const char* getCategory() const override { return "test-category"; }
-};
-
-static void test_duplicate_add(SkResourceCache* cache, skiatest::Reporter* reporter,
-                               bool purgable) {
-    int sharedID = 1;
-    int data = 0;
-
-    int flags0 = 0, flags1 = 0;
-
-    auto rec0 = std::make_unique<TestRec>(sharedID, data, &flags0);
-    auto rec1 = std::make_unique<TestRec>(sharedID, data, &flags1);
-    SkASSERT(rec0->getKey() == rec1->getKey());
-
-    TestRec* r0 = rec0.get();   // save the bare-pointer since we will release rec0
-    r0->fCanBePurged = purgable;
-
-    REPORTER_ASSERT(reporter, !(flags0 & TestRec::kDidInstall));
-    REPORTER_ASSERT(reporter, !(flags1 & TestRec::kDidInstall));
-
-    cache->add(rec0.release(), nullptr);
-    REPORTER_ASSERT(reporter, flags0 & TestRec::kDidInstall);
-    REPORTER_ASSERT(reporter, !(flags1 & TestRec::kDidInstall));
-    flags0 = 0; // reset the flag
-
-    cache->add(rec1.release(), nullptr);
-    if (purgable) {
-        // we purged rec0, and did install rec1
-        REPORTER_ASSERT(reporter, !(flags0 & TestRec::kDidInstall));
-        REPORTER_ASSERT(reporter, flags1 & TestRec::kDidInstall);
-    } else {
-        // we re-used rec0 and did not install rec1
-        REPORTER_ASSERT(reporter, flags0 & TestRec::kDidInstall);
-        REPORTER_ASSERT(reporter, !(flags1 & TestRec::kDidInstall));
-        r0->fCanBePurged = true;  // so we can cleanup the cache
-    }
-}
-
-/*
- *  Test behavior when the same key is added more than once.
- */
-DEF_TEST(ResourceCache_purge, reporter) {
-    for (bool purgable : { false, true }) {
-        {
-            SkResourceCache cache(1024 * 1024);
-            test_duplicate_add(&cache, reporter, purgable);
-        }
-        {
-            SkResourceCache cache(SkDiscardableMemory::Create);
-            test_duplicate_add(&cache, reporter, purgable);
-        }
     }
 }

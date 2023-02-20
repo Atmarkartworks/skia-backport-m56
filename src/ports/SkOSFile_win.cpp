@@ -5,24 +5,16 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-#if defined(SK_BUILD_FOR_WIN)
+#include "SkTypes.h"
+#if defined(SK_BUILD_FOR_WIN32)
 
-#include "include/private/base/SkNoncopyable.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkTFitsIn.h"
-#include "src/base/SkLeanWindows.h"
-#include "src/core/SkOSFile.h"
-#include "src/core/SkStringUtils.h"
+#include "SkLeanWindows.h"
+#include "SkOSFile.h"
+#include "SkTFitsIn.h"
 
 #include <io.h>
-#include <new>
 #include <stdio.h>
 #include <sys/stat.h>
-
-void sk_fsync(FILE* f) {
-    _commit(sk_fileno(f));
-}
 
 bool sk_exists(const char *path, SkFILE_Flags flags) {
     int mode = 0; // existence
@@ -132,34 +124,6 @@ void* sk_fmmap(FILE* f, size_t* length) {
     return sk_fdmmap(fileno, length);
 }
 
-size_t sk_qread(FILE* file, void* buffer, size_t count, size_t offset) {
-    int fileno = sk_fileno(file);
-    HANDLE fileHandle = (HANDLE)_get_osfhandle(fileno);
-    if (INVALID_HANDLE_VALUE == file) {
-        return SIZE_MAX;
-    }
-
-    OVERLAPPED overlapped;
-    memset(&overlapped, 0, sizeof(overlapped));
-    ULARGE_INTEGER winOffset;
-    winOffset.QuadPart = offset;
-    overlapped.Offset = winOffset.LowPart;
-    overlapped.OffsetHigh = winOffset.HighPart;
-
-    if (!SkTFitsIn<DWORD>(count)) {
-        count = std::numeric_limits<DWORD>::max();
-    }
-
-    DWORD bytesRead;
-    if (ReadFile(fileHandle, buffer, static_cast<DWORD>(count), &bytesRead, &overlapped)) {
-        return bytesRead;
-    }
-    if (GetLastError() == ERROR_HANDLE_EOF) {
-        return 0;
-    }
-    return SIZE_MAX;
-}
-
 ////////////////////////////////////////////////////////////////////////////
 
 struct SkOSFileIterData {
@@ -194,15 +158,15 @@ static uint16_t* concat_to_16(const char src[], const char suffix[]) {
     return dst;
 }
 
-SkOSFile::Iter::Iter() { new (fSelf) SkOSFileIterData; }
+SkOSFile::Iter::Iter() { new (fSelf.get()) SkOSFileIterData; }
 
 SkOSFile::Iter::Iter(const char path[], const char suffix[]) {
-    new (fSelf) SkOSFileIterData;
+    new (fSelf.get()) SkOSFileIterData;
     this->reset(path, suffix);
 }
 
 SkOSFile::Iter::~Iter() {
-    SkOSFileIterData& self = *reinterpret_cast<SkOSFileIterData*>(fSelf);
+    SkOSFileIterData& self = *static_cast<SkOSFileIterData*>(fSelf.get());
     sk_free(self.fPath16);
     if (self.fHandle) {
         ::FindClose(self.fHandle);
@@ -211,7 +175,7 @@ SkOSFile::Iter::~Iter() {
 }
 
 void SkOSFile::Iter::reset(const char path[], const char suffix[]) {
-    SkOSFileIterData& self = *reinterpret_cast<SkOSFileIterData*>(fSelf);
+    SkOSFileIterData& self = *static_cast<SkOSFileIterData*>(fSelf.get());
     if (self.fHandle) {
         ::FindClose(self.fHandle);
         self.fHandle = 0;
@@ -257,16 +221,13 @@ static bool get_the_file(HANDLE handle, SkString* name, WIN32_FIND_DATAW* dataPt
     }
     // if we get here, we've found a file/dir
     if (name) {
-        const uint16_t* utf16name = (const uint16_t*)dataPtr->cFileName;
-        const uint16_t* ptr = utf16name;
-        while (*ptr != 0) { ++ptr; }
-        *name = SkStringFromUTF16(utf16name, ptr - utf16name);
+        name->setUTF16((uint16_t*)dataPtr->cFileName);
     }
     return true;
 }
 
 bool SkOSFile::Iter::next(SkString* name, bool getDir) {
-    SkOSFileIterData& self = *reinterpret_cast<SkOSFileIterData*>(fSelf);
+    SkOSFileIterData& self = *static_cast<SkOSFileIterData*>(fSelf.get());
     WIN32_FIND_DATAW    data;
     WIN32_FIND_DATAW*   dataPtr = nullptr;
 
@@ -283,4 +244,4 @@ bool SkOSFile::Iter::next(SkString* name, bool getDir) {
     return self.fHandle != (HANDLE)~0 && get_the_file(self.fHandle, name, dataPtr, getDir);
 }
 
-#endif//defined(SK_BUILD_FOR_WIN)
+#endif//defined(SK_BUILD_FOR_WIN32)

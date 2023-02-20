@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-#include "include/private/chromium/SkDiscardableMemory.h"
-#include "src/lazy/SkDiscardableMemoryPool.h"
+#include "SkDiscardableMemory.h"
+#include "SkDiscardableMemoryPool.h"
+#include "SkTypes.h"
 
 SkDiscardableMemory* SkDiscardableMemory::Create(size_t bytes) {
     return SkGetGlobalDiscardableMemoryPool()->create(bytes);

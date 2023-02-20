@@ -6,18 +6,24 @@
     <title></title>
 <div style="height:0">
 
-    <div id="cubics">
-{{{fX=124.70011901855469 fY=9.3718261718750000 } {fX=124.66775026544929 fY=9.3744316215161234 } {fX=124.63530969619751 fY=9.3770743012428284 }{fX=124.60282897949219 fY=9.3797206878662109 } id=10      
-{{{fX=124.70011901855469 fY=9.3718004226684570 } {fX=124.66775026544929 fY=9.3744058723095804 } {fX=124.63530969619751 fY=9.3770485520362854 } {fX=124.60282897949219 fY=9.3796949386596680 } id=1
-{{{fX=124.70011901855469 fY=9.3718004226684570 } {fX=124.66786243087600 fY=9.3743968522034287 } {fX=124.63553249625420 fY=9.3770303056986286 } {fX=124.60316467285156 fY=9.3796672821044922 } id=2
-    </div>
+<div id="cubics">
+{{{123.637985f, 102.405312f}, {125.172699f, 104.575714f}, {123.387383f, 106.91227f}}} id=7
+{{{123.387383f, 106.91227f}, {122.784996f, 106.452003f}}} id=8
+{{{122.784996f, 106.452003f}, {123.388428f, 106.910896f}}} id=9
+{{{123.388428f, 106.910896f}, {123.365623f, 106.94088f}, {123.320007f, 107.000946f}}} id=10
+</div>
 
+<div id="q1">
+{{{123.637985f, 102.405312f}, {125.172699f, 104.575714f}, {123.387383f, 106.91227f}}} id=7
+{{{123.388428f, 106.910896f}, {123.365623f, 106.94088f}, {123.320007f, 107.000946f}}} id=10
+    </div>
     </div>
 
 <script type="text/javascript">
 
     var testDivs = [
-    cubics,
+    q1,
+    cubics
     ];
 
     var decimal_places = 3;
@@ -29,9 +35,8 @@
 
     var subscale = 1;
     var xmin, xmax, ymin, ymax;
-    var hscale, vscale;
-    var hinitScale, vinitScale;
-    var uniformScale = true;
+    var scale;
+    var initScale;
     var mouseX, mouseY;
     var mouseDown = false;
     var srcLeft, srcTop;
@@ -137,10 +142,9 @@
             subscale /= 10;
         }
         setScale(xmin, xmax, ymin, ymax);
-        mouseX = (screenWidth / 2) / hscale + srcLeft;
-        mouseY = (screenHeight / 2) / vscale + srcTop;
-        hinitScale = hscale;
-        vinitScale = vscale;
+        mouseX = (screenWidth / 2) / scale + srcLeft;
+        mouseY = (screenHeight / 2) / scale + srcTop;
+        initScale = scale;
     }
 
     function setScale(x0, x1, y0, y1) {
@@ -151,26 +155,19 @@
         var yDigits = Math.ceil(Math.log(Math.abs(ymax)) / Math.log(10));
         usableWidth -= (xDigits + yDigits) * 10;
         usableWidth -= decimal_places * 10;
-        hscale = usableWidth / srcWidth;
-        vscale = screenHeight / srcHeight;
-        if (uniformScale) {
-            hscale = Math.min(hscale, vscale);
-            vscale = hscale;
-        }
-        var hinvScale = 1 / hscale;
-        var vinvScale = 1 / vscale;
-        var sxmin = x0 - hinvScale * 5;
-        var symin = y0 - vinvScale * 10;
-        var sxmax = x1 + hinvScale * (6 * decimal_places + 10);
-        var symax = y1 + vinvScale * 10;
+        var hscale = usableWidth / srcWidth;
+        var vscale = screenHeight / srcHeight;
+        scale = Math.min(hscale, vscale);
+        var invScale = 1 / scale;
+        var sxmin = x0 - invScale * 5;
+        var symin = y0 - invScale * 10;
+        var sxmax = x1 + invScale * (6 * decimal_places + 10);
+        var symax = y1 + invScale * 10;
         srcWidth = sxmax - sxmin;
         srcHeight = symax - symin;
         hscale = usableWidth / srcWidth;
         vscale = screenHeight / srcHeight;
-        if (uniformScale) {
-            hscale = Math.min(hscale, vscale);
-            vscale = hscale;
-        }
+        scale = Math.min(hscale, vscale);
         srcLeft = sxmin;
         srcTop = symin;
     }
@@ -466,10 +463,10 @@ function dxy_at_t(curve, t) {
 
     function drawLine(x1, y1, x2, y2) {
         ctx.beginPath();
-        ctx.moveTo((x1 - srcLeft) * hscale,
-                (y1 - srcTop) * vscale);
-        ctx.lineTo((x2 - srcLeft) * hscale,
-                (y2 - srcTop) * vscale);
+        ctx.moveTo((x1 - srcLeft) * scale,
+                (y1 - srcTop) * scale);
+        ctx.lineTo((x2 - srcLeft) * scale,
+                (y2 - srcTop) * scale);
         ctx.stroke();
     }
 
@@ -483,8 +480,8 @@ function dxy_at_t(curve, t) {
         }
         drawnPts.push(px);
         drawnPts.push(py);
-        var _px = (px - srcLeft) * hscale;
-        var _py = (py - srcTop) * vscale;
+        var _px = (px - srcLeft) * scale;
+        var _py = (py - srcTop) * scale;
         ctx.beginPath();
         if (xend) {
             ctx.moveTo(_px - 3, _py - 3);
@@ -606,15 +603,15 @@ function dxy_at_t(curve, t) {
         return 1 << pow2;
     }
 
-    function drawConic(curve, srcLeft, srcTop, hscale, vscale) {
-        var tol = 1 / Math.min(hscale, vscale);
+    function drawConic(curve, srcLeft, srcTop, scale) {
+        var tol = 1 / scale;
         var pow2 = computeQuadPOW2(curve, tol);
         var pts = [];
         chopIntoQuadsPOW2(curve, pow2, pts);
         for (var i = 0; i < pts.length; i += 4) {
             ctx.quadraticCurveTo(
-                (pts[i + 0] - srcLeft) * hscale, (pts[i + 1] - srcTop) * vscale,
-                (pts[i + 2] - srcLeft) * hscale, (pts[i + 3] - srcTop) * vscale);
+                (pts[i + 0] - srcLeft) * scale, (pts[i + 1] - srcTop) * scale,
+                (pts[i + 2] - srcLeft) * scale, (pts[i + 3] - srcTop) * scale);
         }
     }
 
@@ -761,20 +758,20 @@ function dxy_at_t(curve, t) {
                 }
             }
             ctx.beginPath();
-            ctx.moveTo((curve[0] - srcLeft) * hscale, (curve[1] - srcTop) * vscale);
+            ctx.moveTo((curve[0] - srcLeft) * scale, (curve[1] - srcTop) * scale);
             if (curve.length == 4) {
-                ctx.lineTo((curve[2] - srcLeft) * hscale, (curve[3] - srcTop) * vscale);
+                ctx.lineTo((curve[2] - srcLeft) * scale, (curve[3] - srcTop) * scale);
             } else if (curve.length == 6) {
                 ctx.quadraticCurveTo(
-                    (curve[2] - srcLeft) * hscale, (curve[3] - srcTop) * vscale,
-                    (curve[4] - srcLeft) * hscale, (curve[5] - srcTop) * vscale);
+                    (curve[2] - srcLeft) * scale, (curve[3] - srcTop) * scale,
+                    (curve[4] - srcLeft) * scale, (curve[5] - srcTop) * scale);
             } else if (curve.length == 7) {
-                drawConic(curve, srcLeft, srcTop, hscale, vscale);
+                drawConic(curve, srcLeft, srcTop, scale);
             } else {
                 ctx.bezierCurveTo(
-                    (curve[2] - srcLeft) * hscale, (curve[3] - srcTop) * vscale,
-                    (curve[4] - srcLeft) * hscale, (curve[5] - srcTop) * vscale,
-                    (curve[6] - srcLeft) * hscale, (curve[7] - srcTop) * vscale);
+                    (curve[2] - srcLeft) * scale, (curve[3] - srcTop) * scale,
+                    (curve[4] - srcLeft) * scale, (curve[5] - srcTop) * scale,
+                    (curve[6] - srcLeft) * scale, (curve[7] - srcTop) * scale);
             }
             if (draw_cubic_red ? curve.length == 8 : firstInside == curves) {
                 ctx.strokeStyle = "rgba(255,0,0, 1)";
@@ -858,8 +855,8 @@ function dxy_at_t(curve, t) {
             if (draw_order) {
                 var px = x_at_t(curve, 0.75);
                 var py = y_at_t(curve, 0.75);
-                var _px = (px - srcLeft) * hscale;
-                var _py = (py - srcTop) * vscale;
+                var _px = (px - srcLeft) * scale;
+                var _py = (py - srcTop) * scale;
                 ctx.beginPath();
                 ctx.arc(_px, _py, 15, 0, Math.PI * 2, true);
                 ctx.closePath();
@@ -885,17 +882,12 @@ function dxy_at_t(curve, t) {
                     drawPointSolid(x, y);
                 }
             }
-            if (!approximately_zero(hscale - hinitScale)) {
+            if (!approximately_zero(scale - initScale)) {
                 ctx.font = "normal 20px Arial";
                 ctx.fillStyle = "rgba(0,0,0, 0.3)";
                 ctx.textAlign = "right";
-                var scaleTextOffset = hscale != vscale ? -25 : -5;
-                ctx.fillText(hscale.toFixed(decimal_places) + 'x',
-                        screenWidth - 10, screenHeight - scaleTextOffset);
-                if (hscale != vscale) {
-                    ctx.fillText(vscale.toFixed(decimal_places) + 'y',
-                            screenWidth - 10, screenHeight - 5);
-                }
+                ctx.fillText(scale.toFixed(decimal_places) + 'x',
+                        screenWidth - 10, screenHeight - 5);
             }
             if (draw_t) {
                 drawPointAtT(curve);
@@ -911,8 +903,8 @@ function dxy_at_t(curve, t) {
                 if (id >= 0) {
                     var px = x_at_t(curve, 0.5);
                     var py = y_at_t(curve, 0.5);
-                    var _px = (px - srcLeft) * hscale;
-                    var _py = (py - srcTop) * vscale;
+                    var _px = (px - srcLeft) * scale;
+                    var _py = (py - srcTop) * scale;
                     ctx.beginPath();
                     ctx.arc(_px, _py, 15, 0, Math.PI * 2, true);
                     ctx.closePath();
@@ -1099,11 +1091,9 @@ function dxy_at_t(curve, t) {
                 focusWasOn = focus_on_selection;
                 if (focusWasOn) {
                     focus_on_selection = false;
-                    hscale /= 1.2;
-                    vscale /= 1.2;
+                    scale /= 1.2;
                 } else {
-                    hscale /= 2;
-                    vscale /= 2;
+                    scale /= 2;
                 }
                 calcLeftTop();
                 redraw();
@@ -1114,11 +1104,9 @@ function dxy_at_t(curve, t) {
                 focusWasOn = focus_on_selection;
                 if (focusWasOn) {
                     focus_on_selection = false;
-                    hscale *= 1.2;
-                    vscale *= 1.2;
+                    scale *= 1.2;
                 } else {
-                    hscale *= 2;
-                    vscale *= 2;
+                    scale *= 2;
                 }
                 calcLeftTop();
                 redraw();
@@ -1153,26 +1141,6 @@ function dxy_at_t(curve, t) {
                 break;
             case 'f':
                 draw_derivative ^= true;
-                redraw();
-                break;
-            case 'g':
-                hscale *= 1.2;
-                calcLeftTop();
-                redraw();
-                break;
-            case 'G':
-                hscale /= 1.2;
-                calcLeftTop();
-                redraw();
-                break;
-            case 'h':
-                vscale *= 1.2;
-                calcLeftTop();
-                redraw();
-                break;
-            case 'H':
-                vscale /= 1.2;
-                calcLeftTop();
                 redraw();
                 break;
             case 'i':
@@ -1342,13 +1310,13 @@ function dxy_at_t(curve, t) {
         var tgt = e.target || e.srcElement;
         var left = tgt.offsetLeft;
         var top = tgt.offsetTop;
-        mouseX = (e.clientX - left) / hscale + srcLeft;
-        mouseY = (e.clientY - top) / vscale + srcTop;
+        mouseX = (e.clientX - left) / scale + srcLeft;
+        mouseY = (e.clientY - top) / scale + srcTop;
     }
 
     function calcLeftTop() {
-        srcLeft = mouseX - screenWidth / 2 / hscale;
-        srcTop = mouseY - screenHeight / 2 / vscale;
+        srcLeft = mouseX - screenWidth / 2 / scale;
+        srcTop = mouseY - screenHeight / 2 / scale;
     }
 
     function handleMouseClick() {

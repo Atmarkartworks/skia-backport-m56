@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkString.h"
+#include "Benchmark.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkShader.h"
+#include "SkString.h"
 
 static void create_gradient(SkBitmap* bm) {
     SkASSERT(1 == bm->width());
@@ -18,6 +18,7 @@ static void create_gradient(SkBitmap* bm) {
     float deltaB = 255.0f / height;
     float blue = 255.0f;
 
+    SkAutoLockPixels lock(*bm);
     for (int y = 0; y < height; y++) {
         *bm->getAddr32(0, y) = SkColorSetRGB(0, 0, (U8CPU) blue);
         blue -= deltaB;
@@ -27,24 +28,39 @@ static void create_gradient(SkBitmap* bm) {
 // Test out the special case of a tiled 1xN texture. Test out opacity,
 // filtering and the different tiling modes
 class ConstXTileBench : public Benchmark {
+    SkPaint             fPaint;
+    SkString            fName;
+    bool                fDoFilter;
+    bool                fDoTrans;
+    bool                fDoScale;
+    static const int kWidth = 1;
+    static const int kHeight = 300;
+
 public:
-    ConstXTileBench(SkTileMode xTile,
-                    SkTileMode yTile,
-                    SkFilterMode fm,
+    ConstXTileBench(SkShader::TileMode xTile,
+                    SkShader::TileMode yTile,
+                    bool doFilter,
                     bool doTrans,
                     bool doScale)
-            : fFilterMode{fm}
-            , fXTile{xTile}
-            , fYTile{yTile}
-            , fDoTrans{doTrans}
-            , fDoScale{doScale} {
+        : fDoFilter(doFilter)
+        , fDoTrans(doTrans)
+        , fDoScale(doScale) {
+        SkBitmap bm;
+
+        bm.allocN32Pixels(kWidth, kHeight, true);
+        bm.eraseColor(SK_ColorWHITE);
+
+        create_gradient(&bm);
+
+        fPaint.setShader(SkShader::MakeBitmapShader(bm, xTile, yTile));
+
         fName.printf("constXTile_");
 
-        static const char* gTileModeStr[kSkTileModeCount] = { "C", "R", "M", "D" };
-        fName.append(gTileModeStr[(unsigned)xTile]);
-        fName.append(gTileModeStr[(unsigned)yTile]);
+        static const char* gTileModeStr[SkShader::kTileModeCount] = { "C", "R", "M" };
+        fName.append(gTileModeStr[xTile]);
+        fName.append(gTileModeStr[yTile]);
 
-        if (fm != SkFilterMode::kNearest) {
+        if (doFilter) {
             fName.append("_filter");
         }
 
@@ -58,26 +74,17 @@ public:
     }
 
 protected:
-    const char* onGetName() override {
+    virtual const char* onGetName() {
         return fName.c_str();
     }
 
-    void onDelayedSetup() override {
-        SkBitmap bm;
-
-        bm.allocN32Pixels(kWidth, kHeight, true);
-        bm.eraseColor(SK_ColorWHITE);
-
-        create_gradient(&bm);
-
-        fPaint.setShader(bm.makeShader(fXTile, fYTile, SkSamplingOptions(fFilterMode)));
-    }
-
-    void onDraw(int loops, SkCanvas* canvas) override {
+    virtual void onDraw(int loops, SkCanvas* canvas) {
         SkPaint paint(fPaint);
         this->setupPaint(&paint);
+        paint.setFilterQuality(fDoFilter ? kLow_SkFilterQuality
+                                         : kNone_SkFilterQuality);
         if (fDoTrans) {
-            paint.setColor(SkColorSetARGB(0x80, 0xFF, 0xFF, 0xFF));
+            paint.setColor(SkColorSetARGBMacro(0x80, 0xFF, 0xFF, 0xFF));
         }
 
         SkRect r;
@@ -102,37 +109,24 @@ protected:
     }
 
 private:
-    inline static constexpr int kWidth = 1;
-    inline static constexpr int kHeight = 300;
-
-    const SkFilterMode fFilterMode;
-    const SkTileMode fXTile,
-                     fYTile;
-    const bool fDoTrans,
-               fDoScale;
-    SkPaint fPaint;
-    SkString fName;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 // Scaled benches are trending towards free.  Seems like caching.
 // TODO(mtklein, reed): fix and reenable
 
- constexpr SkFilterMode gNN = SkFilterMode::kNearest;
- constexpr SkFilterMode gLI = SkFilterMode::kLinear;
+//DEF_BENCH(return new ConstXTileBench(SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, false, false, true))
+DEF_BENCH(return new ConstXTileBench(SkShader::kClamp_TileMode, SkShader::kClamp_TileMode, false, false, false))
+//DEF_BENCH(return new ConstXTileBench(SkShader::kMirror_TileMode, SkShader::kMirror_TileMode, false, false, true))
 
-//DEF_BENCH(return new ConstXTileBench(SkTileMode::kRepeat, SkTileMode::kRepeat, false, false, true))
-DEF_BENCH(return new ConstXTileBench(SkTileMode::kClamp, SkTileMode::kClamp, gNN, false, false))
-//DEF_BENCH(return new ConstXTileBench(SkTileMode::kMirror, SkTileMode::kMirror, false, false, true))
+DEF_BENCH(return new ConstXTileBench(SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, true, false, false))
+//DEF_BENCH(return new ConstXTileBench(SkShader::kClamp_TileMode, SkShader::kClamp_TileMode, true, false, true))
+DEF_BENCH(return new ConstXTileBench(SkShader::kMirror_TileMode, SkShader::kMirror_TileMode, true, false, false))
 
-DEF_BENCH(return new ConstXTileBench(SkTileMode::kRepeat, SkTileMode::kRepeat, gLI, false, false))
-//DEF_BENCH(return new ConstXTileBench(SkTileMode::kClamp, SkTileMode::kClamp, true, false, true))
-DEF_BENCH(return new ConstXTileBench(SkTileMode::kMirror, SkTileMode::kMirror, gLI, false, false))
+//DEF_BENCH(return new ConstXTileBench(SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, false, true, true))
+DEF_BENCH(return new ConstXTileBench(SkShader::kClamp_TileMode, SkShader::kClamp_TileMode, false, true, false))
+//DEF_BENCH(return new ConstXTileBench(SkShader::kMirror_TileMode, SkShader::kMirror_TileMode, false, true, true))
 
-//DEF_BENCH(return new ConstXTileBench(SkTileMode::kRepeat, SkTileMode::kRepeat, false, true, true))
-DEF_BENCH(return new ConstXTileBench(SkTileMode::kClamp, SkTileMode::kClamp, gNN, true, false))
-//DEF_BENCH(return new ConstXTileBench(SkTileMode::kMirror, SkTileMode::kMirror, false, true, true))
-
-DEF_BENCH(return new ConstXTileBench(SkTileMode::kRepeat, SkTileMode::kRepeat, gLI, true, false))
-//DEF_BENCH(return new ConstXTileBench(SkTileMode::kClamp, SkTileMode::kClamp, true, true, true))
-DEF_BENCH(return new ConstXTileBench(SkTileMode::kMirror, SkTileMode::kMirror, gLI, true, false))
+DEF_BENCH(return new ConstXTileBench(SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, true, true, false))
+//DEF_BENCH(return new ConstXTileBench(SkShader::kClamp_TileMode, SkShader::kClamp_TileMode, true, true, true))
+DEF_BENCH(return new ConstXTileBench(SkShader::kMirror_TileMode, SkShader::kMirror_TileMode, true, true, false))

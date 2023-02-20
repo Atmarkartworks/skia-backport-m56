@@ -5,16 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkClipOp.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
 
 class CircularClipsGM : public skiagm::GM {
     SkScalar fX1, fX2, fY, fR;
@@ -27,8 +20,8 @@ protected:
         fY = 50;
         fR = 40;
 
-        fCircle1 = SkPath::Circle(fX1, fY, fR, SkPathDirection::kCW);
-        fCircle2 = SkPath::Circle(fX2, fY, fR, SkPathDirection::kCW);
+        fCircle1.addCircle(fX1, fY, fR, SkPath::kCW_Direction);
+        fCircle2.addCircle(fX2, fY, fR, SkPath::kCW_Direction);
     }
 
 
@@ -39,13 +32,17 @@ protected:
     }
 
     SkISize onISize() override {
-        return SkISize::Make(800, 200);
+        return SkISize::Make(800, 600);
     }
 
     void onDraw(SkCanvas* canvas) override {
-        const SkClipOp ops[] = {
-            SkClipOp::kDifference,
-            SkClipOp::kIntersect
+        SkCanvas::ClipOp ops[] = {
+            SkCanvas::kDifference_Op,
+            SkCanvas::kIntersect_Op,
+            SkCanvas::kUnion_Op,
+            SkCanvas::kXOR_Op,
+            SkCanvas::kReverseDifference_Op,
+            SkCanvas::kReplace_Op,
         };
 
         SkRect rect = SkRect::MakeLTRB(fX1 - fR, fY - fR, fX2 + fR, fY + fR);
@@ -73,7 +70,7 @@ protected:
             }
 
             canvas->save();
-            for (size_t op = 0; op < std::size(ops); op++) {
+            for (size_t op = 0; op < SK_ARRAY_COUNT(ops); op++) {
                 canvas->save();
 
                 canvas->clipPath(fCircle1);
@@ -90,7 +87,7 @@ protected:
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////

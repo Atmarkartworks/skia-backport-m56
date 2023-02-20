@@ -4,17 +4,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <algorithm>
-#include <array>
-#include <cstddef>
+#include "PathOpsTestCommon.h"
+#include "SkIntersections.h"
+#include "SkPathOpsLine.h"
+#include "Test.h"
 
 // FIXME: add tests for intersecting, non-intersecting, degenerate, coincident
 static const SkDLine tests[][2] = {
@@ -48,7 +41,7 @@ static const SkDLine tests[][2] = {
      {{{166.86960700313026, 112.6965477747386}, {166.86925794355412, 112.69656471103423}}}}
 };
 
-static const size_t tests_count = std::size(tests);
+static const size_t tests_count = SK_ARRAY_COUNT(tests);
 
 static const SkDLine noIntersect[][2] = {
    {{{{(double) (2 - 1e-6f),2}, {(double) (2 - 1e-6f),4}}},
@@ -61,7 +54,7 @@ static const SkDLine noIntersect[][2] = {
     {{{{1, 1}, {2, 2}}}, {{{4, 4}, {3, 3}}}},
 };
 
-static const size_t noIntersect_count = std::size(noIntersect);
+static const size_t noIntersect_count = SK_ARRAY_COUNT(noIntersect);
 
 static const SkDLine coincidentTests[][2] = {
    {{{ {-1.48383003e-006,-83}, {4.2268899e-014,-60} }},
@@ -89,7 +82,7 @@ static const SkDLine coincidentTests[][2] = {
      {{{286.695129, 291.000000}, {229.304855, 561.000000}}}},
 };
 
-static const size_t coincidentTests_count = std::size(coincidentTests);
+static const size_t coincidentTests_count = SK_ARRAY_COUNT(coincidentTests);
 
 static void check_results(skiatest::Reporter* reporter, const SkDLine& line1, const SkDLine& line2,
                           const SkIntersections& ts, bool nearAllowed) {
@@ -125,29 +118,29 @@ static void testOne(skiatest::Reporter* reporter, const SkDLine& line1, const Sk
         return;
     }
     if (line1[0].fY == line1[1].fY) {
-        double left = std::min(line1[0].fX, line1[1].fX);
-        double right = std::max(line1[0].fX, line1[1].fX);
+        double left = SkTMin(line1[0].fX, line1[1].fX);
+        double right = SkTMax(line1[0].fX, line1[1].fX);
         SkIntersections ts;
         ts.horizontal(line2, left, right, line1[0].fY, line1[0].fX != left);
         check_results(reporter, line2, line1, ts, nearAllowed);
     }
     if (line2[0].fY == line2[1].fY) {
-        double left = std::min(line2[0].fX, line2[1].fX);
-        double right = std::max(line2[0].fX, line2[1].fX);
+        double left = SkTMin(line2[0].fX, line2[1].fX);
+        double right = SkTMax(line2[0].fX, line2[1].fX);
         SkIntersections ts;
         ts.horizontal(line1, left, right, line2[0].fY, line2[0].fX != left);
         check_results(reporter, line1, line2, ts, nearAllowed);
     }
     if (line1[0].fX == line1[1].fX) {
-        double top = std::min(line1[0].fY, line1[1].fY);
-        double bottom = std::max(line1[0].fY, line1[1].fY);
+        double top = SkTMin(line1[0].fY, line1[1].fY);
+        double bottom = SkTMax(line1[0].fY, line1[1].fY);
         SkIntersections ts;
         ts.vertical(line2, top, bottom, line1[0].fX, line1[0].fY != top);
         check_results(reporter, line2, line1, ts, nearAllowed);
     }
     if (line2[0].fX == line2[1].fX) {
-        double top = std::min(line2[0].fY, line2[1].fY);
-        double bottom = std::max(line2[0].fY, line2[1].fY);
+        double top = SkTMin(line2[0].fY, line2[1].fY);
+        double bottom = SkTMax(line2[0].fY, line2[1].fY);
         SkIntersections ts;
         ts.vertical(line1, top, bottom, line2[0].fX, line2[0].fY != top);
         check_results(reporter, line1, line2, ts, nearAllowed);
@@ -159,17 +152,17 @@ static void testOneCoincident(skiatest::Reporter* reporter, const SkDLine& line1
                               const SkDLine& line2) {
     SkASSERT(ValidLine(line1));
     SkASSERT(ValidLine(line2));
-    SkIntersections i;
-    int pts = i.intersect(line1, line2);
+    SkIntersections ts;
+    int pts = ts.intersect(line1, line2);
     REPORTER_ASSERT(reporter, pts == 2);
-    REPORTER_ASSERT(reporter, pts == i.used());
-    check_results(reporter, line1, line2, i, false);
+    REPORTER_ASSERT(reporter, pts == ts.used());
+    check_results(reporter, line1, line2, ts, false);
     if (line1[0] == line1[1] || line2[0] == line2[1]) {
         return;
     }
     if (line1[0].fY == line1[1].fY) {
-        double left = std::min(line1[0].fX, line1[1].fX);
-        double right = std::max(line1[0].fX, line1[1].fX);
+        double left = SkTMin(line1[0].fX, line1[1].fX);
+        double right = SkTMax(line1[0].fX, line1[1].fX);
         SkIntersections ts;
         ts.horizontal(line2, left, right, line1[0].fY, line1[0].fX != left);
         REPORTER_ASSERT(reporter, pts == 2);
@@ -177,8 +170,8 @@ static void testOneCoincident(skiatest::Reporter* reporter, const SkDLine& line1
         check_results(reporter, line2, line1, ts, false);
     }
     if (line2[0].fY == line2[1].fY) {
-        double left = std::min(line2[0].fX, line2[1].fX);
-        double right = std::max(line2[0].fX, line2[1].fX);
+        double left = SkTMin(line2[0].fX, line2[1].fX);
+        double right = SkTMax(line2[0].fX, line2[1].fX);
         SkIntersections ts;
         ts.horizontal(line1, left, right, line2[0].fY, line2[0].fX != left);
         REPORTER_ASSERT(reporter, pts == 2);
@@ -186,8 +179,8 @@ static void testOneCoincident(skiatest::Reporter* reporter, const SkDLine& line1
         check_results(reporter, line1, line2, ts, false);
     }
     if (line1[0].fX == line1[1].fX) {
-        double top = std::min(line1[0].fY, line1[1].fY);
-        double bottom = std::max(line1[0].fY, line1[1].fY);
+        double top = SkTMin(line1[0].fY, line1[1].fY);
+        double bottom = SkTMax(line1[0].fY, line1[1].fY);
         SkIntersections ts;
         ts.vertical(line2, top, bottom, line1[0].fX, line1[0].fY != top);
         REPORTER_ASSERT(reporter, pts == 2);
@@ -195,8 +188,8 @@ static void testOneCoincident(skiatest::Reporter* reporter, const SkDLine& line1
         check_results(reporter, line2, line1, ts, false);
     }
     if (line2[0].fX == line2[1].fX) {
-        double top = std::min(line2[0].fY, line2[1].fY);
-        double bottom = std::max(line2[0].fY, line2[1].fY);
+        double top = SkTMin(line2[0].fY, line2[1].fY);
+        double bottom = SkTMax(line2[0].fY, line2[1].fY);
         SkIntersections ts;
         ts.vertical(line1, top, bottom, line2[0].fX, line2[0].fY != top);
         REPORTER_ASSERT(reporter, pts == 2);

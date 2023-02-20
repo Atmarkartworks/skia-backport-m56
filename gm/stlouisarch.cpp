@@ -5,14 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/private/base/SkTArray.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
+#include "SkTArray.h"
 
 namespace skiagm {
 
@@ -75,7 +71,7 @@ protected:
         canvas->save();
         canvas->scale(1, -1);
         canvas->translate(0, -kHeight);
-        for (int p = 0; p < fPaths.size(); ++p) {
+        for (int p = 0; p < fPaths.count(); ++p) {
             SkPaint paint;
             paint.setARGB(0xff, 0, 0, 0);
             paint.setAntiAlias(true);
@@ -91,11 +87,12 @@ protected:
 
 private:
     SkTArray<SkPath> fPaths;
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new StLouisArchGM; )
+static GM* MyFactory(void*) { return new StLouisArchGM; }
+static GMRegistry reg(MyFactory);
 
-}  // namespace skiagm
+}

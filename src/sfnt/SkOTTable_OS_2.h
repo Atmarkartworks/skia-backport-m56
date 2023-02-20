@@ -8,21 +8,21 @@
 #ifndef SkOTTable_OS_2_DEFINED
 #define SkOTTable_OS_2_DEFINED
 
-#include "src/sfnt/SkOTTable_OS_2_V0.h"
-#include "src/sfnt/SkOTTable_OS_2_V1.h"
-#include "src/sfnt/SkOTTable_OS_2_V2.h"
-#include "src/sfnt/SkOTTable_OS_2_V3.h"
-#include "src/sfnt/SkOTTable_OS_2_V4.h"
-#include "src/sfnt/SkOTTable_OS_2_VA.h"
+#include "SkOTTable_OS_2_VA.h"
+#include "SkOTTable_OS_2_V0.h"
+#include "SkOTTable_OS_2_V1.h"
+#include "SkOTTable_OS_2_V2.h"
+#include "SkOTTable_OS_2_V3.h"
+#include "SkOTTable_OS_2_V4.h"
 
 #pragma pack(push, 1)
 
 struct SkOTTableOS2 {
-    inline static constexpr SK_OT_CHAR TAG0 = 'O';
-    inline static constexpr SK_OT_CHAR TAG1 = 'S';
-    inline static constexpr SK_OT_CHAR TAG2 = '/';
-    inline static constexpr SK_OT_CHAR TAG3 = '2';
-    inline static constexpr SK_OT_ULONG TAG = SkOTTableTAG<SkOTTableOS2>::value;
+    static constexpr SK_OT_CHAR TAG0 = 'O';
+    static constexpr SK_OT_CHAR TAG1 = 'S';
+    static constexpr SK_OT_CHAR TAG2 = '/';
+    static constexpr SK_OT_CHAR TAG3 = '2';
+    static constexpr SK_OT_ULONG TAG = SkOTTableTAG<SkOTTableOS2>::value;
 
     union Version {
         SK_OT_USHORT version;

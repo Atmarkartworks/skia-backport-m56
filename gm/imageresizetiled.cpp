@@ -5,18 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkImageFilters.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkImageFilter.h"
+#include "SkRandom.h"
 
 #define WIDTH 640
 #define HEIGHT 480
@@ -27,12 +18,12 @@ DEF_SIMPLE_GM(imageresizetiled, canvas, WIDTH, HEIGHT) {
         SkPaint paint;
         SkMatrix matrix;
         matrix.setScale(RESIZE_FACTOR, RESIZE_FACTOR);
-        paint.setImageFilter(SkImageFilters::MatrixTransform(matrix,
-                                                             SkSamplingOptions(),
+        paint.setImageFilter(SkImageFilter::MakeMatrixFilter(matrix,
+                                                             kNone_SkFilterQuality,
                                                              nullptr));
-
-        SkFont         font(ToolUtils::create_portable_typeface(), 100);
         const SkScalar tile_size = SkIntToScalar(100);
+        SkRect bounds;
+        canvas->getClipBounds(&bounds);
         for (SkScalar y = 0; y < HEIGHT; y += tile_size) {
             for (SkScalar x = 0; x < WIDTH; x += tile_size) {
                 canvas->save();
@@ -46,10 +37,15 @@ DEF_SIMPLE_GM(imageresizetiled, canvas, WIDTH, HEIGHT) {
                     "jumped over",
                     "the lazy dog.",
                 };
-                float posY = 0;
-                for (unsigned i = 0; i < std::size(str); i++) {
-                    posY += 100.0f;
-                    canvas->drawString(str[i], 0.0f, posY, font, SkPaint());
+                SkPaint textPaint;
+                textPaint.setAntiAlias(true);
+                sk_tool_utils::set_portable_typeface(&textPaint);
+                textPaint.setTextSize(SkIntToScalar(100));
+                int posY = 0;
+                for (unsigned i = 0; i < SK_ARRAY_COUNT(str); i++) {
+                    posY += 100;
+                    canvas->drawText(str[i], strlen(str[i]), SkIntToScalar(0),
+                                     SkIntToScalar(posY), textPaint);
                 }
                 canvas->restore();
                 canvas->restore();

@@ -4,20 +4,22 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkBitmap.h"
-#include "include/core/SkData.h"
-#include "include/core/SkImageEncoder.h"
-#include "include/core/SkPixelRef.h"
-#include "include/core/SkStream.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkTSearch.h"
-#include "src/core/SkOSFile.h"
-#include "src/utils/SkOSPath.h"
-#include "tools/skdiff/skdiff.h"
-#include "tools/skdiff/skdiff_html.h"
-#include "tools/skdiff/skdiff_utils.h"
+#include "skdiff.h"
+#include "skdiff_html.h"
+#include "skdiff_utils.h"
+#include "SkBitmap.h"
+#include "SkData.h"
+#include "SkForceLinking.h"
+#include "SkImageEncoder.h"
+#include "SkOSFile.h"
+#include "SkOSPath.h"
+#include "SkStream.h"
+#include "../private/SkTDArray.h"
+#include "../private/SkTSearch.h"
 
 #include <stdlib.h>
+
+__SK_FORCE_IMAGE_DECODER_LINKING;
 
 /**
  * skdiff
@@ -33,7 +35,7 @@
  * Returns zero exit code if all images match across baseDir and comparisonDir.
  */
 
-typedef SkTArray<SkString> StringArray;
+typedef SkTDArray<SkString*> StringArray;
 typedef StringArray FileArray;
 
 static void add_unique_basename(StringArray* array, const SkString& filename) {
@@ -52,12 +54,12 @@ static void add_unique_basename(StringArray* array, const SkString& filename) {
     SkString result(trimmed, end - trimmed);
 
     // only add unique entries
-    for (int i = 0; i < array->size(); ++i) {
-        if (array->at(i) == result) {
+    for (int i = 0; i < array->count(); ++i) {
+        if (*array->getAt(i) == result) {
             return;
         }
     }
-    array->push_back(std::move(result));
+    *array->append() = new SkString(result);
 }
 
 struct DiffSummary {
@@ -66,6 +68,17 @@ struct DiffSummary {
         , fNumMismatches(0)
         , fMaxMismatchV(0)
         , fMaxMismatchPercent(0) { }
+
+    ~DiffSummary() {
+        for (int i = 0; i < DiffRecord::kResultCount; ++i) {
+            fResultsOfType[i].deleteAll();
+        }
+        for (int base = 0; base < DiffResource::kStatusCount; ++base) {
+            for (int comparison = 0; comparison < DiffResource::kStatusCount; ++comparison) {
+                fStatusOfType[base][comparison].deleteAll();
+            }
+        }
+    }
 
     uint32_t fNumMatches;
     uint32_t fNumMismatches;
@@ -80,13 +93,13 @@ struct DiffSummary {
     void printContents(const FileArray& fileArray,
                        const char* baseStatus, const char* comparisonStatus,
                        bool listFilenames) {
-        int n = fileArray.size();
+        int n = fileArray.count();
         printf("%d file pairs %s in baseDir and %s in comparisonDir",
                 n,            baseStatus,       comparisonStatus);
         if (listFilenames) {
             printf(": ");
             for (int i = 0; i < n; ++i) {
-                printf("%s ", fileArray[i].c_str());
+                printf("%s ", fileArray[i]->c_str());
             }
         }
         printf("\n");
@@ -102,7 +115,7 @@ struct DiffSummary {
             for (int comparison = 0; comparison < DiffResource::kStatusCount; ++comparison) {
                 Status comparisonStatus = static_cast<Status>(comparison);
                 const FileArray& fileArray = fStatusOfType[base][comparison];
-                if (fileArray.size() > 0) {
+                if (fileArray.count() > 0) {
                     if (failOnStatusType[base][comparison]) {
                         printf("   [*] ");
                     } else {
@@ -119,12 +132,12 @@ struct DiffSummary {
 
     // Print a line about the contents of this FileArray to stdout.
     void printContents(const FileArray& fileArray, const char* headerText, bool listFilenames) {
-        int n = fileArray.size();
+        int n = fileArray.count();
         printf("%d file pairs %s", n, headerText);
         if (listFilenames) {
             printf(": ");
             for (int i = 0; i < n; ++i) {
-                printf("%s ", fileArray[i].c_str());
+                printf("%s ", fileArray[i]->c_str());
             }
         }
         printf("\n");
@@ -158,30 +171,30 @@ struct DiffSummary {
     void printfFailingBaseNames(const char separator[]) {
         for (int resultInt = 0; resultInt < DiffRecord::kResultCount; ++resultInt) {
             const StringArray& array = fFailedBaseNames[resultInt];
-            if (array.size()) {
-                printf("%s [%d]%s", DiffRecord::ResultNames[resultInt], array.size(), separator);
-                for (int j = 0; j < array.size(); ++j) {
-                    printf("%s%s", array[j].c_str(), separator);
+            if (array.count()) {
+                printf("%s [%d]%s", DiffRecord::ResultNames[resultInt], array.count(), separator);
+                for (int j = 0; j < array.count(); ++j) {
+                    printf("%s%s", array[j]->c_str(), separator);
                 }
                 printf("\n");
             }
         }
     }
 
-    void add (const DiffRecord& drp) {
+    void add (DiffRecord* drp) {
         uint32_t mismatchValue;
 
-        if (drp.fBase.fFilename.equals(drp.fComparison.fFilename)) {
-            fResultsOfType[drp.fResult].push_back(drp.fBase.fFilename);
+        if (drp->fBase.fFilename.equals(drp->fComparison.fFilename)) {
+            fResultsOfType[drp->fResult].push(new SkString(drp->fBase.fFilename));
         } else {
-            SkString blame("(");
-            blame.append(drp.fBase.fFilename);
-            blame.append(", ");
-            blame.append(drp.fComparison.fFilename);
-            blame.append(")");
-            fResultsOfType[drp.fResult].push_back(std::move(blame));
+            SkString* blame = new SkString("(");
+            blame->append(drp->fBase.fFilename);
+            blame->append(", ");
+            blame->append(drp->fComparison.fFilename);
+            blame->append(")");
+            fResultsOfType[drp->fResult].push(blame);
         }
-        switch (drp.fResult) {
+        switch (drp->fResult) {
           case DiffRecord::kEqualBits_Result:
             fNumMatches++;
             break;
@@ -193,19 +206,19 @@ struct DiffSummary {
             break;
           case DiffRecord::kDifferentPixels_Result:
             fNumMismatches++;
-            if (drp.fFractionDifference * 100 > fMaxMismatchPercent) {
-                fMaxMismatchPercent = drp.fFractionDifference * 100;
+            if (drp->fFractionDifference * 100 > fMaxMismatchPercent) {
+                fMaxMismatchPercent = drp->fFractionDifference * 100;
             }
-            mismatchValue = MAX3(drp.fMaxMismatchR, drp.fMaxMismatchG,
-                                 drp.fMaxMismatchB);
+            mismatchValue = MAX3(drp->fMaxMismatchR, drp->fMaxMismatchG,
+                                 drp->fMaxMismatchB);
             if (mismatchValue > fMaxMismatchV) {
                 fMaxMismatchV = mismatchValue;
             }
             break;
           case DiffRecord::kCouldNotCompare_Result:
             fNumMismatches++;
-            fStatusOfType[drp.fBase.fStatus][drp.fComparison.fStatus].push_back(
-                    drp.fBase.fFilename);
+            fStatusOfType[drp->fBase.fStatus][drp->fComparison.fStatus].push(
+                    new SkString(drp->fBase.fFilename));
             break;
           case DiffRecord::kUnknown_Result:
             SkDEBUGFAIL("adding uncategorized DiffRecord");
@@ -215,12 +228,12 @@ struct DiffSummary {
             break;
         }
 
-        switch (drp.fResult) {
+        switch (drp->fResult) {
             case DiffRecord::kEqualBits_Result:
             case DiffRecord::kEqualPixels_Result:
                 break;
             default:
-                add_unique_basename(&fFailedBaseNames[drp.fResult], drp.fBase.fFilename);
+                add_unique_basename(&fFailedBaseNames[drp->fResult], drp->fBase.fFilename);
                 break;
         }
     }
@@ -229,8 +242,8 @@ struct DiffSummary {
 /// Returns true if string contains any of these substrings.
 static bool string_contains_any_of(const SkString& string,
                                    const StringArray& substrings) {
-    for (int i = 0; i < substrings.size(); i++) {
-        if (string.contains(substrings[i].c_str())) {
+    for (int i = 0; i < substrings.count(); i++) {
+        if (string.contains(substrings[i]->c_str())) {
             return true;
         }
     }
@@ -263,7 +276,7 @@ static void get_file_list_subdir(const SkString& rootDir, const SkString& subDir
         pathRelativeToRootDir.append(fileName);
         if (string_contains_any_of(pathRelativeToRootDir, matchSubstrings) &&
             !string_contains_any_of(pathRelativeToRootDir, nomatchSubstrings)) {
-            files->push_back(std::move(pathRelativeToRootDir));
+            files->push(new SkString(pathRelativeToRootDir));
         }
     }
 
@@ -303,9 +316,13 @@ static void get_file_list(const SkString& dir,
                          files);
 }
 
+static void release_file_list(FileArray *files) {
+    files->deleteAll();
+}
+
 /// Comparison routines for qsort, sort by file names.
-static int compare_file_name_metrics(SkString *lhs, SkString *rhs) {
-    return strcmp(lhs->c_str(), rhs->c_str());
+static int compare_file_name_metrics(SkString **lhs, SkString **rhs) {
+    return strcmp((*lhs)->c_str(), (*rhs)->c_str());
 }
 
 class AutoReleasePixels {
@@ -315,10 +332,10 @@ public:
         SkASSERT(drp != nullptr);
     }
     ~AutoReleasePixels() {
-        fDrp->fBase.fBitmap.setPixelRef(nullptr, 0, 0);
-        fDrp->fComparison.fBitmap.setPixelRef(nullptr, 0, 0);
-        fDrp->fDifference.fBitmap.setPixelRef(nullptr, 0, 0);
-        fDrp->fWhite.fBitmap.setPixelRef(nullptr, 0, 0);
+        fDrp->fBase.fBitmap.setPixelRef(nullptr);
+        fDrp->fComparison.fBitmap.setPixelRef(nullptr);
+        fDrp->fDifference.fBitmap.setPixelRef(nullptr);
+        fDrp->fWhite.fBitmap.setPixelRef(nullptr);
     }
 
 private:
@@ -329,7 +346,7 @@ static void get_bounds(DiffResource& resource, const char* name) {
     if (resource.fBitmap.empty() && !DiffResource::isStatusFailed(resource.fStatus)) {
         sk_sp<SkData> fileBits(read_file(resource.fFullPath.c_str()));
         if (fileBits) {
-            get_bitmap(fileBits, resource, true, true);
+            get_bitmap(fileBits, resource, true);
         } else {
             SkDebugf("WARNING: couldn't read %s file <%s>\n", name, resource.fFullPath.c_str());
             resource.fStatus = DiffResource::kCouldNotRead_Status;
@@ -354,13 +371,12 @@ static void get_bounds(DiffRecord& drp) {
 #define ANSI_COLOR_RESET   "\x1b[0m"
 #endif
 
-#define VERBOSE_STATUS(status,color,filename) if (verbose) printf( "[ " color " %10s " ANSI_COLOR_RESET " ] %s\n", status, filename.c_str())
+#define VERBOSE_STATUS(status,color,filename) if (verbose) printf( "[ " color " %10s " ANSI_COLOR_RESET " ] %s\n", status, filename->c_str())
 
 /// Creates difference images, returns the number that have a 0 metric.
 /// If outputDir.isEmpty(), don't write out diff files.
 static void create_diff_images (DiffMetricProc dmp,
                                 const int colorThreshold,
-                                bool ignoreColorSpace,
                                 RecordArray* differences,
                                 const SkString& baseDir,
                                 const SkString& comparisonDir,
@@ -381,13 +397,13 @@ static void create_diff_images (DiffMetricProc dmp,
     get_file_list(comparisonDir, matchSubstrings, nomatchSubstrings, recurseIntoSubdirs,
                   &comparisonFiles);
 
-    if (!baseFiles.empty()) {
-        qsort(baseFiles.begin(), baseFiles.size(), sizeof(SkString),
+    if (!baseFiles.isEmpty()) {
+        qsort(baseFiles.begin(), baseFiles.count(), sizeof(SkString*),
               SkCastForQSort(compare_file_name_metrics));
     }
-    if (!comparisonFiles.empty()) {
-        qsort(comparisonFiles.begin(), comparisonFiles.size(), sizeof(SkString),
-              SkCastForQSort(compare_file_name_metrics));
+    if (!comparisonFiles.isEmpty()) {
+        qsort(comparisonFiles.begin(), comparisonFiles.count(),
+              sizeof(SkString*), SkCastForQSort(compare_file_name_metrics));
     }
 
     if (!outputDir.isEmpty()) {
@@ -397,99 +413,99 @@ static void create_diff_images (DiffMetricProc dmp,
     int i = 0;
     int j = 0;
 
-    while (i < baseFiles.size() &&
-           j < comparisonFiles.size()) {
+    while (i < baseFiles.count() &&
+           j < comparisonFiles.count()) {
 
         SkString basePath(baseDir);
         SkString comparisonPath(comparisonDir);
 
-        DiffRecord drp;
-        int v = strcmp(baseFiles[i].c_str(), comparisonFiles[j].c_str());
+        DiffRecord *drp = new DiffRecord;
+        int v = strcmp(baseFiles[i]->c_str(), comparisonFiles[j]->c_str());
 
         if (v < 0) {
             // in baseDir, but not in comparisonDir
-            drp.fResult = DiffRecord::kCouldNotCompare_Result;
+            drp->fResult = DiffRecord::kCouldNotCompare_Result;
 
-            basePath.append(baseFiles[i]);
-            comparisonPath.append(baseFiles[i]);
+            basePath.append(*baseFiles[i]);
+            comparisonPath.append(*baseFiles[i]);
 
-            drp.fBase.fFilename = baseFiles[i];
-            drp.fBase.fFullPath = basePath;
-            drp.fBase.fStatus = DiffResource::kExists_Status;
+            drp->fBase.fFilename = *baseFiles[i];
+            drp->fBase.fFullPath = basePath;
+            drp->fBase.fStatus = DiffResource::kExists_Status;
 
-            drp.fComparison.fFilename = baseFiles[i];
-            drp.fComparison.fFullPath = comparisonPath;
-            drp.fComparison.fStatus = DiffResource::kDoesNotExist_Status;
+            drp->fComparison.fFilename = *baseFiles[i];
+            drp->fComparison.fFullPath = comparisonPath;
+            drp->fComparison.fStatus = DiffResource::kDoesNotExist_Status;
 
             VERBOSE_STATUS("MISSING", ANSI_COLOR_YELLOW, baseFiles[i]);
 
             ++i;
         } else if (v > 0) {
             // in comparisonDir, but not in baseDir
-            drp.fResult = DiffRecord::kCouldNotCompare_Result;
+            drp->fResult = DiffRecord::kCouldNotCompare_Result;
 
-            basePath.append(comparisonFiles[j]);
-            comparisonPath.append(comparisonFiles[j]);
+            basePath.append(*comparisonFiles[j]);
+            comparisonPath.append(*comparisonFiles[j]);
 
-            drp.fBase.fFilename = comparisonFiles[j];
-            drp.fBase.fFullPath = basePath;
-            drp.fBase.fStatus = DiffResource::kDoesNotExist_Status;
+            drp->fBase.fFilename = *comparisonFiles[j];
+            drp->fBase.fFullPath = basePath;
+            drp->fBase.fStatus = DiffResource::kDoesNotExist_Status;
 
-            drp.fComparison.fFilename = comparisonFiles[j];
-            drp.fComparison.fFullPath = comparisonPath;
-            drp.fComparison.fStatus = DiffResource::kExists_Status;
+            drp->fComparison.fFilename = *comparisonFiles[j];
+            drp->fComparison.fFullPath = comparisonPath;
+            drp->fComparison.fStatus = DiffResource::kExists_Status;
 
             VERBOSE_STATUS("MISSING", ANSI_COLOR_YELLOW, comparisonFiles[j]);
 
             ++j;
         } else {
             // Found the same filename in both baseDir and comparisonDir.
-            SkASSERT(DiffRecord::kUnknown_Result == drp.fResult);
+            SkASSERT(DiffRecord::kUnknown_Result == drp->fResult);
 
-            basePath.append(baseFiles[i]);
-            comparisonPath.append(comparisonFiles[j]);
+            basePath.append(*baseFiles[i]);
+            comparisonPath.append(*comparisonFiles[j]);
 
-            drp.fBase.fFilename = baseFiles[i];
-            drp.fBase.fFullPath = basePath;
-            drp.fBase.fStatus = DiffResource::kExists_Status;
+            drp->fBase.fFilename = *baseFiles[i];
+            drp->fBase.fFullPath = basePath;
+            drp->fBase.fStatus = DiffResource::kExists_Status;
 
-            drp.fComparison.fFilename = comparisonFiles[j];
-            drp.fComparison.fFullPath = comparisonPath;
-            drp.fComparison.fStatus = DiffResource::kExists_Status;
+            drp->fComparison.fFilename = *comparisonFiles[j];
+            drp->fComparison.fFullPath = comparisonPath;
+            drp->fComparison.fStatus = DiffResource::kExists_Status;
 
-            sk_sp<SkData> baseFileBits(read_file(drp.fBase.fFullPath.c_str()));
+            sk_sp<SkData> baseFileBits(read_file(drp->fBase.fFullPath.c_str()));
             if (baseFileBits) {
-                drp.fBase.fStatus = DiffResource::kRead_Status;
+                drp->fBase.fStatus = DiffResource::kRead_Status;
             }
-            sk_sp<SkData> comparisonFileBits(read_file(drp.fComparison.fFullPath.c_str()));
+            sk_sp<SkData> comparisonFileBits(read_file(drp->fComparison.fFullPath.c_str()));
             if (comparisonFileBits) {
-                drp.fComparison.fStatus = DiffResource::kRead_Status;
+                drp->fComparison.fStatus = DiffResource::kRead_Status;
             }
             if (nullptr == baseFileBits || nullptr == comparisonFileBits) {
                 if (nullptr == baseFileBits) {
-                    drp.fBase.fStatus = DiffResource::kCouldNotRead_Status;
+                    drp->fBase.fStatus = DiffResource::kCouldNotRead_Status;
                     VERBOSE_STATUS("READ FAIL", ANSI_COLOR_RED, baseFiles[i]);
                 }
                 if (nullptr == comparisonFileBits) {
-                    drp.fComparison.fStatus = DiffResource::kCouldNotRead_Status;
+                    drp->fComparison.fStatus = DiffResource::kCouldNotRead_Status;
                     VERBOSE_STATUS("READ FAIL", ANSI_COLOR_RED, comparisonFiles[j]);
                 }
-                drp.fResult = DiffRecord::kCouldNotCompare_Result;
+                drp->fResult = DiffRecord::kCouldNotCompare_Result;
 
             } else if (are_buffers_equal(baseFileBits.get(), comparisonFileBits.get())) {
-                drp.fResult = DiffRecord::kEqualBits_Result;
+                drp->fResult = DiffRecord::kEqualBits_Result;
                 VERBOSE_STATUS("MATCH", ANSI_COLOR_GREEN, baseFiles[i]);
             } else {
-                AutoReleasePixels arp(&drp);
-                get_bitmap(baseFileBits, drp.fBase, false, ignoreColorSpace);
-                get_bitmap(comparisonFileBits, drp.fComparison, false, ignoreColorSpace);
+                AutoReleasePixels arp(drp);
+                get_bitmap(baseFileBits, drp->fBase, false);
+                get_bitmap(comparisonFileBits, drp->fComparison, false);
                 VERBOSE_STATUS("DIFFERENT", ANSI_COLOR_RED, baseFiles[i]);
-                if (DiffResource::kDecoded_Status == drp.fBase.fStatus &&
-                    DiffResource::kDecoded_Status == drp.fComparison.fStatus) {
-                    create_and_write_diff_image(&drp, dmp, colorThreshold,
-                                                outputDir, drp.fBase.fFilename);
+                if (DiffResource::kDecoded_Status == drp->fBase.fStatus &&
+                    DiffResource::kDecoded_Status == drp->fComparison.fStatus) {
+                    create_and_write_diff_image(drp, dmp, colorThreshold,
+                                                outputDir, drp->fBase.fFilename);
                 } else {
-                    drp.fResult = DiffRecord::kCouldNotCompare_Result;
+                    drp->fResult = DiffRecord::kCouldNotCompare_Result;
                 }
             }
 
@@ -498,54 +514,57 @@ static void create_diff_images (DiffMetricProc dmp,
         }
 
         if (getBounds) {
-            get_bounds(drp);
+            get_bounds(*drp);
         }
-        SkASSERT(DiffRecord::kUnknown_Result != drp.fResult);
+        SkASSERT(DiffRecord::kUnknown_Result != drp->fResult);
+        differences->push(drp);
         summary->add(drp);
-        differences->push_back(std::move(drp));
     }
 
-    for (; i < baseFiles.size(); ++i) {
+    for (; i < baseFiles.count(); ++i) {
         // files only in baseDir
-        DiffRecord drp;
-        drp.fBase.fFilename = baseFiles[i];
-        drp.fBase.fFullPath = baseDir;
-        drp.fBase.fFullPath.append(drp.fBase.fFilename);
-        drp.fBase.fStatus = DiffResource::kExists_Status;
+        DiffRecord *drp = new DiffRecord();
+        drp->fBase.fFilename = *baseFiles[i];
+        drp->fBase.fFullPath = baseDir;
+        drp->fBase.fFullPath.append(drp->fBase.fFilename);
+        drp->fBase.fStatus = DiffResource::kExists_Status;
 
-        drp.fComparison.fFilename = baseFiles[i];
-        drp.fComparison.fFullPath = comparisonDir;
-        drp.fComparison.fFullPath.append(drp.fComparison.fFilename);
-        drp.fComparison.fStatus = DiffResource::kDoesNotExist_Status;
+        drp->fComparison.fFilename = *baseFiles[i];
+        drp->fComparison.fFullPath = comparisonDir;
+        drp->fComparison.fFullPath.append(drp->fComparison.fFilename);
+        drp->fComparison.fStatus = DiffResource::kDoesNotExist_Status;
 
-        drp.fResult = DiffRecord::kCouldNotCompare_Result;
+        drp->fResult = DiffRecord::kCouldNotCompare_Result;
         if (getBounds) {
-            get_bounds(drp);
+            get_bounds(*drp);
         }
+        differences->push(drp);
         summary->add(drp);
-        differences->push_back(std::move(drp));
     }
 
-    for (; j < comparisonFiles.size(); ++j) {
+    for (; j < comparisonFiles.count(); ++j) {
         // files only in comparisonDir
-        DiffRecord drp;
-        drp.fBase.fFilename = comparisonFiles[j];
-        drp.fBase.fFullPath = baseDir;
-        drp.fBase.fFullPath.append(drp.fBase.fFilename);
-        drp.fBase.fStatus = DiffResource::kDoesNotExist_Status;
+        DiffRecord *drp = new DiffRecord();
+        drp->fBase.fFilename = *comparisonFiles[j];
+        drp->fBase.fFullPath = baseDir;
+        drp->fBase.fFullPath.append(drp->fBase.fFilename);
+        drp->fBase.fStatus = DiffResource::kDoesNotExist_Status;
 
-        drp.fComparison.fFilename = comparisonFiles[j];
-        drp.fComparison.fFullPath = comparisonDir;
-        drp.fComparison.fFullPath.append(drp.fComparison.fFilename);
-        drp.fComparison.fStatus = DiffResource::kExists_Status;
+        drp->fComparison.fFilename = *comparisonFiles[j];
+        drp->fComparison.fFullPath = comparisonDir;
+        drp->fComparison.fFullPath.append(drp->fComparison.fFilename);
+        drp->fComparison.fStatus = DiffResource::kExists_Status;
 
-        drp.fResult = DiffRecord::kCouldNotCompare_Result;
+        drp->fResult = DiffRecord::kCouldNotCompare_Result;
         if (getBounds) {
-            get_bounds(drp);
+            get_bounds(*drp);
         }
+        differences->push(drp);
         summary->add(drp);
-        differences->push_back(std::move(drp));
     }
+
+    release_file_list(&baseFiles);
+    release_file_list(&comparisonFiles);
 }
 
 static void usage (char * argv0) {
@@ -568,7 +587,6 @@ static void usage (char * argv0) {
 "\n    --match <substring>: compare files whose filenames contain this substring;"
 "\n                         if unspecified, compare ALL files."
 "\n                         this flag may be repeated."
-"\n    --nocolorspace: Ignore color space of images."
 "\n    --nodiffs: don't write out image diffs or index.html, just generate"
 "\n               report on stdout"
 "\n    --nomatch <substring>: regardless of --match, DO NOT compare files whose"
@@ -594,7 +612,8 @@ static void usage (char * argv0) {
 const int kNoError = 0;
 const int kGenericError = -1;
 
-int main(int argc, char** argv) {
+int tool_main(int argc, char** argv);
+int tool_main(int argc, char** argv) {
     DiffMetricProc diffProc = compute_diff_pmcolor;
     int (*sortProc)(const void*, const void*) = compare<CompareDiffMetrics>;
 
@@ -614,7 +633,6 @@ int main(int argc, char** argv) {
     bool recurseIntoSubdirs = true;
     bool verbose = false;
     bool listFailingBase = false;
-    bool ignoreColorSpace = false;
 
     RecordArray differences;
     DiffSummary summary;
@@ -631,8 +649,9 @@ int main(int argc, char** argv) {
         }
     }
 
+    int i;
     int numUnflaggedArguments = 0;
-    for (int i = 1; i < argc; i++) {
+    for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--failonresult")) {
             if (argc == ++i) {
                 SkDebugf("failonresult expects one argument.\n");
@@ -686,11 +705,7 @@ int main(int argc, char** argv) {
             continue;
         }
         if (!strcmp(argv[i], "--match")) {
-            matchSubstrings.emplace_back(argv[++i]);
-            continue;
-        }
-        if (!strcmp(argv[i], "--nocolorspace")) {
-            ignoreColorSpace = true;
+            matchSubstrings.push(new SkString(argv[++i]));
             continue;
         }
         if (!strcmp(argv[i], "--nodiffs")) {
@@ -698,7 +713,7 @@ int main(int argc, char** argv) {
             continue;
         }
         if (!strcmp(argv[i], "--nomatch")) {
-            nomatchSubstrings.emplace_back(argv[++i]);
+            nomatchSubstrings.push(new SkString(argv[++i]));
             continue;
         }
         if (!strcmp(argv[i], "--noprintdirs")) {
@@ -789,11 +804,11 @@ int main(int argc, char** argv) {
 
     // If no matchSubstrings were specified, match ALL strings
     // (except for whatever nomatchSubstrings were specified, if any).
-    if (matchSubstrings.empty()) {
-        matchSubstrings.emplace_back("");
+    if (matchSubstrings.isEmpty()) {
+        matchSubstrings.push(new SkString(""));
     }
 
-    create_diff_images(diffProc, colorThreshold, ignoreColorSpace, &differences,
+    create_diff_images(diffProc, colorThreshold, &differences,
                        baseDir, comparisonDir, outputDir,
                        matchSubstrings, nomatchSubstrings, recurseIntoSubdirs, generateDiffs,
                        verbose, &summary);
@@ -803,8 +818,9 @@ int main(int argc, char** argv) {
         summary.printfFailingBaseNames("\n");
     }
 
-    if (differences.size()) {
-        qsort(differences.begin(), differences.size(), sizeof(DiffRecord), sortProc);
+    if (differences.count()) {
+        qsort(differences.begin(), differences.count(),
+              sizeof(DiffRecord*), sortProc);
     }
 
     if (generateDiffs) {
@@ -812,17 +828,23 @@ int main(int argc, char** argv) {
                         baseDir, comparisonDir, outputDir);
     }
 
+    for (i = 0; i < differences.count(); i++) {
+        delete differences[i];
+    }
+    matchSubstrings.deleteAll();
+    nomatchSubstrings.deleteAll();
+
     int num_failing_results = 0;
     for (int i = 0; i < DiffRecord::kResultCount; i++) {
         if (failOnResultType[i]) {
-            num_failing_results += summary.fResultsOfType[i].size();
+            num_failing_results += summary.fResultsOfType[i].count();
         }
     }
     if (!failOnResultType[DiffRecord::kCouldNotCompare_Result]) {
         for (int base = 0; base < DiffResource::kStatusCount; ++base) {
             for (int comparison = 0; comparison < DiffResource::kStatusCount; ++comparison) {
                 if (failOnStatusType[base][comparison]) {
-                    num_failing_results += summary.fStatusOfType[base][comparison].size();
+                    num_failing_results += summary.fStatusOfType[base][comparison].count();
                 }
             }
         }
@@ -833,3 +855,9 @@ int main(int argc, char** argv) {
     // make sure that we only return 0 when there were no failures.
     return (num_failing_results > 255) ? 255 : num_failing_results;
 }
+
+#if !defined SK_BUILD_FOR_IOS
+int main(int argc, char * const argv[]) {
+    return tool_main(argc, (char**) argv);
+}
+#endif

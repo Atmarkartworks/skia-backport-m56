@@ -5,19 +5,52 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint3.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkImageFilters.h"
-#include "tests/Test.h"
+#include "SkCanvas.h"
+#include "SkDrawLooper.h"
+#include "SkLightingImageFilter.h"
+#include "SkTypes.h"
+#include "Test.h"
+
+/*
+ *  Subclass of looper that just draws once, with an offset in X.
+ */
+class TestLooper : public SkDrawLooper {
+public:
+
+    SkDrawLooper::Context* createContext(SkCanvas*, void* storage) const override {
+        return new (storage) TestDrawLooperContext;
+    }
+
+    size_t contextSize() const override { return sizeof(TestDrawLooperContext); }
+
+#ifndef SK_IGNORE_TO_STRING
+    void toString(SkString* str) const override {
+        str->append("TestLooper:");
+    }
+#endif
+
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(TestLooper)
+
+private:
+    class TestDrawLooperContext : public SkDrawLooper::Context {
+    public:
+        TestDrawLooperContext() : fOnce(true) {}
+        virtual ~TestDrawLooperContext() {}
+
+        bool next(SkCanvas* canvas, SkPaint*) override {
+            if (fOnce) {
+                fOnce = false;
+                canvas->translate(SkIntToScalar(10), 0);
+                return true;
+            }
+            return false;
+        }
+    private:
+        bool fOnce;
+    };
+};
+
+sk_sp<SkFlattenable> TestLooper::CreateProc(SkReadBuffer&) { return sk_make_sp<TestLooper>(); }
 
 static void test_drawBitmap(skiatest::Reporter* reporter) {
     SkBitmap src;
@@ -29,12 +62,13 @@ static void test_drawBitmap(skiatest::Reporter* reporter) {
     dst.eraseColor(SK_ColorTRANSPARENT);
 
     SkCanvas canvas(dst);
+    SkPaint  paint;
 
     // we are initially transparent
     REPORTER_ASSERT(reporter, 0 == *dst.getAddr32(5, 5));
 
     // we see the bitmap drawn
-    canvas.drawImage(src.asImage(), 0, 0);
+    canvas.drawBitmap(src, 0, 0, &paint);
     REPORTER_ASSERT(reporter, 0xFFFFFFFF == *dst.getAddr32(5, 5));
 
     // reverify we are clear again
@@ -42,8 +76,16 @@ static void test_drawBitmap(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 0 == *dst.getAddr32(5, 5));
 
     // if the bitmap is clipped out, we don't draw it
-    canvas.drawImage(src.asImage(), SkIntToScalar(-10), 0);
+    canvas.drawBitmap(src, SkIntToScalar(-10), 0, &paint);
     REPORTER_ASSERT(reporter, 0 == *dst.getAddr32(5, 5));
+
+    // now install our looper, which will draw, since it internally translates
+    // to the left. The test is to ensure that canvas' quickReject machinary
+    // allows us through, even though sans-looper we would look like we should
+    // be clipped out.
+    paint.setLooper(sk_make_sp<TestLooper>());
+    canvas.drawBitmap(src, SkIntToScalar(-10), 0, &paint);
+    REPORTER_ASSERT(reporter, 0xFFFFFFFF == *dst.getAddr32(5, 5));
 }
 
 static void test_layers(skiatest::Reporter* reporter) {
@@ -87,7 +129,7 @@ static void test_quick_reject(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, true == canvas.quickReject(r9));
     REPORTER_ASSERT(reporter, true == canvas.quickReject(r10));
 
-    SkMatrix m = SkMatrix::Scale(2, 2);
+    SkMatrix m = SkMatrix::MakeScale(2.0f);
     m.setTranslateX(10.0f);
     m.setTranslateY(10.0f);
     canvas.setMatrix(m);
@@ -116,7 +158,7 @@ DEF_TEST(QuickReject_MatrixState, reporter) {
     canvas.setMatrix(matrix);
 
     SkPaint paint;
-    sk_sp<SkImageFilter> filter = SkImageFilters::DistantLitDiffuse(
+    sk_sp<SkImageFilter> filter = SkLightingImageFilter::MakeDistantLitDiffuse(
             SkPoint3::Make(1.0f, 1.0f, 1.0f), 0xFF0000FF, 2.0f, 0.5f, nullptr);
     REPORTER_ASSERT(reporter, filter);
     paint.setImageFilter(filter);

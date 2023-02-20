@@ -5,25 +5,21 @@
 * found in the LICENSE file.
 */
 
-#include "tools/viewer/SKPSlide.h"
+#include "SKPSlide.h"
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkStream.h"
-#include "src/core/SkOSFile.h"
+#include "SkCanvas.h"
+#include "SkCommonFlags.h"
+#include "SkOSFile.h"
+#include "SkStream.h"
 
-SKPSlide::SKPSlide(const SkString& name, const SkString& path)
-        : SKPSlide(name, SkStream::MakeFromFile(path.c_str())) {
-}
-
-SKPSlide::SKPSlide(const SkString& name, std::unique_ptr<SkStream> stream)
-        : fStream(std::move(stream)) {
+SKPSlide::SKPSlide(const SkString& name, const SkString& path) : fPath(path) {
     fName = name;
 }
 
 SKPSlide::~SKPSlide() {}
 
 void SKPSlide::draw(SkCanvas* canvas) {
-    if (fPic) {
+    if (fPic.get()) {
         bool isOffset = SkToBool(fCullRect.left() | fCullRect.top());
         if (isOffset) {
             canvas->save();
@@ -38,17 +34,22 @@ void SKPSlide::draw(SkCanvas* canvas) {
     }
 }
 
+static sk_sp<SkPicture> read_picture(const char path[]) {
+    std::unique_ptr<SkStream> stream = SkStream::MakeFromFile(path);
+    if (!stream) {
+        SkDebugf("Could not read %s.\n", path);
+        return nullptr;
+    }
+
+    auto pic = SkPicture::MakeFromStream(stream.get());
+    if (!pic) {
+        SkDebugf("Could not read %s as an SkPicture.\n", path);
+    }
+    return pic;
+}
+
 void SKPSlide::load(SkScalar, SkScalar) {
-    if (!fStream) {
-        SkDebugf("No skp stream for slide %s.\n", fName.c_str());
-        return;
-    }
-    fStream->rewind();
-    fPic = SkPicture::MakeFromStream(fStream.get());
-    if (!fPic) {
-        SkDebugf("Could not parse SkPicture from skp stream for slide %s.\n", fName.c_str());
-        return;
-    }
+    fPic = read_picture(fPath.c_str());
     fCullRect = fPic->cullRect().roundOut();
 }
 

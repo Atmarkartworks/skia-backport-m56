@@ -6,7 +6,7 @@
  * found in the LICENSE file.
  */
 
-#include "tools/gpu/gl/GLTestContext.h"
+#include "gl/GLTestContext.h"
 
 namespace sk_gpu_test {
 GLTestContext* CreatePlatformGLTestContext(GrGLStandard forcedGpuAPI,

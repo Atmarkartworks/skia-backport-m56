@@ -5,39 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkData.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkAutoMalloc.h"
-#include "src/base/SkBuffer.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkOSFile.h"
-#include "src/core/SkStreamPriv.h"
-#include "src/utils/SkOSPath.h"
-#include "tests/Test.h"
-#include "tools/Resources.h"
-
-#include <algorithm>
-#include <climits>
-#include <cstdint>
-#include <cstdio>
-#include <cstring>
-#include <functional>
-#include <limits>
-#include <memory>
-#include <string>
-
-using namespace skia_private;
-
-#ifdef SK_ENABLE_ANDROID_UTILS
-#include "client_utils/android/FrontBufferedStream.h"
-#endif
+#include "Resources.h"
+#include "SkData.h"
+#include "SkFrontBufferedStream.h"
+#include "SkOSFile.h"
+#include "SkOSPath.h"
+#include "SkRandom.h"
+#include "SkStream.h"
+#include "SkStreamPriv.h"
+#include "Test.h"
 
 #ifndef SK_BUILD_FOR_WIN
+#include <unistd.h>
 #include <fcntl.h>
 #endif
 
@@ -89,7 +68,7 @@ static void test_filestreams(skiatest::Reporter* reporter, const char* tmpDir) {
 
     {
         FILE* file = ::fopen(path.c_str(), "rb");
-        SkFILEStream stream(file);
+        SkFILEStream stream(file, SkFILEStream::kCallerPasses_Ownership);
         REPORTER_ASSERT(reporter, stream.isValid());
         test_loop_stream(reporter, &stream, s, 26, 100);
 
@@ -105,7 +84,7 @@ static void TestWStream(skiatest::Reporter* reporter) {
     for (i = 0; i < 100; i++) {
         REPORTER_ASSERT(reporter, ds.write(s, 26));
     }
-    REPORTER_ASSERT(reporter, ds.bytesWritten() == 100 * 26);
+    REPORTER_ASSERT(reporter, ds.getOffset() == 100 * 26);
 
     char* dst = new char[100 * 26 + 1];
     dst[100*26] = '*';
@@ -118,7 +97,7 @@ static void TestWStream(skiatest::Reporter* reporter) {
     {
         std::unique_ptr<SkStreamAsset> stream(ds.detachAsStream());
         REPORTER_ASSERT(reporter, 100 * 26 == stream->getLength());
-        REPORTER_ASSERT(reporter, ds.bytesWritten() == 0);
+        REPORTER_ASSERT(reporter, ds.getOffset() == 0);
         test_loop_stream(reporter, stream.get(), s, 26, 100);
 
         std::unique_ptr<SkStreamAsset> stream2(stream->duplicate());
@@ -136,12 +115,18 @@ static void TestWStream(skiatest::Reporter* reporter) {
     for (i = 0; i < 100; i++) {
         REPORTER_ASSERT(reporter, ds.write(s, 26));
     }
-    REPORTER_ASSERT(reporter, ds.bytesWritten() == 100 * 26);
+    REPORTER_ASSERT(reporter, ds.getOffset() == 100 * 26);
+
+    {
+        sk_sp<SkData> data = ds.snapshotAsData();
+        REPORTER_ASSERT(reporter, 100 * 26 == data->size());
+        REPORTER_ASSERT(reporter, memcmp(dst, data->data(), data->size()) == 0);
+    }
 
     {
         // Test that this works after a snapshot.
         std::unique_ptr<SkStreamAsset> stream(ds.detachAsStream());
-        REPORTER_ASSERT(reporter, ds.bytesWritten() == 0);
+        REPORTER_ASSERT(reporter, ds.getOffset() == 0);
         test_loop_stream(reporter, stream.get(), s, 26, 100);
 
         std::unique_ptr<SkStreamAsset> stream2(stream->duplicate());
@@ -167,21 +152,20 @@ static void TestPackedUInt(skiatest::Reporter* reporter) {
 
 
     size_t i;
-    SkDynamicMemoryWStream wstream;
+    char buffer[sizeof(sizes) * 4];
 
-    for (i = 0; i < std::size(sizes); ++i) {
+    SkMemoryWStream wstream(buffer, sizeof(buffer));
+    for (i = 0; i < SK_ARRAY_COUNT(sizes); ++i) {
         bool success = wstream.writePackedUInt(sizes[i]);
         REPORTER_ASSERT(reporter, success);
     }
+    wstream.flush();
 
-    std::unique_ptr<SkStreamAsset> rstream(wstream.detachAsStream());
-    for (i = 0; i < std::size(sizes); ++i) {
-        size_t n;
-        if (!rstream->readPackedUInt(&n)) {
-            ERRORF(reporter, "[%zu] sizes:%zx could not be read\n", i, sizes[i]);
-        }
+    SkMemoryStream rstream(buffer, sizeof(buffer));
+    for (i = 0; i < SK_ARRAY_COUNT(sizes); ++i) {
+        size_t n = rstream.readPackedUInt();
         if (sizes[i] != n) {
-            ERRORF(reporter, "[%zu] sizes:%zx != n:%zx\n", i, sizes[i], n);
+            ERRORF(reporter, "sizes:%x != n:%x\n", i, sizes[i], n);
         }
     }
 }
@@ -247,14 +231,12 @@ static void test_fully_peekable_stream(skiatest::Reporter* r, SkStream* stream, 
     }
 }
 
-#ifdef SK_ENABLE_ANDROID_UTILS
 static void test_peeking_front_buffered_stream(skiatest::Reporter* r,
                                                const SkStream& original,
                                                size_t bufferSize) {
-    std::unique_ptr<SkStream> dupe(original.duplicate());
+    SkStream* dupe = original.duplicate();
     REPORTER_ASSERT(r, dupe != nullptr);
-    auto bufferedStream = android::skia::FrontBufferedStream::Make(
-            std::move(dupe), bufferSize);
+    std::unique_ptr<SkStream> bufferedStream(SkFrontBufferedStream::Create(dupe, bufferSize));
     REPORTER_ASSERT(r, bufferedStream != nullptr);
 
     size_t peeked = 0;
@@ -274,7 +256,7 @@ static void test_peeking_front_buffered_stream(skiatest::Reporter* r,
     }
 
     // Test that attempting to peek beyond the length of the buffer does not prevent rewinding.
-    bufferedStream = android::skia::FrontBufferedStream::Make(original.duplicate(), bufferSize);
+    bufferedStream.reset(SkFrontBufferedStream::Create(original.duplicate(), bufferSize));
     REPORTER_ASSERT(r, bufferedStream != nullptr);
 
     const size_t bytesToPeek = bufferSize + 1;
@@ -301,7 +283,6 @@ static void test_peeking_front_buffered_stream(skiatest::Reporter* r,
         REPORTER_ASSERT(r, bufferedStream->rewind());
     }
 }
-#endif
 
 // This test uses file system operations that don't work out of the
 // box on iOS. It's likely that we don't need them on iOS. Ignoring for now.
@@ -313,26 +294,7 @@ DEF_TEST(StreamPeek, reporter) {
     test_fully_peekable_stream(reporter, &memStream, memStream.getLength());
 
     // Test an arbitrary file stream. file streams do not support peeking.
-    auto tmpdir = skiatest::GetTmpDir();
-    if (tmpdir.isEmpty()) {
-        ERRORF(reporter, "no tmp dir!");
-        return;
-    }
-    auto path = SkOSPath::Join(tmpdir.c_str(), "file");
-    {
-        SkFILEWStream wStream(path.c_str());
-        constexpr char filename[] = "images/baby_tux.webp";
-        auto data = GetResourceAsData(filename);
-        if (!data || data->size() == 0) {
-            ERRORF(reporter, "resource missing: %s\n", filename);
-            return;
-        }
-        if (!wStream.isValid() || !wStream.write(data->data(), data->size())) {
-            ERRORF(reporter, "error wrtiting to file %s", path.c_str());
-            return;
-        }
-    }
-    SkFILEStream fileStream(path.c_str());
+    SkFILEStream fileStream(GetResourcePath("baby_tux.webp").c_str());
     REPORTER_ASSERT(reporter, fileStream.isValid());
     if (!fileStream.isValid()) {
         return;
@@ -342,12 +304,10 @@ DEF_TEST(StreamPeek, reporter) {
         REPORTER_ASSERT(reporter, fileStream.peek(storage.get(), i) == 0);
     }
 
-#ifdef SK_ENABLE_ANDROID_UTILS
     // Now test some FrontBufferedStreams
     for (size_t i = 1; i < memStream.getLength(); i++) {
         test_peeking_front_buffered_stream(reporter, memStream, i);
     }
-#endif
 }
 #endif
 
@@ -364,7 +324,7 @@ static void stream_peek_test(skiatest::Reporter* rep,
     const uint8_t* expect = expected->bytes();
     for (size_t i = 0; i < asset->getLength(); ++i) {
         uint32_t maxSize =
-                SkToU32(std::min(sizeof(buffer), asset->getLength() - i));
+                SkToU32(SkTMin(sizeof(buffer), asset->getLength() - i));
         size_t size = rand.nextRangeU(1, maxSize);
         SkASSERT(size >= 1);
         SkASSERT(size <= sizeof(buffer));
@@ -392,7 +352,6 @@ DEF_TEST(StreamPeek_BlockMemoryStream, rep) {
     SkRandom rand(kSeed << 1);
     uint8_t buffer[4096];
     SkDynamicMemoryWStream dynamicMemoryWStream;
-    size_t totalWritten = 0;
     for (int i = 0; i < 32; ++i) {
         // Randomize the length of the blocks.
         size_t size = rand.nextRangeU(1, sizeof(buffer));
@@ -400,8 +359,6 @@ DEF_TEST(StreamPeek_BlockMemoryStream, rep) {
             buffer[j] = valueSource.nextU() & 0xFF;
         }
         dynamicMemoryWStream.write(buffer, size);
-        totalWritten += size;
-        REPORTER_ASSERT(rep, totalWritten == dynamicMemoryWStream.bytesWritten());
     }
     std::unique_ptr<SkStreamAsset> asset(dynamicMemoryWStream.detachAsStream());
     sk_sp<SkData> expected(SkData::MakeUninitialized(asset->getLength()));
@@ -416,34 +373,13 @@ DEF_TEST(StreamPeek_BlockMemoryStream, rep) {
     stream_peek_test(rep, asset.get(), expected.get());
 }
 
-DEF_TEST(StreamRemainingLengthIsBelow_MemoryStream, rep) {
-    SkMemoryStream stream(100);
-    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 0));
-    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 90));
-    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 100));
-
-    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, 101));
-    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, ULONG_MAX));
-
-    uint8_t buff[75];
-    REPORTER_ASSERT(rep, stream.read(buff, 75) == 75);
-
-    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 0));
-    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 24));
-    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 25));
-
-    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, 26));
-    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, 100));
-    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, ULONG_MAX));
-}
-
 namespace {
 class DumbStream : public SkStream {
 public:
     DumbStream(const uint8_t* data, size_t n)
         : fData(data), fCount(n), fIdx(0) {}
     size_t read(void* buffer, size_t size) override {
-        size_t copyCount = std::min(fCount - fIdx, size);
+        size_t copyCount = SkTMin(fCount - fIdx, size);
         if (copyCount) {
             memcpy(buffer, &fData[fIdx], copyCount);
             fIdx += copyCount;
@@ -478,30 +414,10 @@ static void stream_copy_test(skiatest::Reporter* reporter,
     }
 }
 
-DEF_TEST(DynamicMemoryWStream_detachAsData, r) {
-    const char az[] = "abcdefghijklmnopqrstuvwxyz";
-    const unsigned N = 40000;
-    SkDynamicMemoryWStream dmws;
-    for (unsigned i = 0; i < N; ++i) {
-        dmws.writeText(az);
-    }
-    REPORTER_ASSERT(r, dmws.bytesWritten() == N * strlen(az));
-    auto data = dmws.detachAsData();
-    REPORTER_ASSERT(r, data->size() == N * strlen(az));
-    const uint8_t* ptr = data->bytes();
-    for (unsigned i = 0; i < N; ++i) {
-        if (0 != memcmp(ptr, az, strlen(az))) {
-            ERRORF(r, "detachAsData() memcmp failed");
-            return;
-        }
-        ptr += strlen(az);
-    }
-}
-
 DEF_TEST(StreamCopy, reporter) {
     SkRandom random(123456);
     static const int N = 10000;
-    AutoTMalloc<uint8_t> src((size_t)N);
+    SkAutoTMalloc<uint8_t> src((size_t)N);
     for (int j = 0; j < N; ++j) {
         src[j] = random.nextU() & 0xff;
     }
@@ -516,178 +432,4 @@ DEF_TEST(StreamEmptyStreamMemoryBase, r) {
     SkDynamicMemoryWStream tmp;
     std::unique_ptr<SkStreamAsset> asset(tmp.detachAsStream());
     REPORTER_ASSERT(r, nullptr == asset->getMemoryBase());
-}
-
-DEF_TEST(FILEStreamWithOffset, r) {
-    if (GetResourcePath().isEmpty()) {
-        return;
-    }
-
-    SkString filename = GetResourcePath("images/baby_tux.png");
-    SkFILEStream stream1(filename.c_str());
-    if (!stream1.isValid()) {
-        ERRORF(r, "Could not create SkFILEStream from %s", filename.c_str());
-        return;
-    }
-    REPORTER_ASSERT(r, stream1.hasLength());
-    REPORTER_ASSERT(r, stream1.hasPosition());
-
-    // Seek halfway through the file. The second SkFILEStream will be created
-    // with the same filename and offset and therefore will treat that offset as
-    // the beginning.
-    const size_t size = stream1.getLength();
-    const size_t middle = size / 2;
-    if (!stream1.seek(middle)) {
-        ERRORF(r, "Could not seek SkFILEStream to %zu out of %zu", middle, size);
-        return;
-    }
-    REPORTER_ASSERT(r, stream1.getPosition() == middle);
-
-    FILE* file = sk_fopen(filename.c_str(), kRead_SkFILE_Flag);
-    if (!file) {
-        ERRORF(r, "Could not open %s as a FILE", filename.c_str());
-        return;
-    }
-
-    if (fseek(file, (long) middle, SEEK_SET) != 0) {
-        ERRORF(r, "Could not fseek FILE to %zu out of %zu", middle, size);
-        return;
-    }
-    SkFILEStream stream2(file);
-
-    const size_t remaining = size - middle;
-    AutoTMalloc<uint8_t> expected(remaining);
-    REPORTER_ASSERT(r, stream1.read(expected.get(), remaining) == remaining);
-
-    auto test_full_read = [&r, &expected, remaining](SkStream* stream) {
-        AutoTMalloc<uint8_t> actual(remaining);
-        REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
-        REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
-
-        REPORTER_ASSERT(r, stream->getPosition() == stream->getLength());
-        REPORTER_ASSERT(r, stream->isAtEnd());
-    };
-
-    auto test_rewind = [&r, &expected, remaining](SkStream* stream) {
-        // Rewind goes back to original offset.
-        REPORTER_ASSERT(r, stream->rewind());
-        REPORTER_ASSERT(r, stream->getPosition() == 0);
-        AutoTMalloc<uint8_t> actual(remaining);
-        REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
-        REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
-    };
-
-    auto test_move = [&r, &expected, size, remaining](SkStream* stream) {
-        // Cannot move to before the original offset.
-        REPORTER_ASSERT(r, stream->move(- (long) size));
-        REPORTER_ASSERT(r, stream->getPosition() == 0);
-
-        REPORTER_ASSERT(r, stream->move(std::numeric_limits<long>::min()));
-        REPORTER_ASSERT(r, stream->getPosition() == 0);
-
-        AutoTMalloc<uint8_t> actual(remaining);
-        REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
-        REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
-
-        REPORTER_ASSERT(r, stream->isAtEnd());
-        REPORTER_ASSERT(r, stream->getPosition() == remaining);
-
-        // Cannot move beyond the end.
-        REPORTER_ASSERT(r, stream->move(1));
-        REPORTER_ASSERT(r, stream->isAtEnd());
-        REPORTER_ASSERT(r, stream->getPosition() == remaining);
-    };
-
-    auto test_seek = [&r, &expected, middle, remaining](SkStream* stream) {
-        // Seek to an arbitrary position.
-        const size_t arbitrary = middle / 2;
-        REPORTER_ASSERT(r, stream->seek(arbitrary));
-        REPORTER_ASSERT(r, stream->getPosition() == arbitrary);
-        const size_t miniRemaining = remaining - arbitrary;
-        AutoTMalloc<uint8_t> actual(miniRemaining);
-        REPORTER_ASSERT(r, stream->read(actual.get(), miniRemaining) == miniRemaining);
-        REPORTER_ASSERT(r, !memcmp(expected.get() + arbitrary, actual.get(), miniRemaining));
-    };
-
-    auto test_seek_beginning = [&r, &expected, remaining](SkStream* stream) {
-        // Seek to the beginning.
-        REPORTER_ASSERT(r, stream->seek(0));
-        REPORTER_ASSERT(r, stream->getPosition() == 0);
-        AutoTMalloc<uint8_t> actual(remaining);
-        REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
-        REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
-    };
-
-    auto test_seek_end = [&r, remaining](SkStream* stream) {
-        // Cannot seek past the end.
-        REPORTER_ASSERT(r, stream->isAtEnd());
-
-        REPORTER_ASSERT(r, stream->seek(remaining + 1));
-        REPORTER_ASSERT(r, stream->isAtEnd());
-        REPORTER_ASSERT(r, stream->getPosition() == remaining);
-
-        const size_t middle = remaining / 2;
-        REPORTER_ASSERT(r, stream->seek(middle));
-        REPORTER_ASSERT(r, !stream->isAtEnd());
-        REPORTER_ASSERT(r, stream->getPosition() == middle);
-
-        REPORTER_ASSERT(r, stream->seek(remaining * 2));
-        REPORTER_ASSERT(r, stream->isAtEnd());
-        REPORTER_ASSERT(r, stream->getPosition() == remaining);
-
-        REPORTER_ASSERT(r, stream->seek(std::numeric_limits<long>::max()));
-        REPORTER_ASSERT(r, stream->isAtEnd());
-        REPORTER_ASSERT(r, stream->getPosition() == remaining);
-    };
-
-
-    std::function<void (SkStream* stream, bool recurse)> test_all;
-    test_all = [&](SkStream* stream, bool recurse) {
-        REPORTER_ASSERT(r, stream->getLength() == remaining);
-        REPORTER_ASSERT(r, stream->getPosition() == 0);
-
-        test_full_read(stream);
-        test_rewind(stream);
-        test_move(stream);
-        test_seek(stream);
-        test_seek_beginning(stream);
-        test_seek_end(stream);
-
-        if (recurse) {
-            // Duplicate shares the original offset.
-            auto duplicate = stream->duplicate();
-            if (!duplicate) {
-                ERRORF(r, "Failed to duplicate the stream!");
-            } else {
-                test_all(duplicate.get(), false);
-            }
-
-            // Fork shares the original offset, too.
-            auto fork = stream->fork();
-            if (!fork) {
-                ERRORF(r, "Failed to fork the stream!");
-            } else {
-                REPORTER_ASSERT(r, fork->isAtEnd());
-                REPORTER_ASSERT(r, fork->getLength() == remaining);
-                REPORTER_ASSERT(r, fork->rewind());
-
-                test_all(fork.get(), false);
-            }
-        }
-    };
-
-    test_all(&stream2, true);
-}
-
-DEF_TEST(RBuffer, reporter) {
-    int32_t value = 0;
-    SkRBuffer buffer(&value, 4);
-    REPORTER_ASSERT(reporter, buffer.isValid());
-
-    int32_t tmp;
-    REPORTER_ASSERT(reporter, buffer.read(&tmp, 4));
-    REPORTER_ASSERT(reporter, buffer.isValid());
-
-    REPORTER_ASSERT(reporter, !buffer.read(&tmp, 4));
-    REPORTER_ASSERT(reporter, !buffer.isValid());
 }

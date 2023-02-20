@@ -5,11 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkColorPriv.h"
-#include "include/private/base/SkMath.h"
-#include "tests/Test.h"
-
-#include <algorithm>
+#include "SkColorPriv.h"
+#include "SkXfermode.h"
+#include "Test.h"
 
 // our std SkAlpha255To256
 static int test_srcover0(unsigned dst, unsigned alpha) {
@@ -58,7 +56,7 @@ DEF_TEST(SrcOver, reporter) {
             unsigned r0 = test_srcover0(dst, i);
             unsigned r1 = test_srcover1(dst, i);
             unsigned r2 = test_srcover2(dst, i);
-            unsigned max = std::max(dst, i);
+            unsigned max = SkMax32(dst, i);
             // ignore the known failure
             if (dst != 255) {
                 REPORTER_ASSERT(reporter, r0 <= 255 && r0 >= max);

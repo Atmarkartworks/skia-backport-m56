@@ -5,37 +5,39 @@
 * found in the LICENSE file
 */
 
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorType.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSurfaceProps.h"
-#include "include/core/SkTypes.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
-#include "src/core/SkSpecialImage.h"
-#include "src/core/SkSpecialSurface.h"
-#include "tests/CtsEnforcement.h"
-#include "tests/Test.h"
+#include "SkCanvas.h"
+#include "SkSpecialImage.h"
+#include "SkSpecialSurface.h"
+#include "Test.h"
 
-#include <initializer_list>
-struct GrContextOptions;
+#if SK_SUPPORT_GPU
+#include "GrContext.h"
+#include "SkGr.h"
+#endif
 
-static const int kSurfaceSize = 10;
+class TestingSpecialSurfaceAccess {
+public:
+    static const SkIRect& Subset(const SkSpecialSurface* surf) {
+        return surf->subset();
+    }
+};
+
+// Both 'kSmallerSize' and 'kFullSize' need to be a non-power-of-2 to exercise
+// the gpu's loose fit behavior
+static const int kSmallerSize = 10;
+static const int kPad = 5;
+static const int kFullSize = kSmallerSize + 2 * kPad;
 
 // Exercise the public API of SkSpecialSurface (e.g., getCanvas, newImageSnapshot)
 static void test_surface(const sk_sp<SkSpecialSurface>& surf,
                          skiatest::Reporter* reporter,
                          int offset) {
 
-    const SkIRect surfSubset = surf->subset();
+    const SkIRect surfSubset = TestingSpecialSurfaceAccess::Subset(surf.get());
     REPORTER_ASSERT(reporter, offset == surfSubset.fLeft);
     REPORTER_ASSERT(reporter, offset == surfSubset.fTop);
-    REPORTER_ASSERT(reporter, kSurfaceSize == surfSubset.width());
-    REPORTER_ASSERT(reporter, kSurfaceSize == surfSubset.height());
+    REPORTER_ASSERT(reporter, kSmallerSize == surfSubset.width());
+    REPORTER_ASSERT(reporter, kSmallerSize == surfSubset.height());
 
     SkCanvas* canvas = surf->getCanvas();
     SkASSERT_RELEASE(canvas);
@@ -54,60 +56,35 @@ static void test_surface(const sk_sp<SkSpecialSurface>& surf,
 
 DEF_TEST(SpecialSurface_Raster, reporter) {
 
-    SkImageInfo info = SkImageInfo::MakeN32(kSurfaceSize, kSurfaceSize, kOpaque_SkAlphaType);
-    sk_sp<SkSpecialSurface> surf(SkSpecialSurface::MakeRaster(info, SkSurfaceProps()));
+    SkImageInfo info = SkImageInfo::MakeN32(kSmallerSize, kSmallerSize, kOpaque_SkAlphaType);
+    sk_sp<SkSpecialSurface> surf(SkSpecialSurface::MakeRaster(info));
 
     test_surface(surf, reporter, 0);
 }
 
-DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SpecialSurface_Gpu1,
-                                       reporter,
-                                       ctxInfo,
-                                       CtsEnforcement::kApiLevel_T) {
-    auto dContext = ctxInfo.directContext();
+DEF_TEST(SpecialSurface_Raster2, reporter) {
 
-    for (auto colorType : { kRGBA_8888_SkColorType, kRGBA_1010102_SkColorType }) {
-        if (!dContext->colorTypeSupportedAsSurface(colorType)) {
-            continue;
-        }
+    SkBitmap bm;
+    bm.allocN32Pixels(kFullSize, kFullSize, true);
 
-        SkImageInfo ii = SkImageInfo::Make({ kSurfaceSize, kSurfaceSize }, colorType,
-                                           kPremul_SkAlphaType);
+    const SkIRect subset = SkIRect::MakeXYWH(kPad, kPad, kSmallerSize, kSmallerSize);
 
-        auto surf(SkSpecialSurface::MakeRenderTarget(dContext, ii, SkSurfaceProps(),
-                                                     kTopLeft_GrSurfaceOrigin));
-        test_surface(surf, reporter, 0);
-    }
+    sk_sp<SkSpecialSurface> surf(SkSpecialSurface::MakeFromBitmap(subset, bm));
+
+    test_surface(surf, reporter, kPad);
+
+    // TODO: check that the clear didn't escape the active region
 }
 
-#if SK_GRAPHITE_ENABLED
+#if SK_SUPPORT_GPU
 
-#include "include/gpu/graphite/Context.h"
-#include "include/gpu/graphite/TextureInfo.h"
-#include "src/gpu/graphite/Caps.h"
-#include "src/gpu/graphite/ContextPriv.h"
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SpecialSurface_Gpu1, reporter, ctxInfo) {
+    sk_sp<SkSpecialSurface> surf(SkSpecialSurface::MakeRenderTarget(ctxInfo.grContext(),
+                                                                    kSmallerSize, kSmallerSize,
+                                                                    kRGBA_8888_GrPixelConfig,
+                                                                    nullptr));
 
-DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SpecialSurface_Graphite, reporter, context) {
-    using namespace skgpu::graphite;
-
-    auto caps = context->priv().caps();
-    auto recorder = context->makeRecorder();
-
-    for (auto colorType : { kRGBA_8888_SkColorType, kRGBA_1010102_SkColorType }) {
-        TextureInfo info = caps->getDefaultSampledTextureInfo(colorType,
-                                                              skgpu::Mipmapped::kNo,
-                                                              skgpu::Protected::kNo,
-                                                              Renderable::kYes);
-        if (!info.isValid()) {
-            continue;
-        }
-
-        SkImageInfo ii = SkImageInfo::Make({ kSurfaceSize, kSurfaceSize }, colorType,
-                                           kPremul_SkAlphaType);
-
-        auto surf(SkSpecialSurface::MakeGraphite(recorder.get(), ii, SkSurfaceProps()));
-        test_surface(surf, reporter, 0);
-    }
+    test_surface(surf, reporter, 0);
 }
 
-#endif // SK_GRAPHITE_ENABLED
+#endif

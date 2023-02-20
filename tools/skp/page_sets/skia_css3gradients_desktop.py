@@ -14,8 +14,8 @@ class SkiaBuildbotDesktopPage(page_module.Page):
   def __init__(self, url, page_set):
     super(SkiaBuildbotDesktopPage, self).__init__(
         url=url,
-        name=url,
         page_set=page_set,
+        credentials_path='data/credentials.json',
         shared_page_state_class=shared_page_state.SharedDesktopPageState)
     self.archive_data_file = 'data/skia_css3gradients_desktop.json'
 
@@ -37,8 +37,7 @@ class SkiaCss3gradientsDesktopPageSet(story.StorySet):
 
     urls_list = [
       # Why: http://code.google.com/p/chromium/issues/detail?id=168448
-      # and https://bugs.chromium.org/p/skia/issues/detail?id=10390
-      'https://www.w3schools.com/css/css3_gradients.asp',
+      'https://www.webkit.org/blog/1424/css3-gradients/',
     ]
 
     for url in urls_list:

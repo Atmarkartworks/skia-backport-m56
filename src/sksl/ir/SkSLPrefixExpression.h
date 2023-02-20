@@ -4,70 +4,33 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
+ 
 #ifndef SKSL_PREFIXEXPRESSION
 #define SKSL_PREFIXEXPRESSION
 
-#include "include/private/SkSLIRNode.h"
-#include "include/sksl/SkSLOperator.h"
-#include "include/sksl/SkSLPosition.h"
-#include "src/sksl/ir/SkSLExpression.h"
-
-#include <memory>
-#include <string>
-#include <utility>
+#include "SkSLExpression.h"
 
 namespace SkSL {
-
-class Context;
 
 /**
  * An expression modified by a unary operator appearing before it, such as '!flag'.
  */
-class PrefixExpression final : public Expression {
-public:
-    inline static constexpr Kind kIRNodeKind = Kind::kPrefix;
+struct PrefixExpression : public Expression {
+    PrefixExpression(Token::Kind op, std::unique_ptr<Expression> operand)
+    : INHERITED(operand->fPosition, kPrefix_Kind, operand->fType)
+    , fOperand(std::move(operand))
+    , fOperator(op) {}
 
-    // Use PrefixExpression::Make to automatically simplify various prefix expression types.
-    PrefixExpression(Position pos, Operator op, std::unique_ptr<Expression> operand)
-        : INHERITED(pos, kIRNodeKind, &operand->type())
-        , fOperator(op)
-        , fOperand(std::move(operand)) {}
-
-    // Creates an SkSL prefix expression; uses the ErrorReporter to report errors.
-    static std::unique_ptr<Expression> Convert(const Context& context, Position pos, Operator op,
-                                               std::unique_ptr<Expression> base);
-
-    // Creates an SkSL prefix expression; reports errors via ASSERT.
-    static std::unique_ptr<Expression> Make(const Context& context, Position pos, Operator op,
-                                            std::unique_ptr<Expression> base);
-
-    Operator getOperator() const {
-        return fOperator;
+    virtual std::string description() const override {
+        return Token::OperatorName(fOperator) + fOperand->description();
     }
 
-    std::unique_ptr<Expression>& operand() {
-        return fOperand;
-    }
+    const std::unique_ptr<Expression> fOperand;
+    const Token::Kind fOperator;
 
-    const std::unique_ptr<Expression>& operand() const {
-        return fOperand;
-    }
-
-    std::unique_ptr<Expression> clone(Position pos) const override {
-        return std::make_unique<PrefixExpression>(pos, this->getOperator(),
-                                                  this->operand()->clone());
-    }
-
-    std::string description(OperatorPrecedence parentPrecedence) const override;
-
-private:
-    Operator fOperator;
-    std::unique_ptr<Expression> fOperand;
-
-    using INHERITED = Expression;
+    typedef Expression INHERITED;
 };
 
-}  // namespace SkSL
+} // namespace
 
 #endif

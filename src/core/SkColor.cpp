@@ -5,14 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
-#include "include/private/SkColorData.h"
-#include "include/private/base/SkTPin.h"
-#include "src/base/SkVx.h"
-#include "src/core/SkSwizzlePriv.h"
-
-#include <algorithm>
+#include "SkColor.h"
+#include "SkColorPriv.h"
+#include "SkFixed.h"
 
 SkPMColor SkPreMultiplyARGB(U8CPU a, U8CPU r, U8CPU g, U8CPU b) {
     return SkPremultiplyARGBInline(a, r, g, b);
@@ -38,8 +33,8 @@ static inline SkScalar ByteDivToScalar(int numer, U8CPU denom) {
 void SkRGBToHSV(U8CPU r, U8CPU g, U8CPU b, SkScalar hsv[3]) {
     SkASSERT(hsv);
 
-    unsigned min = std::min(r, std::min(g, b));
-    unsigned max = std::max(r, std::max(g, b));
+    unsigned min = SkMin32(r, SkMin32(g, b));
+    unsigned max = SkMax32(r, SkMax32(g, b));
     unsigned delta = max - min;
 
     SkScalar v = ByteToScalar(max);
@@ -78,77 +73,111 @@ void SkRGBToHSV(U8CPU r, U8CPU g, U8CPU b, SkScalar hsv[3]) {
 SkColor SkHSVToColor(U8CPU a, const SkScalar hsv[3]) {
     SkASSERT(hsv);
 
-    SkScalar s = SkTPin(hsv[1], 0.0f, 1.0f);
-    SkScalar v = SkTPin(hsv[2], 0.0f, 1.0f);
+    U8CPU s = SkUnitScalarClampToByte(hsv[1]);
+    U8CPU v = SkUnitScalarClampToByte(hsv[2]);
 
-    U8CPU v_byte = SkScalarRoundToInt(v * 255);
-
-    if (SkScalarNearlyZero(s)) { // shade of gray
-        return SkColorSetARGB(a, v_byte, v_byte, v_byte);
+    if (0 == s) { // shade of gray
+        return SkColorSetARGB(a, v, v, v);
     }
-    SkScalar hx = (hsv[0] < 0 || hsv[0] >= SkIntToScalar(360)) ? 0 : hsv[0]/60;
-    SkScalar w = SkScalarFloorToScalar(hx);
-    SkScalar f = hx - w;
+    SkFixed hx = (hsv[0] < 0 || hsv[0] >= SkIntToScalar(360)) ? 0 : SkScalarToFixed(hsv[0]/60);
+    SkFixed f = hx & 0xFFFF;
 
-    unsigned p = SkScalarRoundToInt((SK_Scalar1 - s) * v * 255);
-    unsigned q = SkScalarRoundToInt((SK_Scalar1 - (s * f)) * v * 255);
-    unsigned t = SkScalarRoundToInt((SK_Scalar1 - (s * (SK_Scalar1 - f))) * v * 255);
+    unsigned v_scale = SkAlpha255To256(v);
+    unsigned p = SkAlphaMul(255 - s, v_scale);
+    unsigned q = SkAlphaMul(255 - (s * f >> 16), v_scale);
+    unsigned t = SkAlphaMul(255 - (s * (SK_Fixed1 - f) >> 16), v_scale);
 
     unsigned r, g, b;
 
-    SkASSERT((unsigned)(w) < 6);
-    switch ((unsigned)(w)) {
-        case 0: r = v_byte;  g = t;      b = p; break;
-        case 1: r = q;       g = v_byte; b = p; break;
-        case 2: r = p;       g = v_byte; b = t; break;
-        case 3: r = p;       g = q;      b = v_byte; break;
-        case 4: r = t;       g = p;      b = v_byte; break;
-        default: r = v_byte; g = p;      b = q; break;
+    SkASSERT((unsigned)(hx >> 16) < 6);
+    switch (hx >> 16) {
+        case 0: r = v; g = t; b = p; break;
+        case 1: r = q; g = v; b = p; break;
+        case 2: r = p; g = v; b = t; break;
+        case 3: r = p; g = q; b = v; break;
+        case 4: r = t;  g = p; b = v; break;
+        default: r = v; g = p; b = q; break;
     }
     return SkColorSetARGB(a, r, g, b);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+#include "SkPM4fPriv.h"
+#include "SkHalf.h"
 
-template <>
+SkPM4f SkPM4f::FromPMColor(SkPMColor c) {
+    return From4f(swizzle_rb_if_bgra(Sk4f_fromL32(c)));
+}
+
+SkColor4f SkPM4f::unpremul() const {
+    float alpha = fVec[A];
+    if (0 == alpha) {
+        return { 0, 0, 0, 0 };
+    } else {
+        float invAlpha = 1 / alpha;
+        return { fVec[R] * invAlpha, fVec[G] * invAlpha, fVec[B] * invAlpha, alpha };
+    }
+}
+
+void SkPM4f::toF16(uint16_t half[4]) const {
+    for (int i = 0; i < 4; ++i) {
+        half[i] = SkFloatToHalf(fVec[i]);
+    }
+}
+
+uint64_t SkPM4f::toF16() const {
+    uint64_t value;
+    this->toF16(reinterpret_cast<uint16_t*>(&value));
+    return value;
+}
+
+SkPM4f SkPM4f::FromF16(const uint16_t half[4]) {
+    return {{
+        SkHalfToFloat(half[0]),
+        SkHalfToFloat(half[1]),
+        SkHalfToFloat(half[2]),
+        SkHalfToFloat(half[3])
+    }};
+}
+
+#ifdef SK_DEBUG
+void SkPM4f::assertIsUnit() const {
+    auto c4 = Sk4f::Load(fVec);
+    SkASSERT((c4 >= Sk4f(0)).allTrue() && (c4 <= Sk4f(1)).allTrue());
+}
+#endif
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 SkColor4f SkColor4f::FromColor(SkColor bgra) {
     SkColor4f rgba;
-    swizzle_rb(Sk4f_fromL32(bgra)).store(rgba.vec());
+    swizzle_rb(Sk4f_fromS32(bgra)).store(rgba.vec());
     return rgba;
 }
 
-template <>
+SkColor4f SkColor4f::FromColor3f(SkColor3f color3f, float a) {
+    SkColor4f rgba;
+    rgba.fR = color3f.fX;
+    rgba.fG = color3f.fY;
+    rgba.fB = color3f.fZ;
+    rgba.fA = a;
+    return rgba;
+}
+
 SkColor SkColor4f::toSkColor() const {
-    return Sk4f_toL32(swizzle_rb(skvx::float4::Load(this->vec())));
+    return Sk4f_toS32(swizzle_rb(Sk4f::Load(this->vec())));
 }
 
-template <>
-uint32_t SkColor4f::toBytes_RGBA() const {
-    return Sk4f_toL32(skvx::float4::Load(this->vec()));
+SkColor4f SkColor4f::Pin(float r, float g, float b, float a) {
+    SkColor4f c4;
+    Sk4f::Min(Sk4f::Max(Sk4f(r, g, b, a), Sk4f(0)), Sk4f(1)).store(c4.vec());
+    return c4;
 }
 
-template <>
-SkColor4f SkColor4f::FromBytes_RGBA(uint32_t c) {
-    SkColor4f color;
-    Sk4f_fromL32(c).store(&color);
-    return color;
-}
+SkPM4f SkColor4f::premul() const {
+    auto src = Sk4f::Load(this->pin().vec());
+    float srcAlpha = src[3];  // need the pinned version of our alpha
+    src = src * Sk4f(srcAlpha, srcAlpha, srcAlpha, 1);
 
-template <>
-SkPMColor4f SkPMColor4f::FromPMColor(SkPMColor c) {
-    SkPMColor4f color;
-    swizzle_rb_if_bgra(Sk4f_fromL32(c)).store(&color);
-    return color;
-}
-
-template <>
-uint32_t SkPMColor4f::toBytes_RGBA() const {
-    return Sk4f_toL32(skvx::float4::Load(this->vec()));
-}
-
-template <>
-SkPMColor4f SkPMColor4f::FromBytes_RGBA(uint32_t c) {
-    SkPMColor4f color;
-    Sk4f_fromL32(c).store(&color);
-    return color;
+    return SkPM4f::From4f(src);
 }

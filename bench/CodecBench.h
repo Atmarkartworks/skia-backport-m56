@@ -8,12 +8,11 @@
 #ifndef CodecBench_DEFINED
 #define CodecBench_DEFINED
 
-#include "bench/Benchmark.h"
-#include "include/core/SkData.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkString.h"
-#include "src/base/SkAutoMalloc.h"
+#include "Benchmark.h"
+#include "SkData.h"
+#include "SkImageInfo.h"
+#include "SkRefCnt.h"
+#include "SkString.h"
 
 /**
  *  Time SkCodec.
@@ -36,6 +35,6 @@ private:
     sk_sp<SkData>           fData;
     SkImageInfo             fInfo;          // Set in onDelayedSetup.
     SkAutoMalloc            fPixelStorage;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 #endif // CodecBench_DEFINED

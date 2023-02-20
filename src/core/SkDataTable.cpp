@@ -5,14 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkDataTable.h"
-
-#include "include/core/SkRefCnt.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkOnce.h"
-
-#include <cstring>
+#include "SkData.h"
+#include "SkDataTable.h"
+#include "SkOnce.h"
 
 static void malloc_freeproc(void* context) {
     sk_free(context);
@@ -133,4 +128,54 @@ sk_sp<SkDataTable> SkDataTable::MakeArrayProc(const void* array, size_t elemSize
         return SkDataTable::MakeEmpty();
     }
     return sk_sp<SkDataTable>(new SkDataTable(array, elemSize, count, proc, ctx));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static void chunkalloc_freeproc(void* context) { delete (SkChunkAlloc*)context; }
+
+SkDataTableBuilder::SkDataTableBuilder(size_t minChunkSize)
+    : fHeap(nullptr)
+    , fMinChunkSize(minChunkSize) {}
+
+SkDataTableBuilder::~SkDataTableBuilder() { this->reset(); }
+
+void SkDataTableBuilder::reset(size_t minChunkSize) {
+    fMinChunkSize = minChunkSize;
+    fDir.reset();
+    if (fHeap) {
+        delete fHeap;
+        fHeap = nullptr;
+    }
+}
+
+void SkDataTableBuilder::append(const void* src, size_t size) {
+    if (nullptr == fHeap) {
+        fHeap = new SkChunkAlloc(fMinChunkSize);
+    }
+
+    void* dst = fHeap->alloc(size, SkChunkAlloc::kThrow_AllocFailType);
+    memcpy(dst, src, size);
+
+    SkDataTable::Dir* dir = fDir.append();
+    dir->fPtr = dst;
+    dir->fSize = size;
+}
+
+sk_sp<SkDataTable> SkDataTableBuilder::detachDataTable() {
+    const int count = fDir.count();
+    if (0 == count) {
+        return SkDataTable::MakeEmpty();
+    }
+
+    // Copy the dir into the heap;
+    void* dir = fHeap->alloc(count * sizeof(SkDataTable::Dir), SkChunkAlloc::kThrow_AllocFailType);
+    memcpy(dir, fDir.begin(), count * sizeof(SkDataTable::Dir));
+
+    sk_sp<SkDataTable> table(
+        new SkDataTable((SkDataTable::Dir*)dir, count, chunkalloc_freeproc, fHeap));
+    // we have to detach our fHeap, since we are giving that to the table
+    fHeap = nullptr;
+    fDir.reset();
+    return table;
 }

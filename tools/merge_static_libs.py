@@ -3,23 +3,19 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-
-from __future__ import print_function
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 
-
 def _Usage():
-  print('Usage: merge_static_libs OUTPUT_LIB INPUT_LIB [INPUT_LIB]*')
+  print 'Usage: merge_static_libs OUTPUT_LIB INPUT_LIB [INPUT_LIB]*'
   sys.exit(1)
-
 
 def MergeLibs(in_libs, out_lib):
   """ Merges multiple static libraries into one.
-
+  
   in_libs: list of paths to static libraries to be merged
   out_lib: path to the static library which will be created from in_libs
   """
@@ -42,12 +38,12 @@ def MergeLibs(in_libs, out_lib):
       proc.wait()
       if proc.poll() == 0:
         # The static library is non-thin, and we extracted objects
-        for obj in current_objects:
-          objects.append(os.path.abspath(obj))
+        for object in current_objects:
+          objects.append(os.path.abspath(object))
       elif 'thin archive' in proc.communicate()[0]:
         # The static library is thin, so it contains the paths to its objects
-        for obj in current_objects:
-          objects.append(obj)
+        for object in current_objects:
+          objects.append(object)
       else:
         raise Exception('Failed to extract objects from %s.' % in_lib)
     os.chdir(curdir)
@@ -59,14 +55,12 @@ def MergeLibs(in_libs, out_lib):
   else:
     raise Exception('Error: Your platform is not supported')
 
-
 def Main():
   if len(sys.argv) < 3:
     _Usage()
   out_lib = sys.argv[1]
   in_libs = sys.argv[2:]
   MergeLibs(in_libs, out_lib)
-
 
 if '__main__' == __name__:
   sys.exit(Main())

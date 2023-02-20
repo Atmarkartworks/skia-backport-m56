@@ -8,10 +8,10 @@
 #ifndef SkFontConfigInterface_DEFINED
 #define SkFontConfigInterface_DEFINED
 
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkTypeface.h"
+#include "SkDataTable.h"
+#include "SkFontStyle.h"
+#include "SkRefCnt.h"
+#include "SkTypeface.h"
 
 class SkFontMgr;
 
@@ -30,12 +30,14 @@ public:
      *  unref(). The default SkFontConfigInterface is the result of calling
      *  GetSingletonDirectInterface.
      */
-    static sk_sp<SkFontConfigInterface> RefGlobal();
+    static SkFontConfigInterface* RefGlobal();
 
     /**
-     *  Replace the current global instance with the specified one.
+     *  Replace the current global instance with the specified one, safely
+     *  ref'ing the new instance, and unref'ing the previous. Returns its
+     *  parameter (the new global instance).
      */
-    static void SetGlobal(sk_sp<SkFontConfigInterface> fc);
+    static SkFontConfigInterface* SetGlobal(SkFontConfigInterface*);
 
     /**
      *  This should be treated as private to the impl of SkFontConfigInterface.
@@ -61,7 +63,7 @@ public:
 
         // If buffer is NULL, just return the number of bytes that would have
         // been written. Will pad contents to a multiple of 4.
-        size_t writeToMemory(void* buffer = nullptr) const;
+        size_t writeToMemory(void* buffer = NULL) const;
 
         // Recreate from a flattened buffer, returning the number of bytes read.
         size_t readFromMemory(const void* buffer, size_t length);
@@ -98,9 +100,7 @@ public:
      *  openStream(), but derived classes may implement more complex caching schemes.
      */
     virtual sk_sp<SkTypeface> makeTypeface(const FontIdentity& identity) {
-        return SkTypeface::MakeFromStream(std::unique_ptr<SkStreamAsset>(this->openStream(identity)),
-                                          identity.fTTCIndex);
-
+        return SkTypeface::MakeFromStream(this->openStream(identity), identity.fTTCIndex);
     }
 
     /**
@@ -109,7 +109,10 @@ public:
      */
     static SkFontConfigInterface* GetSingletonDirectInterface();
 
-    using INHERITED = SkRefCnt;
+    // New APIS, which have default impls for now (which do nothing)
+
+    virtual sk_sp<SkDataTable> getFamilyNames() { return SkDataTable::MakeEmpty(); }
+    typedef SkRefCnt INHERITED;
 };
 
 #endif

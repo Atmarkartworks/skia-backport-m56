@@ -5,20 +5,16 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "tools/Resources.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
 
-namespace {
+#include "Resources.h"
+#include "SkBitmapProcState.h"
+#include "SkBitmapScaler.h"
+#include "SkGradientShader.h"
+#include "SkImageEncoder.h"
+#include "SkStream.h"
+#include "SkTypeface.h"
+
 static SkSize computeSize(const SkBitmap& bm, const SkMatrix& mat) {
     SkRect bounds = SkRect::MakeWH(SkIntToScalar(bm.width()),
                                    SkIntToScalar(bm.height()));
@@ -27,33 +23,27 @@ static SkSize computeSize(const SkBitmap& bm, const SkMatrix& mat) {
 }
 
 static void draw_cell(SkCanvas* canvas, const SkBitmap& bm, const SkMatrix& mat, SkScalar dx,
-                      const SkSamplingOptions& sampling) {
+                      SkFilterQuality lvl) {
+    SkPaint paint;
+    paint.setFilterQuality(lvl);
+
     SkAutoCanvasRestore acr(canvas, true);
 
     canvas->translate(dx, 0);
     canvas->concat(mat);
-    canvas->drawImage(bm.asImage(), 0, 0, sampling);
+    canvas->drawBitmap(bm, 0, 0, &paint);
 }
 
 static void draw_row(SkCanvas* canvas, const SkBitmap& bm, const SkMatrix& mat, SkScalar dx) {
-    draw_cell(canvas, bm, mat, 0 * dx, SkSamplingOptions());
-    draw_cell(canvas, bm, mat, 1 * dx, SkSamplingOptions(SkFilterMode::kLinear));
-    draw_cell(canvas, bm, mat, 2 * dx, SkSamplingOptions(SkFilterMode::kLinear,
-                                                         SkMipmapMode::kLinear));
-    draw_cell(canvas, bm, mat, 3 * dx, SkSamplingOptions(SkCubicResampler::Mitchell()));
+    draw_cell(canvas, bm, mat, 0 * dx, kNone_SkFilterQuality);
+    draw_cell(canvas, bm, mat, 1 * dx, kLow_SkFilterQuality);
+    draw_cell(canvas, bm, mat, 2 * dx, kMedium_SkFilterQuality);
+    draw_cell(canvas, bm, mat, 3 * dx, kHigh_SkFilterQuality);
 }
 
 class FilterIndiaBoxGM : public skiagm::GM {
-    SkBitmap    fBM;
-    SkMatrix    fMatrix[2];
-
     void onOnceBeforeDraw() override {
-        constexpr char kResource[] = "images/box.gif";
-        if (!GetResourceAsBitmap(kResource, &fBM)) {
-            fBM.allocN32Pixels(1, 1);
-            fBM.eraseARGB(255, 255, 0 , 0); // red == bad
-        }
-        fBM.setImmutable();
+        this->makeBitmap();
 
         SkScalar cx = SkScalarHalf(fBM.width());
         SkScalar cy = SkScalarHalf(fBM.height());
@@ -65,13 +55,31 @@ class FilterIndiaBoxGM : public skiagm::GM {
         fMatrix[1].setRotate(30, cx, cy); fMatrix[1].postScale(horizScale, vertScale);
     }
 
-    SkString onShortName() override { return SkString("filterindiabox"); }
+public:
+    SkBitmap    fBM;
+    SkMatrix    fMatrix[2];
+    SkString    fName;
 
-    SkISize onISize() override { return {680, 130}; }
+    FilterIndiaBoxGM() {
+        this->setBGColor(sk_tool_utils::color_to_565(0xFFDDDDDD));
+    }
+
+    FilterIndiaBoxGM(const char filename[]) : fFilename(filename) {
+        fName.printf("filterindiabox");
+    }
+
+protected:
+    SkString onShortName() override {
+        return fName;
+    }
+
+    SkISize onISize() override {
+        return SkISize::Make(1024, 768);
+    }
 
     void onDraw(SkCanvas* canvas) override {
         canvas->translate(10, 10);
-        for (size_t i = 0; i < std::size(fMatrix); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fMatrix); ++i) {
             SkSize size = computeSize(fBM, fMatrix[i]);
             size.fWidth += 20;
             size.fHeight += 20;
@@ -80,7 +88,27 @@ class FilterIndiaBoxGM : public skiagm::GM {
             canvas->translate(0, size.fHeight);
         }
     }
-};
-}  // namespace
 
-DEF_GM( return new FilterIndiaBoxGM(); )
+  protected:
+      SkString fFilename;
+      int fSize;
+
+      SkScalar getScale() {
+          return 192.f/fSize;
+      }
+
+      void makeBitmap() {
+        if (!GetResourceAsBitmap(fFilename.c_str(), &fBM)) {
+            fBM.allocN32Pixels(1, 1);
+            fBM.eraseARGB(255, 255, 0 , 0); // red == bad
+        }
+        fSize = fBM.height();
+      }
+  private:
+    typedef skiagm::GM INHERITED;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+
+DEF_GM( return new FilterIndiaBoxGM("box.gif"); )

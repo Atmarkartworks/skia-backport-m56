@@ -8,11 +8,9 @@
 #ifndef SkScaleToSides_DEFINED
 #define SkScaleToSides_DEFINED
 
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-
 #include <cmath>
-#include <utility>
+#include "SkScalar.h"
+#include "SkTypes.h"
 
 class SkScaleToSides {
 public:
@@ -32,23 +30,29 @@ public:
 
             // Force minRadius to be the smaller of the two.
             if (*minRadius > *maxRadius) {
-                using std::swap;
-                swap(minRadius, maxRadius);
+                SkTSwap(minRadius, maxRadius);
             }
 
             // newMinRadius must be float in order to give the actual value of the radius.
             // The newMinRadius will always be smaller than limit. The largest that minRadius can be
             // is 1/2 the ratio of minRadius : (minRadius + maxRadius), therefore in the resulting
-            // division, minRadius can be no larger than 1/2 limit + ULP.
+            // division, minRadius can be no larger than 1/2 limit + ULP. The newMinRadius can be
+            // 1/2 a ULP off at this point.
             float newMinRadius = *minRadius;
 
+            // Because newMaxRadius is the result of a double to float conversion, it can be larger
+            // than limit, but only by one ULP.
             float newMaxRadius = (float)(limit - newMinRadius);
 
-            // Reduce newMaxRadius an ulp at a time until it fits. This usually never happens,
-            // but if it does it could be 1 or 2 times. In certain pathological cases it could be
-            // more. Max iterations seen so far is 17.
-            while (newMaxRadius + newMinRadius > limit) {
+            // The total sum of newMinRadius and newMaxRadius can be upto 1.5 ULPs off. If the
+            // sum is greater than the limit then newMaxRadius may have to be reduced twice.
+            // Note: nextafterf is a c99 call and should be std::nextafter, but this is not
+            // implemented in the GCC ARM compiler.
+            if (newMaxRadius + newMinRadius > limit) {
                 newMaxRadius = nextafterf(newMaxRadius, 0.0f);
+                if (newMaxRadius + newMinRadius > limit) {
+                    newMaxRadius = nextafterf(newMaxRadius, 0.0f);
+                }
             }
             *maxRadius = newMaxRadius;
         }

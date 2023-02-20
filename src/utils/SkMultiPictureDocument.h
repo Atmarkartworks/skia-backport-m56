@@ -4,48 +4,45 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #ifndef SkMultiPictureDocument_DEFINED
 #define SkMultiPictureDocument_DEFINED
 
-#include "include/core/SkPicture.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkTypes.h"
+/*
+  This format is not intended to be used in production.
 
-#include <functional>
+  For clients looking for a way to represent a document in memory,
 
-class SkDocument;
-class SkStreamSeekable;
-class SkWStream;
-struct SkDeserialProcs;
-struct SkSerialProcs;
+    struct Doc {
+        std::vector<sk_sp<SkPicture>> fPages;
+        std::vector<SkSize> fPageSizes;
+    };
 
-/**
- *  Writes into a file format that is similar to SkPicture::serialize()
- *  Accepts a callback for endPage behavior
+  or
+
+    struct Page {
+        sk_sp<SkPicture> fPage;
+        SkSize fPageSize;
+    };
+    std::vector<Page> pages;
+
+  would work much better.
+
+  Multi-SkPicture (MSKP) files are still useful for debugging and
+  testing.
+
+  The downsides of this format are currently:
+  - no way to extract a single page; must read the entire file at once.
+  - must use `dm` to convert to another format before passing into
+    standard skp tools.
+  - `dm` can extract the first page to skp, but no others.
+
+  TODO(halcanary): replace with somthing that addresses these issues.
  */
-SK_SPI sk_sp<SkDocument> SkMakeMultiPictureDocument(SkWStream* dst, const SkSerialProcs* = nullptr,
-  std::function<void(const SkPicture*)> onEndPage = nullptr);
 
-struct SkDocumentPage {
-    sk_sp<SkPicture> fPicture;
-    SkSize fSize;
-};
+#include "SkDocument.h"
 
-/**
- *  Returns the number of pages in the SkMultiPictureDocument.
- */
-SK_SPI int SkMultiPictureDocumentReadPageCount(SkStreamSeekable* src);
-
-/**
- *  Read the SkMultiPictureDocument into the provided array of pages.
- *  dstArrayCount must equal SkMultiPictureDocumentReadPageCount().
- *  Return false on error.
- */
-SK_SPI bool SkMultiPictureDocumentRead(SkStreamSeekable* src,
-                                       SkDocumentPage* dstArray,
-                                       int dstArrayCount,
-                                       const SkDeserialProcs* = nullptr);
+/** Writes into an experimental, undocumented file format that is
+    useful for debugging documents printed via Skia. */
+SK_API sk_sp<SkDocument> SkMakeMultiPictureDocument(SkWStream* dst);
 
 #endif  // SkMultiPictureDocument_DEFINED

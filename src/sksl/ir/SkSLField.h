@@ -4,51 +4,36 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
+ 
 #ifndef SKSL_FIELD
 #define SKSL_FIELD
 
-#include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLSymbol.h"
-#include "src/sksl/ir/SkSLType.h"
-#include "src/sksl/ir/SkSLVariable.h"
+#include "SkSLModifiers.h"
+#include "SkSLPosition.h"
+#include "SkSLSymbol.h"
+#include "SkSLType.h"
 
 namespace SkSL {
 
-/**
- * A symbol which should be interpreted as a field access. Fields are added to the symboltable
- * whenever a bare reference to an identifier should refer to a struct field; in GLSL, this is the
+/** 
+ * A symbol which should be interpreted as a field access. Fields are added to the symboltable 
+ * whenever a bare reference to an identifier should refer to a struct field; in GLSL, this is the 
  * result of declaring anonymous interface blocks.
  */
-class Field final : public Symbol {
-public:
-    inline static constexpr Kind kIRNodeKind = Kind::kField;
+struct Field : public Symbol {
+    Field(Position position, const Variable& owner, int fieldIndex)
+    : INHERITED(position, kField_Kind, owner.fType.fields()[fieldIndex].fName)
+    , fOwner(owner)
+    , fFieldIndex(fieldIndex) {}
 
-    Field(Position pos, const Variable* owner, int fieldIndex)
-        : INHERITED(pos, kIRNodeKind, owner->type().fields()[fieldIndex].fName,
-                    owner->type().fields()[fieldIndex].fType)
-        , fOwner(owner)
-        , fFieldIndex(fieldIndex) {}
-
-    int fieldIndex() const {
-        return fFieldIndex;
+    virtual std::string description() const override {
+        return fOwner.description() + "." + fOwner.fType.fields()[fFieldIndex].fName;
     }
 
-    const Variable& owner() const {
-        return *fOwner;
-    }
+    const Variable& fOwner;
+    const int fFieldIndex;
 
-    std::string description() const override {
-        return this->owner().name().empty()
-                       ? std::string(this->name())
-                       : (this->owner().description() + "." + std::string(this->name()));
-    }
-
-private:
-    const Variable* fOwner;
-    int fFieldIndex;
-
-    using INHERITED = Symbol;
+    typedef Symbol INHERITED;
 };
 
 } // namespace SkSL

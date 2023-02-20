@@ -8,9 +8,9 @@
 #ifndef SkLatticeIter_DEFINED
 #define SkLatticeIter_DEFINED
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkScalar.h"
-#include "include/private/base/SkTArray.h"
+#include "SkCanvas.h"
+#include "SkScalar.h"
+#include "SkTArray.h"
 
 struct SkIRect;
 struct SkRect;
@@ -18,7 +18,7 @@ struct SkRect;
 /**
  *  Disect a lattice request into an sequence of src-rect / dst-rect pairs
  */
-class SK_SPI SkLatticeIter {
+class SkLatticeIter {
 public:
 
     static bool Valid(int imageWidth, int imageHeight, const SkCanvas::Lattice& lattice);
@@ -30,23 +30,9 @@ public:
     SkLatticeIter(int imageWidth, int imageHeight, const SkIRect& center, const SkRect& dst);
 
     /**
-     *  While it returns true, use src/dst to draw the image/bitmap. Optional parameters
-     *  isFixedColor and fixedColor specify if the rectangle is filled with a fixed color.
-     *  If (*isFixedColor) is true, then (*fixedColor) contains the rectangle color.
+     *  While it returns true, use src/dst to draw the image/bitmap
      */
-    bool next(SkIRect* src, SkRect* dst, bool* isFixedColor = nullptr,
-              SkColor* fixedColor = nullptr);
-
-    /** Version of above that converts the integer src rect to a scalar rect. */
-    bool next(SkRect* src, SkRect* dst, bool* isFixedColor = nullptr,
-              SkColor* fixedColor = nullptr) {
-        SkIRect isrcR;
-        if (this->next(&isrcR, dst, isFixedColor, fixedColor)) {
-            *src = SkRect::Make(isrcR);
-            return true;
-        }
-        return false;
-    }
+    bool next(SkRect* src, SkRect* dst);
 
     /**
      *  Apply a matrix to the dst points.
@@ -61,12 +47,11 @@ public:
     }
 
 private:
-    SkTArray<int> fSrcX;
-    SkTArray<int> fSrcY;
+    SkTArray<SkScalar> fSrcX;
+    SkTArray<SkScalar> fSrcY;
     SkTArray<SkScalar> fDstX;
     SkTArray<SkScalar> fDstY;
-    SkTArray<SkCanvas::Lattice::RectType> fRectTypes;
-    SkTArray<SkColor> fColors;
+    SkTArray<SkCanvas::Lattice::Flags> fFlags;
 
     int  fCurrX;
     int  fCurrY;

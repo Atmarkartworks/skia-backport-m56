@@ -5,15 +5,16 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
+#include "Benchmark.h"
 
-#include "include/core/SkCanvas.h"
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpu.h"
-#include "src/gpu/ganesh/GrGpuResource.h"
-#include "src/gpu/ganesh/GrGpuResourcePriv.h"
-#include "src/gpu/ganesh/GrResourceCache.h"
+#if SK_SUPPORT_GPU
+
+#include "GrGpuResource.h"
+#include "GrGpuResourcePriv.h"
+#include "GrContext.h"
+#include "GrGpu.h"
+#include "GrResourceCache.h"
+#include "SkCanvas.h"
 
 enum {
     CACHE_SIZE_COUNT = 4096,
@@ -21,14 +22,14 @@ enum {
 
 class BenchResource : public GrGpuResource {
 public:
-    BenchResource(GrGpu* gpu, std::string_view label)
-        : INHERITED(gpu, label) {
-        this->registerWithCache(skgpu::Budgeted::kYes);
+    BenchResource (GrGpu* gpu)
+        : INHERITED(gpu) {
+        this->registerWithCache(SkBudgeted::kYes);
     }
 
-    static void ComputeKey(int i, int keyData32Count, skgpu::UniqueKey* key) {
-        static skgpu::UniqueKey::Domain kDomain = skgpu::UniqueKey::GenerateDomain();
-        skgpu::UniqueKey::Builder builder(key, kDomain, keyData32Count);
+    static void ComputeKey(int i, int keyData32Count, GrUniqueKey* key) {
+        static GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
+        GrUniqueKey::Builder builder(key, kDomain, keyData32Count);
         for (int j = 0; j < keyData32Count; ++j) {
             builder[j] = i + j;
         }
@@ -36,16 +37,14 @@ public:
 
 private:
     size_t onGpuMemorySize() const override { return 100; }
-    void onSetLabel() override{}
-    const char* getResourceType() const override { return "bench"; }
-    using INHERITED = GrGpuResource;
+    typedef GrGpuResource INHERITED;
 };
 
 static void populate_cache(GrGpu* gpu, int resourceCount, int keyData32Count) {
     for (int i = 0; i < resourceCount; ++i) {
-        skgpu::UniqueKey key;
+        GrUniqueKey key;
         BenchResource::ComputeKey(i, keyData32Count, &key);
-        GrGpuResource* resource = new BenchResource(gpu, /*label=*/"BenchResource");
+        GrGpuResource* resource = new BenchResource(gpu);
         resource->resourcePriv().setUniqueKey(key);
         resource->unref();
     }
@@ -70,20 +69,20 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        sk_sp<GrDirectContext> context(GrDirectContext::MakeMock(nullptr));
+        sk_sp<GrContext> context(GrContext::CreateMockContext());
         if (nullptr == context) {
             return;
         }
         // Set the cache budget to be very large so no purging occurs.
         context->setResourceCacheLimits(CACHE_SIZE_COUNT, 1 << 30);
 
-        GrResourceCache* cache = context->priv().getResourceCache();
+        GrResourceCache* cache = context->getResourceCache();
 
         // Make sure the cache is empty.
-        cache->purgeUnlockedResources();
+        cache->purgeAllUnlocked();
         SkASSERT(0 == cache->getResourceCount() && 0 == cache->getResourceBytes());
 
-        GrGpu* gpu = context->priv().getGpu();
+        GrGpu* gpu = context->getGpu();
 
         for (int i = 0; i < loops; ++i) {
             populate_cache(gpu, CACHE_SIZE_COUNT, fKeyData32Count);
@@ -94,7 +93,7 @@ protected:
 private:
     SkString fFullName;
     int fKeyData32Count;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class GrResourceCacheBenchFind : public Benchmark {
@@ -116,20 +115,20 @@ protected:
     }
 
     void onDelayedSetup() override {
-        fContext = GrDirectContext::MakeMock(nullptr);
+        fContext.reset(GrContext::CreateMockContext());
         if (!fContext) {
             return;
         }
         // Set the cache budget to be very large so no purging occurs.
         fContext->setResourceCacheLimits(CACHE_SIZE_COUNT, 1 << 30);
 
-        GrResourceCache* cache = fContext->priv().getResourceCache();
+        GrResourceCache* cache = fContext->getResourceCache();
 
         // Make sure the cache is empty.
-        cache->purgeUnlockedResources();
+        cache->purgeAllUnlocked();
         SkASSERT(0 == cache->getResourceCount() && 0 == cache->getResourceBytes());
 
-        GrGpu* gpu = fContext->priv().getGpu();
+        GrGpu* gpu = fContext->getGpu();
 
         populate_cache(gpu, CACHE_SIZE_COUNT, fKeyData32Count);
     }
@@ -138,11 +137,11 @@ protected:
         if (!fContext) {
             return;
         }
-        GrResourceCache* cache = fContext->priv().getResourceCache();
+        GrResourceCache* cache = fContext->getResourceCache();
         SkASSERT(CACHE_SIZE_COUNT == cache->getResourceCount());
         for (int i = 0; i < loops; ++i) {
             for (int k = 0; k < CACHE_SIZE_COUNT; ++k) {
-                skgpu::UniqueKey key;
+                GrUniqueKey key;
                 BenchResource::ComputeKey(k, fKeyData32Count, &key);
                 sk_sp<GrGpuResource> resource(cache->findAndRefUniqueResource(key));
                 SkASSERT(resource);
@@ -151,10 +150,10 @@ protected:
     }
 
 private:
-    sk_sp<GrDirectContext> fContext;
+    sk_sp<GrContext> fContext;
     SkString fFullName;
     int fKeyData32Count;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 DEF_BENCH( return new GrResourceCacheBenchAdd(1); )
@@ -182,4 +181,6 @@ DEF_BENCH( return new GrResourceCacheBenchFind(25); )
 DEF_BENCH( return new GrResourceCacheBenchFind(54); )
 DEF_BENCH( return new GrResourceCacheBenchFind(55); )
 DEF_BENCH( return new GrResourceCacheBenchFind(56); )
+#endif
+
 #endif

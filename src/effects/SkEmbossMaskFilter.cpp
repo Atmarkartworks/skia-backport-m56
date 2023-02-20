@@ -5,47 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "src/effects/SkEmbossMaskFilter.h"
-
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkTypes.h"
-#include "src/core/SkBlurMask.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkWriteBuffer.h"
-#include "src/effects/SkEmbossMask.h"
-
-#if defined(SK_SUPPORT_LEGACY_EMBOSSMASKFILTER)
-#include "include/effects/SkBlurMaskFilter.h"
-#endif
-
-#include <cstring>
-
-static void normalize3(SkScalar dst[3], const SkScalar src[3]) {
-    SkScalar mag = SkScalarSquare(src[0]) + SkScalarSquare(src[1]) + SkScalarSquare(src[2]);
-    SkScalar scale = SkScalarInvert(SkScalarSqrt(mag));
-
-    for (int i = 0; i < 3; i++) {
-        dst[i] = src[i] * scale;
-    }
-}
+#include "SkEmbossMaskFilter.h"
+#include "SkBlurMaskFilter.h"
+#include "SkBlurMask.h"
+#include "SkEmbossMask.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
+#include "SkString.h"
 
 sk_sp<SkMaskFilter> SkEmbossMaskFilter::Make(SkScalar blurSigma, const Light& light) {
-    if (!SkScalarIsFinite(blurSigma) || blurSigma <= 0) {
-        return nullptr;
-    }
-
-    Light newLight = light;
-    normalize3(newLight.fDirection, light.fDirection);
-    if (!SkScalarsAreFinite(newLight.fDirection, 3)) {
-        return nullptr;
-    }
-
-    return sk_sp<SkMaskFilter>(new SkEmbossMaskFilter(blurSigma, newLight));
+    return sk_sp<SkMaskFilter>(new SkEmbossMaskFilter(blurSigma, light));
 }
 
-#ifdef SK_SUPPORT_LEGACY_EMBOSSMASKFILTER
 sk_sp<SkMaskFilter> SkBlurMaskFilter::MakeEmboss(SkScalar blurSigma, const SkScalar direction[3],
                                                  SkScalar ambient, SkScalar specular) {
     if (direction == nullptr) {
@@ -59,19 +30,25 @@ sk_sp<SkMaskFilter> SkBlurMaskFilter::MakeEmboss(SkScalar blurSigma, const SkSca
     light.fAmbient = SkUnitScalarClampToByte(ambient);
     // specular should be 0..15.99 as a scalar
     static const SkScalar kSpecularMultiplier = SkIntToScalar(255) / 16;
-    light.fSpecular = static_cast<U8CPU>(SkTPin(specular, 0.0f, 16.0f) * kSpecularMultiplier + 0.5);
+    light.fSpecular = static_cast<U8CPU>(SkScalarPin(specular, 0, 16) * kSpecularMultiplier + 0.5);
 
     return SkEmbossMaskFilter::Make(blurSigma, light);
 }
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
+static void normalize(SkScalar v[3]) {
+    SkScalar mag = SkScalarSquare(v[0]) + SkScalarSquare(v[1]) + SkScalarSquare(v[2]);
+    mag = SkScalarSqrt(mag);
+
+    for (int i = 0; i < 3; i++) {
+        v[i] /= mag;
+    }
+}
+
 SkEmbossMaskFilter::SkEmbossMaskFilter(SkScalar blurSigma, const Light& light)
-    : fLight(light), fBlurSigma(blurSigma)
-{
-    SkASSERT(fBlurSigma > 0);
-    SkASSERT(SkScalarsAreFinite(fLight.fDirection, 3));
+    : fLight(light), fBlurSigma(blurSigma) {
+    normalize(fLight.fDirection);
 }
 
 SkMask::Format SkEmbossMaskFilter::getFormat() const {
@@ -80,13 +57,9 @@ SkMask::Format SkEmbossMaskFilter::getFormat() const {
 
 bool SkEmbossMaskFilter::filterMask(SkMask* dst, const SkMask& src,
                                     const SkMatrix& matrix, SkIPoint* margin) const {
-    if (src.fFormat != SkMask::kA8_Format) {
-        return false;
-    }
-
     SkScalar sigma = matrix.mapRadius(fBlurSigma);
 
-    if (!SkBlurMask::BoxBlur(dst, src, sigma, kInner_SkBlurStyle)) {
+    if (!SkBlurMask::BoxBlur(dst, src, sigma, kInner_SkBlurStyle, kLow_SkBlurQuality)) {
         return false;
     }
 
@@ -148,3 +121,24 @@ void SkEmbossMaskFilter::flatten(SkWriteBuffer& buffer) const {
     buffer.writeByteArray(&tmpLight, sizeof(tmpLight));
     buffer.writeScalar(fBlurSigma);
 }
+
+#ifndef SK_IGNORE_TO_STRING
+void SkEmbossMaskFilter::toString(SkString* str) const {
+    str->append("SkEmbossMaskFilter: (");
+
+    str->append("direction: (");
+    str->appendScalar(fLight.fDirection[0]);
+    str->append(", ");
+    str->appendScalar(fLight.fDirection[1]);
+    str->append(", ");
+    str->appendScalar(fLight.fDirection[2]);
+    str->append(") ");
+
+    str->appendf("ambient: %d specular: %d ",
+        fLight.fAmbient, fLight.fSpecular);
+
+    str->append("blurSigma: ");
+    str->appendScalar(fBlurSigma);
+    str->append(")");
+}
+#endif

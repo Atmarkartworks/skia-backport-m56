@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
+#include "SkTypes.h"
 
-#if defined(SK_BUILD_FOR_WIN)
+#if defined(SK_BUILD_FOR_WIN32)
 
-#include "src/base/SkLeanWindows.h"
+#include "SkLeanWindows.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -31,4 +31,4 @@ void SkDebugf(const char format[], ...) {
 
     OutputDebugStringA(buffer);
 }
-#endif//defined(SK_BUILD_FOR_WIN)
+#endif//defined(SK_BUILD_FOR_WIN32)

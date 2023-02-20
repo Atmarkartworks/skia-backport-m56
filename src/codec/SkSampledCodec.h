@@ -7,14 +7,8 @@
 #ifndef SkSampledCodec_DEFINED
 #define SkSampledCodec_DEFINED
 
-#include "include/codec/SkAndroidCodec.h"
-#include "include/codec/SkCodec.h"
-#include "include/core/SkSize.h"
-
-#include <cstddef>
-
-struct SkIRect;
-struct SkImageInfo;
+#include "SkAndroidCodec.h"
+#include "SkCodec.h"
 
 /**
  *  This class implements the functionality of SkAndroidCodec.  Scaling will
@@ -22,9 +16,10 @@ struct SkImageInfo;
  */
 class SkSampledCodec : public SkAndroidCodec {
 public:
+
     explicit SkSampledCodec(SkCodec*);
 
-    ~SkSampledCodec() override {}
+    virtual ~SkSampledCodec() {}
 
 protected:
 
@@ -60,6 +55,6 @@ private:
     SkCodec::Result sampledDecode(const SkImageInfo& info, void* pixels, size_t rowBytes,
             const AndroidOptions& options);
 
-    using INHERITED = SkAndroidCodec;
+    typedef SkAndroidCodec INHERITED;
 };
 #endif // SkSampledCodec_DEFINED

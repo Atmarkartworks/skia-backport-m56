@@ -4,16 +4,13 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "SkDiscardableMemoryPool.h"
 
-#include "include/core/SkRefCnt.h"
-#include "include/private/chromium/SkDiscardableMemory.h"
-#include "src/lazy/SkDiscardableMemoryPool.h"
-#include "tests/Test.h"
-
-#include <memory>
+#include "Test.h"
 
 DEF_TEST(DiscardableMemoryPool, reporter) {
-    sk_sp<SkDiscardableMemoryPool> pool(SkDiscardableMemoryPool::Make(1));
+    sk_sp<SkDiscardableMemoryPool> pool(
+        SkDiscardableMemoryPool::Create(1, nullptr));
     pool->setRAMBudget(3);
     REPORTER_ASSERT(reporter, 0 == pool->getRAMUsed());
 

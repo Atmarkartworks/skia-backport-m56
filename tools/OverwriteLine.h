@@ -3,7 +3,7 @@
 
 // Print this string to reset and clear your current terminal line.
 static const char* kSkOverwriteLine =
-#ifdef SK_BUILD_FOR_WIN
+#ifdef SK_BUILD_FOR_WIN32
 "\r                                                                               \r"
 #elif defined(SK_BUILD_FOR_IOS)
 "\r"

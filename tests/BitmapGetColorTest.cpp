@@ -5,18 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorType.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkTypes.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
+#include "SkBitmap.h"
+#include "SkRandom.h"
+#include "SkRect.h"
+#include "Test.h"
 
 DEF_TEST(GetColor, reporter) {
     static const struct Rec {
@@ -40,7 +32,7 @@ DEF_TEST(GetColor, reporter) {
     const SkColor initColor = 0xFF0000FF;
     const SkIRect area = { 1, 1, 3, 3 };
 
-    for (size_t i = 0; i < std::size(gRec); i++) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); i++) {
         SkImageInfo info = SkImageInfo::Make(2, 2, gRec[i].fColorType,
                                              kPremul_SkAlphaType);
         SkBitmap bm;

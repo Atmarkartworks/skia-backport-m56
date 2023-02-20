@@ -4,30 +4,26 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "tests/Test.h"
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathEffect.h"
-#include "include/core/SkPathTypes.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrDirectContext.h"
-#include "tests/CtsEnforcement.h"
+#include "SkTypes.h"
+
+#if SK_SUPPORT_GPU
+
+#include "GrContext.h"
+#include "GrPath.h"
+#include "GrShape.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkColor.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkDashPathEffect.h"
+#include "SkRRect.h"
+#include "SkRect.h"
+#include "SkSurface.h"
+#include "Test.h"
 
 #include <initializer_list>
-
-struct GrContextOptions;
 
 static void test_drawPathEmpty(skiatest::Reporter*, SkCanvas* canvas) {
     // Filling an empty path should not crash.
@@ -71,8 +67,8 @@ static void test_drawSameRectOvals(skiatest::Reporter*, SkCanvas* canvas) {
 
     SkPath oval1, oval2;
     const SkRect rect = SkRect::MakeWH(100, 50);
-    oval1.addOval(rect, SkPathDirection::kCW);
-    oval2.addOval(rect, SkPathDirection::kCCW);
+    oval1.addOval(rect, SkPath::kCW_Direction);
+    oval2.addOval(rect, SkPath::kCCW_Direction);
 
     fill_and_stroke(canvas, oval1, oval2, nullptr);
 
@@ -80,12 +76,13 @@ static void test_drawSameRectOvals(skiatest::Reporter*, SkCanvas* canvas) {
     fill_and_stroke(canvas, oval1, oval2, SkDashPathEffect::Make(intervals, 2, 0));
 }
 
-DEF_GANESH_TEST_FOR_ALL_GL_CONTEXTS(GpuDrawPath, reporter, ctxInfo, CtsEnforcement::kNever) {
+DEF_GPUTEST_FOR_ALL_GL_CONTEXTS(GpuDrawPath, reporter, ctxInfo) {
     for (auto& test_func : { &test_drawPathEmpty, &test_drawSameRectOvals }) {
-        for (auto& sampleCount : {1, 4, 16}) {
+        for (auto& sampleCount : {0, 4, 16}) {
             SkImageInfo info = SkImageInfo::MakeN32Premul(255, 255);
-            auto surface(SkSurface::MakeRenderTarget(
-                    ctxInfo.directContext(), skgpu::Budgeted::kNo, info, sampleCount, nullptr));
+            auto surface(
+                SkSurface::MakeRenderTarget(ctxInfo.grContext(), SkBudgeted::kNo, info,
+                                            sampleCount, nullptr));
             if (!surface) {
                 continue;
             }
@@ -94,51 +91,77 @@ DEF_GANESH_TEST_FOR_ALL_GL_CONTEXTS(GpuDrawPath, reporter, ctxInfo, CtsEnforceme
     }
 }
 
-DEF_GANESH_TEST_FOR_ALL_CONTEXTS(GrDrawCollapsedPath,
-                                 reporter,
-                                 ctxInfo,
-                                 CtsEnforcement::kApiLevel_T) {
-    // From https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=37330, it's possible for a convex
-    // path to be accepted by AAConvexPathRenderer, then be transformed to something without a
-    // computable first direction by a perspective matrix.
-    SkImageInfo info = SkImageInfo::MakeN32Premul(100, 100);
-    auto surface(SkSurface::MakeRenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kNo, info));
+DEF_GPUTEST(GrPathKeys, reporter, /*factory*/) {
+    SkPaint strokePaint;
+    strokePaint.setStyle(SkPaint::kStroke_Style);
+    strokePaint.setStrokeWidth(10.f);
+    GrStyle styles[] = {
+        GrStyle::SimpleFill(),
+        GrStyle::SimpleHairline(),
+        GrStyle(strokePaint)
+    };
 
-    SkPaint paint;
-    paint.setAntiAlias(true);
+    for (const GrStyle& style : styles) {
+        // Keys should not ignore conic weights.
+        SkPath path1, path2;
+        SkPoint p0 = SkPoint::Make(100, 0);
+        SkPoint p1 = SkPoint::Make(100, 100);
 
-    SkPath path;
-    path.moveTo(0, 0);
-    path.lineTo(50, 0);
-    path.lineTo(0, 50);
-    path.close();
+        path1.conicTo(p0, p1, .5f);
+        path2.conicTo(p0, p1, .7f);
 
-    SkMatrix m;
-    m.setAll( 0.966006875f   , -0.125156224f  , 72.0899811f,
-             -0.00885376986f , -0.112347461f  , 64.7121124f,
-             -8.94321693e-06f, -0.00173384184f, 0.998692870f);
-    surface->getCanvas()->setMatrix(m);
-    surface->getCanvas()->drawPath(path, paint);
-    surface->flushAndSubmit();
+        GrUniqueKey key1, key2;
+        // We expect these small paths to be keyed based on their data.
+        bool isVolatile;
+        GrPath::ComputeKey(GrShape(path1, GrStyle::SimpleFill()), &key1, &isVolatile);
+        REPORTER_ASSERT(reporter, !isVolatile);
+        REPORTER_ASSERT(reporter, key1.isValid());
+        GrPath::ComputeKey(GrShape(path2, GrStyle::SimpleFill()), &key2, &isVolatile);
+        REPORTER_ASSERT(reporter, !isVolatile);
+        REPORTER_ASSERT(reporter, key1.isValid());
+        REPORTER_ASSERT(reporter, key1 != key2);
+        {
+            GrUniqueKey tempKey;
+            path1.setIsVolatile(true);
+            GrPath::ComputeKey(GrShape(path1, style), &key1, &isVolatile);
+            REPORTER_ASSERT(reporter, isVolatile);
+            REPORTER_ASSERT(reporter, !tempKey.isValid());
+        }
+
+        // Ensure that recreating the GrShape doesn't change the key.
+        {
+            GrUniqueKey tempKey;
+            GrPath::ComputeKey(GrShape(path2, GrStyle::SimpleFill()), &tempKey, &isVolatile);
+            REPORTER_ASSERT(reporter, key2 == tempKey);
+        }
+
+        // Try a large path that is too big to be keyed off its data.
+        SkPath path3;
+        SkPath path4;
+        for (int i = 0; i < 1000; ++i) {
+            SkScalar s = SkIntToScalar(i);
+            path3.conicTo(s, 3.f * s / 4, s + 1.f, s, 0.5f + s / 2000.f);
+            path4.conicTo(s, 3.f * s / 4, s + 1.f, s, 0.3f + s / 2000.f);
+        }
+
+        GrUniqueKey key3, key4;
+        // These aren't marked volatile and so should have keys
+        GrPath::ComputeKey(GrShape(path3, style), &key3, &isVolatile);
+        REPORTER_ASSERT(reporter, !isVolatile);
+        REPORTER_ASSERT(reporter, key3.isValid());
+        GrPath::ComputeKey(GrShape(path4, style), &key4, &isVolatile);
+        REPORTER_ASSERT(reporter, !isVolatile);
+        REPORTER_ASSERT(reporter, key4.isValid());
+        REPORTER_ASSERT(reporter, key3 != key4);
+
+        {
+            GrUniqueKey tempKey;
+            path3.setIsVolatile(true);
+            GrPath::ComputeKey(GrShape(path3, style), &key1, &isVolatile);
+            REPORTER_ASSERT(reporter, isVolatile);
+            REPORTER_ASSERT(reporter, !tempKey.isValid());
+        }
+    }
 }
 
-DEF_GANESH_TEST_FOR_ALL_CONTEXTS(PathTest_CrBug1232834,
-                                 reporter,
-                                 ctxInfo,
-                                 CtsEnforcement::kApiLevel_T) {
-    // AAHairlinePathRenderer chops this path to quads that include infinities (and then NaNs).
-    // It used to trigger asserts, now the degenerate quad segments should cause it to be rejected.
-    SkImageInfo info = SkImageInfo::MakeN32Premul(256, 256);
-    auto surface(SkSurface::MakeRenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kNo, info));
-
-    SkPaint paint;
-    paint.setAntiAlias(true);
-    paint.setStyle(SkPaint::kStroke_Style);
-
-    SkPath path;
-    path.moveTo(9.0072E15f, 60);
-    path.cubicTo(0, 3.40282e+38f, 0, 3.40282e+38f, 0, 0);
-
-    surface->getCanvas()->drawPath(path, paint);
-    surface->flushAndSubmit();
-}
+#endif

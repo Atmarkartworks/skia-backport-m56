@@ -4,10 +4,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "bench/Benchmark.h"
-#include "include/core/SkRegion.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkRandom.h"
+#include "SkRegion.h"
+#include "SkString.h"
 
 static bool union_proc(SkRegion& a, SkRegion& b) {
     SkRegion result;
@@ -113,7 +113,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

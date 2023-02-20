@@ -5,24 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRSXform.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkRSXform.h"
+#include "SkSurface.h"
 
 // Create a square atlas of:
 //   opaque white  |     opaque red
@@ -33,7 +19,10 @@ static sk_sp<SkImage> make_atlas(SkCanvas* caller, int atlasSize) {
     const int kBlockSize = atlasSize/2;
 
     SkImageInfo info = SkImageInfo::MakeN32Premul(atlasSize, atlasSize);
-    auto        surface(ToolUtils::makeSurface(caller, info));
+    auto surface(caller->makeSurface(info));
+    if (nullptr == surface) {
+        surface = SkSurface::MakeRaster(info);
+    }
     SkCanvas* canvas = surface->getCanvas();
 
     SkPaint paint;
@@ -67,7 +56,7 @@ static sk_sp<SkImage> make_atlas(SkCanvas* caller, int atlasSize) {
 class DrawAtlasColorsGM : public skiagm::GM {
 public:
     DrawAtlasColorsGM() {
-        this->setBGColor(0xFFCCCCCC);
+        this->setBGColor(sk_tool_utils::color_to_565(0xFFCCCCCC));
     }
 
 protected:
@@ -85,36 +74,39 @@ protected:
 
         auto atlas = make_atlas(canvas, kAtlasSize);
 
-        const SkBlendMode gModes[] = {
-            SkBlendMode::kClear,
-            SkBlendMode::kSrc,
-            SkBlendMode::kDst,
-            SkBlendMode::kSrcOver,
-            SkBlendMode::kDstOver,
-            SkBlendMode::kSrcIn,
-            SkBlendMode::kDstIn,
-            SkBlendMode::kSrcOut,
-            SkBlendMode::kDstOut,
-            SkBlendMode::kSrcATop,
-            SkBlendMode::kDstATop,
-            SkBlendMode::kXor,
-            SkBlendMode::kPlus,
-            SkBlendMode::kModulate,
-            SkBlendMode::kScreen,
-            SkBlendMode::kOverlay,
-            SkBlendMode::kDarken,
-            SkBlendMode::kLighten,
-            SkBlendMode::kColorDodge,
-            SkBlendMode::kColorBurn,
-            SkBlendMode::kHardLight,
-            SkBlendMode::kSoftLight,
-            SkBlendMode::kDifference,
-            SkBlendMode::kExclusion,
-            SkBlendMode::kMultiply,
-            SkBlendMode::kHue,
-            SkBlendMode::kSaturation,
-            SkBlendMode::kColor,
-            SkBlendMode::kLuminosity,
+        const struct {
+            SkBlendMode fMode;
+            const char* fLabel;
+        } gModes[] = {
+            { SkBlendMode::kClear,      "Clear"     },
+            { SkBlendMode::kSrc,        "Src"       },
+            { SkBlendMode::kDst,        "Dst"       },
+            { SkBlendMode::kSrcOver,    "SrcOver"   },
+            { SkBlendMode::kDstOver,    "DstOver"   },
+            { SkBlendMode::kSrcIn,      "SrcIn"     },
+            { SkBlendMode::kDstIn,      "DstIn"     },
+            { SkBlendMode::kSrcOut,     "SrcOut"    },
+            { SkBlendMode::kDstOut,     "DstOut"    },
+            { SkBlendMode::kSrcATop,    "SrcATop"   },
+            { SkBlendMode::kDstATop,    "DstATop"   },
+            { SkBlendMode::kXor,        "Xor"       },
+            { SkBlendMode::kPlus,       "Plus"      },
+            { SkBlendMode::kModulate,   "Mod"       },
+            { SkBlendMode::kScreen,     "Screen"    },
+            { SkBlendMode::kOverlay,    "Overlay"   },
+            { SkBlendMode::kDarken,     "Darken"    },
+            { SkBlendMode::kLighten,    "Lighten"   },
+            { SkBlendMode::kColorDodge, "Dodge"     },
+            { SkBlendMode::kColorBurn,  "Burn"      },
+            { SkBlendMode::kHardLight,  "Hard"      },
+            { SkBlendMode::kSoftLight,  "Soft"      },
+            { SkBlendMode::kDifference, "Diff"      },
+            { SkBlendMode::kExclusion,  "Exclusion" },
+            { SkBlendMode::kMultiply,   "Multiply"  },
+            { SkBlendMode::kHue,        "Hue"       },
+            { SkBlendMode::kSaturation, "Sat"       },
+            { SkBlendMode::kColor,      "Color"     },
+            { SkBlendMode::kLuminosity, "Luminosity"},
         };
 
         SkColor gColors[] = {
@@ -124,9 +116,9 @@ protected:
             0x88000088          // transparent blue
         };
 
-        const int numModes = std::size(gModes);
+        const int numModes = SK_ARRAY_COUNT(gModes);
         SkASSERT(numModes == kNumXferModes);
-        const int numColors = std::size(gColors);
+        const int numColors = SK_ARRAY_COUNT(gColors);
         SkASSERT(numColors == kNumColors);
         SkRSXform xforms[numColors];
         SkRect rects[numColors];
@@ -141,12 +133,15 @@ protected:
             quadColors[i] = gColors[i];
         }
 
-        SkFont font(ToolUtils::create_portable_typeface(), kTextPad);
+        SkPaint textP;
+        textP.setTextSize(SkIntToScalar(kTextPad));
+        textP.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&textP, nullptr);
 
         for (int i = 0; i < numModes; ++i) {
-            const char* label = SkBlendMode_Name(gModes[i]);
-            canvas->drawString(label, i*(target.width()+kPad)+kPad, SkIntToScalar(kTextPad),
-                               font, paint);
+            canvas->drawText(gModes[i].fLabel, strlen(gModes[i].fLabel),
+                             i*(target.width()+kPad)+kPad, SkIntToScalar(kTextPad),
+                             textP);
         }
 
         for (int i = 0; i < numModes; ++i) {
@@ -155,22 +150,22 @@ protected:
                               SkIntToScalar(kTextPad+kPad));
             // w/o a paint
             canvas->drawAtlas(atlas.get(), xforms, rects, quadColors, numColors,
-                              gModes[i], SkSamplingOptions(), nullptr, nullptr);
+                              gModes[i].fMode, nullptr, nullptr);
             canvas->translate(0.0f, numColors*(target.height()+kPad));
             // w a paint
             canvas->drawAtlas(atlas.get(), xforms, rects, quadColors, numColors,
-                              gModes[i], SkSamplingOptions(), nullptr, &paint);
+                              gModes[i].fMode, nullptr, &paint);
             canvas->restore();
         }
     }
 
 private:
-    inline static constexpr int kNumXferModes = 29;
-    inline static constexpr int kNumColors = 4;
-    inline static constexpr int kAtlasSize = 30;
-    inline static constexpr int kPad = 2;
-    inline static constexpr int kTextPad = 8;
+    static constexpr int kNumXferModes = 29;
+    static constexpr int kNumColors = 4;
+    static constexpr int kAtlasSize = 30;
+    static constexpr int kPad = 2;
+    static constexpr int kTextPad = 8;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 DEF_GM( return new DrawAtlasColorsGM; )

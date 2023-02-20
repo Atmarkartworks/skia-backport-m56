@@ -5,24 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkGraphics.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "src/core/SkFontDescriptor.h"
-#include "tests/Test.h"
-
-#include <memory>
-#include <utility>
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkColor.h"
+#include "SkFontDescriptor.h"
+#include "SkGraphics.h"
+#include "SkPaint.h"
+#include "SkPoint.h"
+#include "SkRect.h"
+#include "SkStream.h"
+#include "SkTypeface.h"
+#include "SkTypes.h"
+#include "Test.h"
 
 static const SkColor bgColor = SK_ColorWHITE;
 
@@ -44,6 +38,9 @@ static bool compare(const SkBitmap& ref, const SkIRect& iref,
 {
     const int xOff = itest.fLeft - iref.fLeft;
     const int yOff = itest.fTop - iref.fTop;
+
+    SkAutoLockPixels alpRef(ref);
+    SkAutoLockPixels alpTest(test);
 
     for (int y = 0; y < test.height(); ++y) {
         for (int x = 0; x < test.width(); ++x) {
@@ -70,79 +67,43 @@ DEF_TEST(FontHostStream, reporter) {
     {
         SkPaint paint;
         paint.setColor(SK_ColorGRAY);
+        paint.setTextSize(SkIntToScalar(30));
 
-        SkFont font(SkTypeface::MakeFromName("Georgia", SkFontStyle()), 30);
-        font.setEdging(SkFont::Edging::kAlias);
+        paint.setTypeface(SkTypeface::MakeFromName("Georgia", SkFontStyle()));
 
-        const SkIRect origRect = SkIRect::MakeWH(64, 64);
+        SkIRect origRect = SkIRect::MakeWH(64, 64);
         SkBitmap origBitmap;
         create(&origBitmap, origRect);
         SkCanvas origCanvas(origBitmap);
+
+        SkIRect streamRect = SkIRect::MakeWH(64, 64);
+        SkBitmap streamBitmap;
+        create(&streamBitmap, streamRect);
+        SkCanvas streamCanvas(streamBitmap);
 
         SkPoint point = SkPoint::Make(24, 32);
 
         // Test: origTypeface and streamTypeface from orig data draw the same
         drawBG(&origCanvas);
-        origCanvas.drawString("A", point.fX, point.fY, font, paint);
+        origCanvas.drawText("A", 1, point.fX, point.fY, paint);
 
-        sk_sp<SkTypeface> typeface = font.refTypefaceOrDefault();
+        sk_sp<SkTypeface> typeface(SkToBool(paint.getTypeface()) ? sk_ref_sp(paint.getTypeface())
+                                                                 : SkTypeface::MakeDefault());
+        int ttcIndex;
+        std::unique_ptr<SkStreamAsset> fontData(typeface->openStream(&ttcIndex));
+        sk_sp<SkTypeface> streamTypeface(SkTypeface::MakeFromStream(fontData.release()));
 
-        {
-            SkDynamicMemoryWStream wstream;
-            typeface->serialize(&wstream, SkTypeface::SerializeBehavior::kDoIncludeData);
-            std::unique_ptr<SkStreamAsset> stream = wstream.detachAsStream();
-            sk_sp<SkTypeface> deserializedTypeface = SkTypeface::MakeDeserialize(&*stream);
-            if (!deserializedTypeface) {
-                REPORTER_ASSERT(reporter, deserializedTypeface);
-                return;
-            }
+        SkFontDescriptor desc;
+        bool isLocalStream = false;
+        streamTypeface->getFontDescriptor(&desc, &isLocalStream);
+        REPORTER_ASSERT(reporter, isLocalStream);
 
-            SkFontDescriptor desc;
-            bool mustSerializeData = false;
-            deserializedTypeface->getFontDescriptor(&desc, &mustSerializeData);
-            REPORTER_ASSERT(reporter, mustSerializeData);
+        paint.setTypeface(streamTypeface);
+        drawBG(&streamCanvas);
+        streamCanvas.drawPosText("A", 1, &point, paint);
 
-            SkBitmap deserializedBitmap;
-            create(&deserializedBitmap, origRect);
-            SkCanvas deserializedCanvas(deserializedBitmap);
-
-            font.setTypeface(deserializedTypeface);
-            drawBG(&deserializedCanvas);
-            deserializedCanvas.drawString("A", point.fX, point.fY, font, paint);
-
-            REPORTER_ASSERT(reporter, compare(origBitmap, origRect, deserializedBitmap, origRect));
-        }
-
-        {
-            int ttcIndex;
-            std::unique_ptr<SkStreamAsset> fontData = typeface->openStream(&ttcIndex);
-            if (!fontData) {
-                REPORTER_ASSERT(reporter, fontData);
-                return;
-            }
-
-            sk_sp<SkTypeface> streamTypeface(SkTypeface::MakeFromStream(std::move(fontData)));
-            if (!streamTypeface) {
-                // TODO: enable assert after SkTypeface::MakeFromStream uses factories
-                //REPORTER_ASSERT(reporter, streamTypeface);
-                return;
-            }
-
-            SkBitmap streamBitmap;
-            create(&streamBitmap, origRect);
-            SkCanvas streamCanvas(streamBitmap);
-
-            SkFontDescriptor desc;
-            bool mustSerializeData = false;
-            streamTypeface->getFontDescriptor(&desc, &mustSerializeData);
-            REPORTER_ASSERT(reporter, mustSerializeData);
-
-            font.setTypeface(streamTypeface);
-            drawBG(&streamCanvas);
-            streamCanvas.drawString("A", point.fX, point.fY, font, paint);
-
-            REPORTER_ASSERT(reporter, compare(origBitmap, origRect, streamBitmap, origRect));
-        }
+        REPORTER_ASSERT(reporter,
+                        compare(origBitmap, origRect, streamBitmap, streamRect));
     }
     //Make sure the typeface is deleted and removed.
     SkGraphics::PurgeFontCache();

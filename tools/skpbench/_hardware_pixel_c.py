@@ -6,37 +6,44 @@
 from _hardware import HardwareException, Expectation
 from _hardware_android import HardwareAndroid
 
-CPU_CLOCK_RATE = 1326000
-# If you run adb cat /sys/devices/57000000.gpu/pstate it shows all
-# possible configurations, with a * next to the current one.
-GPU_EMC_PROFILE = '04: core 307 MHz emc 1065 MHz a A d D *'
-GPU_EMC_PROFILE_ID = '04'
+CPU_CLOCK_RATE = 1836000
+GPU_EMC_PROFILE = '0c: core 921 MHz emc 1600 MHz a A d D *'
+GPU_EMC_PROFILE_ID = '0c'
 
 class HardwarePixelC(HardwareAndroid):
   def __init__(self, adb):
     HardwareAndroid.__init__(self, adb)
 
   def __enter__(self):
-    HardwareAndroid.__enter__(self)
+    self._lock_clocks()
+    return HardwareAndroid.__enter__(self)
+
+  def __exit__(self, exception_type, exception_value, exception_traceback):
+    HardwareAndroid.__exit__(self, exception_type,
+                             exception_value, exception_traceback)
+    self._unlock_clocks()
+
+  def filter_line(self, line):
+    JUNK = ['NvRmPrivGetChipPlatform: Could not read platform information',
+            'Expected on kernels without fuse support, using silicon']
+    return False if line in JUNK else HardwareAndroid.filter_line(self, line)
+
+  def _lock_clocks(self):
     if not self._adb.is_root():
-      return self
+      return
 
     self._adb.shell('\n'.join([
-      # pylint: disable=line-too-long
-      # Based on https://android.googlesource.com/platform/frameworks/base/+/master/libs/hwui/tests/scripts/prep_ryu.sh
-      # All CPUs have the same scaling settings, so we only need to set it once
+      # turn on and lock the first 3 cores.
       '''
-      stop thermal-engine
-      stop perfd
+      for N in 0 1 2; do
+        echo 1 > /sys/devices/system/cpu/cpu$N/online
+        echo userspace > /sys/devices/system/cpu/cpu$N/cpufreq/scaling_governor
+        echo %i > /sys/devices/system/cpu/cpu$N/cpufreq/scaling_max_freq
+        echo %i > /sys/devices/system/cpu/cpu$N/cpufreq/scaling_min_freq
+        echo %i > /sys/devices/system/cpu/cpu$N/cpufreq/scaling_setspeed
+      done''' % tuple(CPU_CLOCK_RATE for _ in range(3)),
 
-      echo userspace > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
-      echo %i > /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-      echo %i > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
-      echo %i > /sys/devices/system/cpu/cpu0/cpufreq/scaling_setspeed
-      ''' % tuple(CPU_CLOCK_RATE for _ in range(3)),
-      # turn off the fourth core. This will hopefully produce less heat, allowing
-      # for more consistent results.  3 cores should be enough to run Ganesh,
-      # the graphics driver, and the OS.
+      # turn off the fourth core.
       '''
       echo 0 > /sys/devices/system/cpu/cpu3/online''',
 
@@ -45,12 +52,28 @@ class HardwarePixelC(HardwareAndroid):
       chown root:root /sys/devices/57000000.gpu/pstate
       echo %s > /sys/devices/57000000.gpu/pstate''' % GPU_EMC_PROFILE_ID]))
 
-    return self
+  def _unlock_clocks(self):
+    if not self._adb.is_root():
+      return
 
-  def filter_line(self, line):
-    JUNK = ['NvRmPrivGetChipPlatform: Could not read platform information',
-            'Expected on kernels without fuse support, using silicon']
-    return False if line in JUNK else HardwareAndroid.filter_line(self, line)
+    self._adb.shell('\n'.join([
+      # unlock gpu/emc clocks.
+      '''
+      echo auto > /sys/devices/57000000.gpu/pstate
+      chown system:system /sys/devices/57000000.gpu/pstate''',
+
+      # turn the fourth core back on.
+      '''
+      echo 1 > /sys/devices/system/cpu/cpu3/online''',
+
+      # unlock the first 3 cores.
+      '''
+      for N in 2 1 0; do
+        echo 1912500 > /sys/devices/system/cpu/cpu$N/cpufreq/scaling_max_freq
+        echo 51000 > /sys/devices/system/cpu/cpu$N/cpufreq/scaling_min_freq
+        echo 0 > /sys/devices/system/cpu/cpu$N/cpufreq/scaling_setspeed
+        echo interactive >/sys/devices/system/cpu/cpu$N/cpufreq/scaling_governor
+      done''']))
 
   def sanity_check(self):
     HardwareAndroid.sanity_check(self)
@@ -86,3 +109,8 @@ class HardwarePixelC(HardwareAndroid):
       [Expectation(str, exact_value=GPU_EMC_PROFILE, name='gpu/emc profile')]
 
     Expectation.check_all(expectations, result.splitlines())
+
+  def sleep(self, sleeptime):
+    self._unlock_clocks()
+    HardwareAndroid.sleep(self, sleeptime)
+    self._lock_clocks()

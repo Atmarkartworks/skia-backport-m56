@@ -4,20 +4,15 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkTypes.h"
-#if defined(SK_BUILD_FOR_WIN)
+#include "SkTypes.h"
+#if defined(SK_BUILD_FOR_WIN32)
 
-#include "include/core/SkString.h"
-#include "include/private/base/SkOnce.h"
-#include "src/utils/win/SkDWrite.h"
-#include "src/utils/win/SkHRESULT.h"
+#include "SkDWrite.h"
+#include "SkHRESULT.h"
+#include "SkOnce.h"
+#include "SkString.h"
 
 #include <dwrite.h>
-
-#if defined(__clang__)
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wcast-function-type"
-#endif
 
 static IDWriteFactory* gDWriteFactory = nullptr;
 
@@ -85,7 +80,7 @@ HRESULT sk_wchar_to_skstring(WCHAR* name, int nameLen, SkString* skname) {
     }
     skname->resize(len);
 
-    len = WideCharToMultiByte(CP_UTF8, 0, name, nameLen, skname->data(), len, nullptr, nullptr);
+    len = WideCharToMultiByte(CP_UTF8, 0, name, nameLen, skname->writable_str(), len, nullptr, nullptr);
     if (0 == len) {
         HRM(HRESULT_FROM_WIN32(GetLastError()), "Could not convert utf-8 to wchar.");
     }
@@ -95,26 +90,25 @@ HRESULT sk_wchar_to_skstring(WCHAR* name, int nameLen, SkString* skname) {
 ////////////////////////////////////////////////////////////////////////////////
 // Locale
 
-HRESULT sk_get_locale_string(IDWriteLocalizedStrings* names, const WCHAR* preferedLocale,
-                             SkString* skname) {
+void sk_get_locale_string(IDWriteLocalizedStrings* names, const WCHAR* preferedLocale,
+                          SkString* skname) {
     UINT32 nameIndex = 0;
     if (preferedLocale) {
         // Ignore any errors and continue with index 0 if there is a problem.
-        BOOL nameExists = FALSE;
-        (void)names->FindLocaleName(preferedLocale, &nameIndex, &nameExists);
+        BOOL nameExists;
+        names->FindLocaleName(preferedLocale, &nameIndex, &nameExists);
         if (!nameExists) {
             nameIndex = 0;
         }
     }
 
     UINT32 nameLen;
-    HRM(names->GetStringLength(nameIndex, &nameLen), "Could not get name length.");
+    HRVM(names->GetStringLength(nameIndex, &nameLen), "Could not get name length.");
 
-    SkSMallocWCHAR name(nameLen + 1);
-    HRM(names->GetString(nameIndex, name.get(), nameLen + 1), "Could not get string.");
+    SkSMallocWCHAR name(nameLen+1);
+    HRVM(names->GetString(nameIndex, name.get(), nameLen+1), "Could not get string.");
 
-    HR(sk_wchar_to_skstring(name.get(), nameLen, skname));
-    return S_OK;
+    HRV(sk_wchar_to_skstring(name.get(), nameLen, skname));
 }
 
 HRESULT SkGetGetUserDefaultLocaleNameProc(SkGetUserDefaultLocaleNameProc* proc) {
@@ -131,8 +125,4 @@ HRESULT SkGetGetUserDefaultLocaleNameProc(SkGetUserDefaultLocaleNameProc* proc) 
     return S_OK;
 }
 
-#if defined(__clang__)
-    #pragma clang diagnostic pop
-#endif
-
-#endif//defined(SK_BUILD_FOR_WIN)
+#endif//defined(SK_BUILD_FOR_WIN32)

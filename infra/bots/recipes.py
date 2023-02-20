@@ -1,265 +1,170 @@
-#!/bin/sh
-# Copyright 2019 The LUCI Authors. All rights reserved.
+#!/usr/bin/env python
+
+# Copyright 2016 The LUCI Authors. All rights reserved.
 # Use of this source code is governed under the Apache License, Version 2.0
 # that can be found in the LICENSE file.
 
-# We want to run python in unbuffered mode; however shebangs on linux grab the
-# entire rest of the shebang line as a single argument, leading to errors like:
-#
-#   /usr/bin/env: 'python3 -u': No such file or directory
-#
-# This little shell hack is a triple-quoted noop in python, but in sh it
-# evaluates to re-exec'ing this script in unbuffered mode.
-# pylint: disable=pointless-string-statement
-''''exec python3 -u -- "$0" ${1+"$@"} # '''
-# vi: syntax=python
 """Bootstrap script to clone and forward to the recipe engine tool.
 
-*******************
-** DO NOT MODIFY **
-*******************
+***********************************************************************
+** DO NOT MODIFY EXCEPT IN THE PER-REPO CONFIGURATION SECTION BELOW. **
+***********************************************************************
 
-This is a copy of https://chromium.googlesource.com/infra/luci/recipes-py/+/main/recipes.py.
-To fix bugs, fix in the googlesource repo then run the autoroller.
+This is a copy of https://github.com/luci/recipes-py/blob/master/doc/recipes.py.
+To fix bugs, fix in the github repo then copy it back to here and fix the
+PER-REPO CONFIGURATION section to look like this one.
 """
 
-# pylint: disable=wrong-import-position
-import argparse
-import errno
-import json
-import logging
 import os
+
+#### PER-REPO CONFIGURATION (editable) ####
+# The root of the repository relative to the directory of this file.
+REPO_ROOT = os.path.join(os.pardir, os.pardir)
+# The path of the recipes.cfg file relative to the root of the repository.
+RECIPES_CFG = os.path.join('infra', 'config', 'recipes.cfg')
+#### END PER-REPO CONFIGURATION ####
+
+BOOTSTRAP_VERSION = 1
+
+import ast
+import logging
+import random
+import re
 import subprocess
 import sys
-
-from collections import namedtuple
-from io import open  # pylint: disable=redefined-builtin
-
-try:
-  import urllib.parse as urlparse
-except ImportError:
-  import urlparse
-
-# The dependency entry for the recipe_engine in the client repo's recipes.cfg
-#
-# url (str) - the url to the engine repo we want to use.
-# revision (str) - the git revision for the engine to get.
-# branch (str) - the branch to fetch for the engine as an absolute ref (e.g.
-#   refs/heads/main)
-EngineDep = namedtuple('EngineDep', 'url revision branch')
+import time
+import traceback
 
 
-class MalformedRecipesCfg(Exception):
+def parse_protobuf(fh):
+  """Parse the protobuf text format just well enough to understand recipes.cfg.
 
-  def __init__(self, msg, path):
-    full_message = 'malformed recipes.cfg: %s: %r' % (msg, path)
-    super(MalformedRecipesCfg, self).__init__(full_message)
+  We don't use the protobuf library because we want to be as self-contained
+  as possible in this bootstrap, so it can be simply vendored into a client
+  repo.
 
-
-def parse(repo_root, recipes_cfg_path):
-  """Parse is a lightweight a recipes.cfg file parser.
+  We assume all fields are repeated since we don't have a proto spec to work
+  with.
 
   Args:
-    repo_root (str) - native path to the root of the repo we're trying to run
-      recipes for.
-    recipes_cfg_path (str) - native path to the recipes.cfg file to process.
-
-  Returns (as tuple):
-    engine_dep (EngineDep|None): The recipe_engine dependency, or None, if the
-      current repo IS the recipe_engine.
-    recipes_path (str) - native path to where the recipes live inside of the
-      current repo (i.e. the folder containing `recipes/` and/or
-      `recipe_modules`)
+    fh: a filehandle containing the text format protobuf.
+  Returns:
+    A recursive dictionary of lists.
   """
-  with open(recipes_cfg_path, 'r') as fh:
-    pb = json.load(fh)
-
-  try:
-    if pb['api_version'] != 2:
-      raise MalformedRecipesCfg('unknown version %d' % pb['api_version'],
-                                recipes_cfg_path)
-
-    # If we're running ./recipes.py from the recipe_engine repo itself, then
-    # return None to signal that there's no EngineDep.
-    repo_name = pb.get('repo_name')
-    if not repo_name:
-      repo_name = pb['project_id']
-    if repo_name == 'recipe_engine':
-      return None, pb.get('recipes_path', '')
-
-    engine = pb['deps']['recipe_engine']
-
-    if 'url' not in engine:
-      raise MalformedRecipesCfg(
-          'Required field "url" in dependency "recipe_engine" not found',
-          recipes_cfg_path)
-
-    engine.setdefault('revision', '')
-    engine.setdefault('branch', 'refs/heads/main')
-    recipes_path = pb.get('recipes_path', '')
-
-    # TODO(iannucci): only support absolute refs
-    if not engine['branch'].startswith('refs/'):
-      engine['branch'] = 'refs/heads/' + engine['branch']
-
-    recipes_path = os.path.join(repo_root,
-                                recipes_path.replace('/', os.path.sep))
-    return EngineDep(**engine), recipes_path
-  except KeyError as ex:
-    raise MalformedRecipesCfg(str(ex), recipes_cfg_path)
-
-
-IS_WIN = sys.platform.startswith(('win', 'cygwin'))
-
-_BAT = '.bat' if IS_WIN else ''
-GIT = 'git' + _BAT
-VPYTHON = ('vpython' +
-           ('3' if os.getenv('RECIPES_USE_PY3') == 'true' else '') +
-           _BAT)
-CIPD = 'cipd' + _BAT
-REQUIRED_BINARIES = {GIT, VPYTHON, CIPD}
-
-
-def _is_executable(path):
-  return os.path.isfile(path) and os.access(path, os.X_OK)
-
-
-# TODO: Use shutil.which once we switch to Python3.
-def _is_on_path(basename):
-  for path in os.environ['PATH'].split(os.pathsep):
-    full_path = os.path.join(path, basename)
-    if _is_executable(full_path):
+  def parse_atom(field, text):
+    if text == 'true':
       return True
-  return False
+    if text == 'false':
+      return False
+
+    # repo_type is an enum. Since it does not have quotes,
+    # invoking literal_eval would fail.
+    if field == 'repo_type':
+      return text
+
+    return ast.literal_eval(text)
+
+  ret = {}
+  for line in fh:
+    line = line.strip()
+    m = re.match(r'(\w+)\s*:\s*(.*)', line)
+    if m:
+      ret.setdefault(m.group(1), []).append(parse_atom(m.group(1), m.group(2)))
+      continue
+
+    m = re.match(r'(\w+)\s*{', line)
+    if m:
+      subparse = parse_protobuf(fh)
+      ret.setdefault(m.group(1), []).append(subparse)
+      continue
+
+    if line == '}':
+      return ret
+    if line == '':
+      continue
+
+    raise ValueError('Could not understand line: <%s>' % line)
+
+  return ret
+
+
+def get_unique(things):
+  if len(things) == 1:
+    return things[0]
+  elif len(things) == 0:
+    raise ValueError("Expected to get one thing, but dinna get none.")
+  else:
+    logging.warn('Expected to get one thing, but got a bunch: %s\n%s' %
+                 (things, traceback.format_stack()))
+    return things[0]
 
 
 def _subprocess_call(argv, **kwargs):
   logging.info('Running %r', argv)
   return subprocess.call(argv, **kwargs)
 
-
-def _git_check_call(argv, **kwargs):
-  argv = [GIT] + argv
+def _subprocess_check_call(argv, **kwargs):
   logging.info('Running %r', argv)
   subprocess.check_call(argv, **kwargs)
 
 
-def _git_output(argv, **kwargs):
-  argv = [GIT] + argv
-  logging.info('Running %r', argv)
-  return subprocess.check_output(argv, **kwargs)
-
-
-def parse_args(argv):
-  """This extracts a subset of the arguments that this bootstrap script cares
-  about. Currently this consists of:
-    * an override for the recipe engine in the form of `-O recipe_engine=/path`
-    * the --package option.
-  """
-  PREFIX = 'recipe_engine='
-
-  p = argparse.ArgumentParser(add_help=False)
-  p.add_argument('-O', '--project-override', action='append')
-  p.add_argument('--package', type=os.path.abspath)
-  args, _ = p.parse_known_args(argv)
-  for override in args.project_override or ():
-    if override.startswith(PREFIX):
-      return override[len(PREFIX):], args.package
-  return None, args.package
-
-
-def checkout_engine(engine_path, repo_root, recipes_cfg_path):
-  dep, recipes_path = parse(repo_root, recipes_cfg_path)
-  if dep is None:
-    # we're running from the engine repo already!
-    return os.path.join(repo_root, recipes_path)
-
-  url = dep.url
-
-  if not engine_path and url.startswith('file://'):
-    engine_path = urlparse.urlparse(url).path
-
-  if not engine_path:
-    revision = dep.revision
-    branch = dep.branch
-
-    # Ensure that we have the recipe engine cloned.
-    engine_path = os.path.join(recipes_path, '.recipe_deps', 'recipe_engine')
-
-    with open(os.devnull, 'w') as NUL:
-      # Note: this logic mirrors the logic in recipe_engine/fetch.py
-      _git_check_call(['init', engine_path], stdout=NUL)
-
-      try:
-        _git_check_call(['rev-parse', '--verify',
-                         '%s^{commit}' % revision],
-                        cwd=engine_path,
-                        stdout=NUL,
-                        stderr=NUL)
-      except subprocess.CalledProcessError:
-        _git_check_call(['fetch', '--quiet', url, branch],
-                        cwd=engine_path,
-                        stdout=NUL)
-
-    try:
-      _git_check_call(['diff', '--quiet', revision], cwd=engine_path)
-    except subprocess.CalledProcessError:
-      index_lock = os.path.join(engine_path, '.git', 'index.lock')
-      try:
-        os.remove(index_lock)
-      except OSError as exc:
-        if exc.errno != errno.ENOENT:
-          logging.warn('failed to remove %r, reset will fail: %s', index_lock,
-                       exc)
-      _git_check_call(['reset', '-q', '--hard', revision], cwd=engine_path)
-
-    # If the engine has refactored/moved modules we need to clean all .pyc files
-    # or things will get squirrely.
-    _git_check_call(['clean', '-qxf'], cwd=engine_path)
-
-  return engine_path
-
-
 def main():
-  for required_binary in REQUIRED_BINARIES:
-    if not _is_on_path(required_binary):
-      return 'Required binary is not found on PATH: %s' % required_binary
-
   if '--verbose' in sys.argv:
     logging.getLogger().setLevel(logging.INFO)
 
-  args = sys.argv[1:]
-  engine_override, recipes_cfg_path = parse_args(args)
-
-  if recipes_cfg_path:
-    # calculate repo_root from recipes_cfg_path
-    repo_root = os.path.dirname(
-        os.path.dirname(os.path.dirname(recipes_cfg_path)))
+  if sys.platform.startswith(('win', 'cygwin')):
+    git = 'git.bat'
   else:
-    # find repo_root with git and calculate recipes_cfg_path
-    repo_root = (
-        _git_output(['rev-parse', '--show-toplevel'],
-                    cwd=os.path.abspath(os.path.dirname(__file__))).strip())
-    repo_root = os.path.abspath(repo_root).decode()
-    recipes_cfg_path = os.path.join(repo_root, 'infra', 'config', 'recipes.cfg')
-    args = ['--package', recipes_cfg_path] + args
-  engine_path = checkout_engine(engine_override, repo_root, recipes_cfg_path)
+    git = 'git'
 
-  argv = (
-      [VPYTHON, '-u',
-       os.path.join(engine_path, 'recipe_engine', 'main.py')] + args)
+  # Find the repository and config file to operate on.
+  repo_root = os.path.abspath(
+      os.path.join(os.path.dirname(__file__), REPO_ROOT))
+  recipes_cfg_path = os.path.join(repo_root, RECIPES_CFG)
 
-  if IS_WIN:
-    # No real 'exec' on windows; set these signals to ignore so that they
-    # propagate to our children but we still wait for the child process to quit.
-    import signal
-    signal.signal(signal.SIGBREAK, signal.SIG_IGN)
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    return _subprocess_call(argv)
-  else:
-    os.execvp(argv[0], argv)
+  with open(recipes_cfg_path, 'rU') as fh:
+    protobuf = parse_protobuf(fh)
 
+  engine_buf = get_unique([
+      b for b in protobuf['deps'] if b.get('project_id') == ['recipe_engine'] ])
+  engine_url = get_unique(engine_buf['url'])
+  engine_revision = get_unique(engine_buf['revision'])
+  engine_subpath = (get_unique(engine_buf.get('path_override', ['']))
+                    .replace('/', os.path.sep))
+
+  recipes_path = os.path.join(repo_root,
+      get_unique(protobuf['recipes_path']).replace('/', os.path.sep))
+  deps_path = os.path.join(recipes_path, '.recipe_deps')
+  engine_path = os.path.join(deps_path, 'recipe_engine')
+
+  # Ensure that we have the recipe engine cloned.
+  def ensure_engine():
+    if not os.path.exists(deps_path):
+      os.makedirs(deps_path)
+    if not os.path.exists(engine_path):
+      _subprocess_check_call([git, 'clone', engine_url, engine_path])
+
+    needs_fetch = _subprocess_call(
+        [git, 'rev-parse', '--verify', '%s^{commit}' % engine_revision],
+        cwd=engine_path, stdout=open(os.devnull, 'w'))
+    if needs_fetch:
+      _subprocess_check_call([git, 'fetch'], cwd=engine_path)
+    _subprocess_check_call(
+        [git, 'checkout', '--quiet', engine_revision], cwd=engine_path)
+
+  try:
+    ensure_engine()
+  except subprocess.CalledProcessError:
+    logging.exception('ensure_engine failed')
+
+    # Retry errors.
+    time.sleep(random.uniform(2,5))
+    ensure_engine()
+
+  args = ['--package', recipes_cfg_path] + sys.argv[1:]
+  return _subprocess_call([
+      sys.executable, '-u',
+      os.path.join(engine_path, engine_subpath, 'recipes.py')] + args)
 
 if __name__ == '__main__':
   sys.exit(main())

@@ -5,11 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkSharedMutex.h"
-#include "src/core/SkTaskGroup.h"
-#include "tests/Test.h"
+#include "SkSharedMutex.h"
+#include "SkTaskGroup.h"
 
-#include <functional>
+#include "Test.h"
 
 DEF_TEST(SkSharedMutexBasic, r) {
     SkSharedMutex sm;

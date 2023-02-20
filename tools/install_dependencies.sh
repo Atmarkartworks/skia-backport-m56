@@ -8,9 +8,6 @@
 # dependencies using your system's package manager.  If your system is
 # not supported, add logic here to support it.
 
-# Pass in --yes as the first argument to force apt-get to skip Y/n prompts while
-# being backward compatible with the old behavior.
-
 set -e
 
 # Return 0 iff all package name arguments are installed.
@@ -26,27 +23,24 @@ dpkg_all_installed() {
 
 if command -v lsb_release > /dev/null ; then
     case $(lsb_release -i -s) in
-        Ubuntu|Debian)
+        Ubuntu)
             PACKAGES=$(cat<<-EOF
 		build-essential
 		freeglut3-dev
 		libfontconfig-dev
 		libfreetype6-dev
 		libgif-dev
-		libgl1-mesa-dev
 		libglu1-mesa-dev
-		libharfbuzz-dev
-		libicu-dev
-		libjpeg-dev
-		libpng-dev
-		libwebp-dev
+		libosmesa6-dev
+		libpng12-dev
+		libqt4-dev
 		EOF
             )
            if [ $(lsb_release -r -s) = '14.04' ] ; then
                PACKAGES="${PACKAGES} ninja-build"
            fi
            if ! dpkg_all_installed $PACKAGES; then
-               sudo apt-get $1 install $PACKAGES
+               sudo apt-get install $PACKAGES
            fi
            exit
            ;;

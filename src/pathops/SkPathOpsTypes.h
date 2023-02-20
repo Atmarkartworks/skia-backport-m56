@@ -7,13 +7,14 @@
 #ifndef SkPathOpsTypes_DEFINED
 #define SkPathOpsTypes_DEFINED
 
-#include "include/core/SkPath.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "src/pathops/SkPathOpsDebug.h"
+#include <float.h>  // for FLT_EPSILON
+#include <math.h>   // for fabs, sqrt
 
-#include <cfloat>
-#include <cmath>
+#include "SkFloatingPoint.h"
+#include "SkPath.h"
+#include "SkPathOps.h"
+#include "SkPathOpsDebug.h"
+#include "SkScalar.h"
 
 enum SkPathOpsMask {
     kWinding_PathOpsMask = -1,
@@ -21,10 +22,12 @@ enum SkPathOpsMask {
     kEvenOdd_PathOpsMask = 1
 };
 
-class SkArenaAlloc;
+class SkChunkAlloc;
 class SkOpCoincidence;
 class SkOpContour;
 class SkOpContourHead;
+class SkIntersections;
+class SkIntersectionHelper;
 
 enum class SkOpPhase : char {
     kNoChange,
@@ -36,7 +39,7 @@ enum class SkOpPhase : char {
 class SkOpGlobalState {
 public:
     SkOpGlobalState(SkOpContourHead* head,
-                    SkArenaAlloc* allocator SkDEBUGPARAMS(bool debugSkipAssert)
+                    SkChunkAlloc* allocator  SkDEBUGPARAMS(bool debugSkipAssert)
                     SkDEBUGPARAMS(const char* testName));
 
     enum {
@@ -47,7 +50,7 @@ public:
         return fAllocatedOpSpan;
     }
 
-    SkArenaAlloc* allocator() {
+    SkChunkAlloc* allocator() {
         return fAllocator;
     }
 
@@ -143,7 +146,7 @@ public:
     SkOpPhase phase() const {
         return fPhase;
     }
-
+    
     void resetAllocatedOpSpan() {
         fAllocatedOpSpan = false;
     }
@@ -155,7 +158,7 @@ public:
     void setCoincidence(SkOpCoincidence* coincidence) {
         fCoincidence = coincidence;
     }
-
+    
     void setContourHead(SkOpContourHead* contourHead) {
         fContourHead = contourHead;
     }
@@ -178,7 +181,7 @@ public:
     }
 
 private:
-    SkArenaAlloc* fAllocator;
+    SkChunkAlloc* fAllocator;
     SkOpCoincidence* fCoincidence;
     SkOpContourHead* fContourHead;
     int fNested;
@@ -307,9 +310,7 @@ const double FLT_EPSILON_HALF = FLT_EPSILON / 2;
 const double FLT_EPSILON_DOUBLE = FLT_EPSILON * 2;
 const double FLT_EPSILON_ORDERABLE_ERR = FLT_EPSILON * 16;
 const double FLT_EPSILON_SQUARED = FLT_EPSILON * FLT_EPSILON;
-// Use a compile-time constant for FLT_EPSILON_SQRT to avoid initializers.
-// A 17 digit constant guarantees exact results.
-const double FLT_EPSILON_SQRT = 0.00034526697709225118; // sqrt(FLT_EPSILON);
+const double FLT_EPSILON_SQRT = sqrt(FLT_EPSILON);
 const double FLT_EPSILON_INVERSE = 1 / FLT_EPSILON;
 const double DBL_EPSILON_ERR = DBL_EPSILON * 4;  // FIXME: tune -- allow a few bits of error
 const double DBL_EPSILON_SUBDIVIDE_ERR = DBL_EPSILON * 16;
@@ -338,6 +339,10 @@ inline bool precisely_subdivide_zero(double x) {
 
 inline bool approximately_zero(float x) {
     return fabs(x) < FLT_EPSILON;
+}
+
+inline bool approximately_zero_cubed(double x) {
+    return fabs(x) < FLT_EPSILON_CUBED;
 }
 
 inline bool approximately_zero_half(double x) {
@@ -550,6 +555,14 @@ inline bool more_roughly_equal(double x, double y) {
     return fabs(x - y) < MORE_ROUGH_EPSILON;
 }
 
+struct SkDPoint;
+struct SkDVector;
+struct SkDLine;
+struct SkDQuad;
+struct SkDConic;
+struct SkDCubic;
+struct SkDRect;
+
 inline SkPath::Verb SkPathOpsPointsToVerb(int points) {
     int verb = (1 << points) >> 1;
 #ifdef SK_DEBUG
@@ -581,6 +594,8 @@ inline int SkPathOpsVerbToPoints(SkPath::Verb verb) {
 inline double SkDInterp(double A, double B, double t) {
     return A + (B - A) * t;
 }
+
+double SkDCubeRoot(double x);
 
 /* Returns -1 if negative, 0 if zero, 1 if positive
 */

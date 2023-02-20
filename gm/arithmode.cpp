@@ -5,90 +5,82 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/effects/SkImageFilters.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkColorPriv.h"
+#include "SkGradientShader.h"
+#include "SkImage.h"
+#include "SkImageSource.h"
+#include "SkShader.h"
+#include "SkSurface.h"
+#include "SkXfermodeImageFilter.h"
 
-#include <utility>
+#define WW  100
+#define HH  32
 
-static sk_sp<SkImage> make_src(int w, int h) {
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(w, h));
+static sk_sp<SkImage> make_src() {
+    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(WW, HH));
     SkCanvas* canvas = surface->getCanvas();
 
     SkPaint paint;
-    SkPoint pts[] = { {0, 0}, {SkIntToScalar(w), SkIntToScalar(h)} };
+    SkPoint pts[] = { {0, 0}, {SkIntToScalar(WW), SkIntToScalar(HH)} };
     SkColor colors[] = {
         SK_ColorTRANSPARENT, SK_ColorGREEN, SK_ColorCYAN,
         SK_ColorRED, SK_ColorMAGENTA, SK_ColorWHITE,
     };
-    paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
-                                                 SkTileMode::kClamp));
+    paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+                                                 SkShader::kClamp_TileMode));
     canvas->drawPaint(paint);
     return surface->makeImageSnapshot();
 }
 
-static sk_sp<SkImage> make_dst(int w, int h) {
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(w, h));
+static sk_sp<SkImage> make_dst() {
+    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(WW, HH));
     SkCanvas* canvas = surface->getCanvas();
 
     SkPaint paint;
-    SkPoint pts[] = { {0, SkIntToScalar(h)}, {SkIntToScalar(w), 0} };
+    SkPoint pts[] = { {0, SkIntToScalar(HH)}, {SkIntToScalar(WW), 0} };
     SkColor colors[] = {
         SK_ColorBLUE, SK_ColorYELLOW, SK_ColorBLACK, SK_ColorGREEN,
-        SK_ColorGRAY,
+        sk_tool_utils::color_to_565(SK_ColorGRAY)
     };
-    paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
-                                                 SkTileMode::kClamp));
+    paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+                                                 SkShader::kClamp_TileMode));
     canvas->drawPaint(paint);
     return surface->makeImageSnapshot();
 }
 
 static void show_k_text(SkCanvas* canvas, SkScalar x, SkScalar y, const SkScalar k[]) {
-    SkFont font(ToolUtils::create_portable_typeface(), 24);
-    font.setEdging(SkFont::Edging::kAntiAlias);
     SkPaint paint;
+    paint.setTextSize(SkIntToScalar(24));
     paint.setAntiAlias(true);
+    sk_tool_utils::set_portable_typeface(&paint);
     for (int i = 0; i < 4; ++i) {
         SkString str;
         str.appendScalar(k[i]);
-        SkScalar width = font.measureText(str.c_str(), str.size(), SkTextEncoding::kUTF8);
-        canvas->drawString(str, x, y + font.getSize(), font, paint);
+        SkScalar width = paint.measureText(str.c_str(), str.size());
+        canvas->drawText(str.c_str(), str.size(), x, y + paint.getTextSize(), paint);
         x += width + SkIntToScalar(10);
     }
 }
 
 class ArithmodeGM : public skiagm::GM {
-    SkString onShortName() override { return SkString("arithmode"); }
+public:
+    ArithmodeGM () {}
 
-    SkISize onISize() override { return {640, 572}; }
+protected:
 
-    void onDraw(SkCanvas* canvas) override {
-        constexpr int WW = 100,
-                      HH = 32;
+    virtual SkString onShortName() {
+        return SkString("arithmode");
+    }
 
-        sk_sp<SkImage> src = make_src(WW, HH);
-        sk_sp<SkImage> dst = make_dst(WW, HH);
-        sk_sp<SkImageFilter> srcFilter = SkImageFilters::Image(src);
-        sk_sp<SkImageFilter> dstFilter = SkImageFilters::Image(dst);
+    virtual SkISize onISize() { return SkISize::Make(640, 572); }
+
+    virtual void onDraw(SkCanvas* canvas) {
+        sk_sp<SkImage> src = make_src();
+        sk_sp<SkImage> dst = make_dst();
+        sk_sp<SkImageFilter> srcFilter = SkImageSource::Make(src);
+        sk_sp<SkImageFilter> dstFilter = SkImageSource::Make(dst);
 
         constexpr SkScalar one = SK_Scalar1;
         constexpr SkScalar K[] = {
@@ -106,7 +98,7 @@ class ArithmodeGM : public skiagm::GM {
         };
 
         const SkScalar* k = K;
-        const SkScalar* stop = k + std::size(K);
+        const SkScalar* stop = k + SK_ARRAY_COUNT(K);
         const SkRect rect = SkRect::MakeWH(WW, HH);
         SkScalar gap = SkIntToScalar(WW + 20);
         while (k < stop) {
@@ -117,8 +109,8 @@ class ArithmodeGM : public skiagm::GM {
                 canvas->drawImage(dst, 0, 0);
                 canvas->translate(gap, 0);
                 SkPaint paint;
-                paint.setImageFilter(SkImageFilters::Arithmetic(k[0], k[1], k[2], k[3], true,
-                                                                dstFilter, srcFilter, nullptr));
+                paint.setImageFilter(SkXfermodeImageFilter::MakeArithmetic(k[0], k[1], k[2], k[3],
+                                     true, dstFilter, srcFilter, nullptr));
                 canvas->saveLayer(&rect, &paint);
                 canvas->restore();
 
@@ -145,134 +137,32 @@ class ArithmodeGM : public skiagm::GM {
                 canvas->translate(gap, 0);
 
                 sk_sp<SkImageFilter> bg =
-                        SkImageFilters::Arithmetic(0, 0, -one / 2, 1, enforcePMColor, dstFilter,
-                                                   nullptr, nullptr);
+                    SkXfermodeImageFilter::MakeArithmetic(0, 0, -one / 2, 1, enforcePMColor,
+                                                          dstFilter);
                 SkPaint p;
-                p.setImageFilter(SkImageFilters::Arithmetic(0, one / 2, -one, 1, true,
-                                                            std::move(bg), dstFilter, nullptr));
+                p.setImageFilter(SkXfermodeImageFilter::MakeArithmetic(0, one / 2, -one, 1, true,
+                                                                       std::move(bg), dstFilter,
+                                                                       nullptr));
                 canvas->saveLayer(&rect, &p);
                 canvas->restore();
                 canvas->translate(gap, 0);
 
                 // Label
-                SkFont   font(ToolUtils::create_portable_typeface(), 24);
+                SkPaint paint;
+                paint.setTextSize(SkIntToScalar(24));
+                paint.setAntiAlias(true);
+                sk_tool_utils::set_portable_typeface(&paint);
                 SkString str(enforcePMColor ? "enforcePM" : "no enforcePM");
-                canvas->drawString(str, 0, font.getSize(), font, SkPaint());
+                canvas->drawText(str.c_str(), str.size(), 0, paint.getTextSize(), paint);
             }
             canvas->translate(0, HH + 12);
         }
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
-DEF_GM( return new ArithmodeGM; )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#include "include/effects/SkBlenders.h"
-
-class ArithmodeBlenderGM : public skiagm::GM {
-    float                  fK1, fK2, fK3, fK4;
-    sk_sp<SkImage>         fSrc, fDst, fChecker;
-    sk_sp<SkShader>        fSrcShader, fDstShader;
-    sk_sp<SkRuntimeEffect> fRuntimeEffect;
-
-    SkString onShortName() override { return SkString("arithmode_blender"); }
-
-    static constexpr int W = 200;
-    static constexpr int H = 200;
-
-    SkISize onISize() override { return {(W + 30) * 2, (H + 30) * 4}; }
-
-    void onOnceBeforeDraw() override {
-        // Prepare a runtime effect for this blend.
-        static constexpr char kShader[] = R"(
-            uniform shader srcImage;
-            uniform shader dstImage;
-            uniform blender arithBlend;
-            half4 main(float2 xy) {
-                return arithBlend.eval(srcImage.eval(xy), dstImage.eval(xy));
-            }
-        )";
-        auto [effect, error] = SkRuntimeEffect::MakeForShader(SkString(kShader));
-        SkASSERT(effect);
-        fRuntimeEffect = effect;
-
-        // Start with interesting K-values, in case we're drawn without calling onAnimate().
-        fK1 = -0.25f;
-        fK2 =  0.25f;
-        fK3 =  0.25f;
-        fK4 =  0;
-
-        fSrc = make_src(W, H);
-        fDst = make_dst(W, H);
-        fSrcShader = fSrc->makeShader(SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions());
-        fDstShader = fDst->makeShader(SkTileMode::kClamp, SkTileMode::kClamp, SkSamplingOptions());
-
-        fChecker = ToolUtils::create_checkerboard_image(W, H, 0xFFBBBBBB, 0xFFEEEEEE, 8);
-    }
-
-    bool onAnimate(double nanos) override {
-        double theta = nanos * 1e-6 * 0.001;
-        fK1 = sin(theta + 0) * 0.25;
-        fK2 = cos(theta + 1) * 0.25;
-        fK3 = sin(theta + 2) * 0.25;
-        fK4 = 0.5;
-        return true;
-    }
-
-    void onDraw(SkCanvas* canvas) override {
-        const SkRect rect = SkRect::MakeWH(W, H);
-
-        canvas->drawImage(fSrc, 10, 10);
-        canvas->drawImage(fDst, 10, 10 + H + 10);
-
-        SkSamplingOptions sampling;
-        sk_sp<SkBlender> blender = SkBlenders::Arithmetic(fK1, fK2, fK3, fK4,
-                                                          /*enforcePremul=*/true);
-        canvas->translate(10 + W + 10, 10);
-
-        // All three images drawn below should appear identical.
-        // Draw via blend step
-        SkPaint blenderPaint;
-        canvas->drawImage(fChecker, 0, 0);
-        canvas->saveLayer(&rect, nullptr);
-        canvas->drawImage(fDst, 0, 0);
-        blenderPaint.setBlender(blender);
-        canvas->drawImage(fSrc, 0, 0, sampling, &blenderPaint);
-        canvas->restore();
-
-        canvas->translate(0, 10 + H);
-
-        // Draw via SkImageFilters::Blend (should appear the same as above)
-        SkPaint imageFilterPaint;
-        canvas->drawImage(fChecker, 0, 0);
-        imageFilterPaint.setImageFilter(
-                SkImageFilters::Blend(blender,
-                                      /*background=*/nullptr,
-                                      /*foreground=*/SkImageFilters::Image(fSrc, sampling)));
-        canvas->drawImage(fDst, 0, 0, sampling, &imageFilterPaint);
-
-        canvas->translate(0, 10 + H);
-
-        // Draw via SkShaders::Blend (should still appear the same as above)
-        SkPaint shaderBlendPaint;
-        canvas->drawImage(fChecker, 0, 0);
-        shaderBlendPaint.setShader(SkShaders::Blend(blender, fDstShader, fSrcShader));
-        canvas->drawRect(rect, shaderBlendPaint);
-
-        canvas->translate(0, 10 + H);
-
-        // Draw via runtime effect (should still appear the same as above)
-        SkPaint runtimePaint;
-        canvas->drawImage(fChecker, 0, 0);
-        SkRuntimeEffect::ChildPtr children[] = {fSrcShader, fDstShader, blender};
-        runtimePaint.setShader(fRuntimeEffect->makeShader(/*uniforms=*/{}, children));
-        canvas->drawRect(rect, runtimePaint);
-    }
-
-private:
-    using INHERITED = GM;
-};
-DEF_GM( return new ArithmodeBlenderGM; )
+DEF_GM( return new ArithmodeGM; )

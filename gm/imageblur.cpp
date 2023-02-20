@@ -5,36 +5,30 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypeface.h"
-#include "include/effects/SkImageFilters.h"
-#include "src/base/SkRandom.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkBlurImageFilter.h"
+#include "SkRandom.h"
 
 #define WIDTH 500
 #define HEIGHT 500
 
 void imageblurgm_draw(SkScalar fSigmaX, SkScalar fSigmaY, SkCanvas* canvas) {
         SkPaint paint;
-        paint.setImageFilter(SkImageFilters::Blur(fSigmaX, fSigmaY, nullptr));
+        paint.setImageFilter(SkBlurImageFilter::Make(fSigmaX, fSigmaY, nullptr));
         canvas->saveLayer(nullptr, &paint);
         const char* str = "The quick brown fox jumped over the lazy dog.";
 
         SkRandom rand;
         SkPaint textPaint;
-        SkFont   font(ToolUtils::create_portable_typeface());
+        textPaint.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&textPaint);
         for (int i = 0; i < 25; ++i) {
             int x = rand.nextULessThan(WIDTH);
             int y = rand.nextULessThan(HEIGHT);
-            textPaint.setColor(ToolUtils::color_to_565(rand.nextBits(24) | 0xFF000000));
-            font.setSize(rand.nextRangeScalar(0, 300));
-            canvas->drawString(str, SkIntToScalar(x), SkIntToScalar(y), font, textPaint);
+            textPaint.setColor(sk_tool_utils::color_to_565(rand.nextBits(24) | 0xFF000000));
+            textPaint.setTextSize(rand.nextRangeScalar(0, 300));
+            canvas->drawText(str, strlen(str), SkIntToScalar(x),
+                             SkIntToScalar(y), textPaint);
         }
         canvas->restore();
 }

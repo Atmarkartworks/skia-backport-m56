@@ -5,22 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSurface.h"
-#include "include/private/base/SkMalloc.h"
-#include "src/core/SkRecord.h"
-#include "src/core/SkRecorder.h"
-#include "src/core/SkRecords.h"
-#include "tests/Test.h"
+#include "Test.h"
+
+#include "SkPictureRecorder.h"
+#include "SkRecord.h"
+#include "SkRecorder.h"
+#include "SkRecords.h"
+#include "SkShader.h"
+#include "SkSurface.h"
 
 #define COUNT(T) + 1
 static const int kRecordTypes = SK_RECORD_TYPES(COUNT);
@@ -66,7 +58,7 @@ DEF_TEST(Recorder_RefLeaking, r) {
 
     SkRect bounds = SkRect::MakeWH(320, 240);
     SkPaint paint;
-    paint.setShader(SkShaders::Empty());
+    paint.setShader(SkShader::MakeEmptyShader());
 
     REPORTER_ASSERT(r, paint.getShader()->unique());
     {
@@ -86,13 +78,12 @@ DEF_TEST(Recorder_drawImage_takeReference, reporter) {
         surface->getCanvas()->clear(SK_ColorGREEN);
         image = surface->makeImageSnapshot();
     }
-
     {
         SkRecord record;
         SkRecorder recorder(&record, 100, 100);
 
         // DrawImage is supposed to take a reference
-        recorder.drawImage(image.get(), 0, 0, SkSamplingOptions());
+        recorder.drawImage(image, 0, 0);
         REPORTER_ASSERT(reporter, !image->unique());
 
         Tally tally;
@@ -107,8 +98,7 @@ DEF_TEST(Recorder_drawImage_takeReference, reporter) {
         SkRecorder recorder(&record, 100, 100);
 
         // DrawImageRect is supposed to take a reference
-        recorder.drawImageRect(image.get(), SkRect::MakeWH(100, 100), SkRect::MakeWH(100, 100),
-                               SkSamplingOptions(), nullptr, SkCanvas::kFast_SrcRectConstraint);
+        recorder.drawImageRect(image, SkRect::MakeWH(100, 100), nullptr);
         REPORTER_ASSERT(reporter, !image->unique());
 
         Tally tally;
@@ -117,14 +107,4 @@ DEF_TEST(Recorder_drawImage_takeReference, reporter) {
         REPORTER_ASSERT(reporter, 1 == tally.count<SkRecords::DrawImageRect>());
     }
     REPORTER_ASSERT(reporter, image->unique());
-}
-
-// skbug.com/10997
-DEF_TEST(Recorder_boundsOverflow, reporter) {
-    SkRect bigBounds = {SK_ScalarMin, SK_ScalarMin, SK_ScalarMax, SK_ScalarMax};
-
-    SkRecord record;
-    SkRecorder recorder(&record, bigBounds);
-    REPORTER_ASSERT(reporter, recorder.imageInfo().width() > 0 &&
-                              recorder.imageInfo().height() > 0);
 }

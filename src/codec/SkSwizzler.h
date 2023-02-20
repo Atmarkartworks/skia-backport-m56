@@ -8,18 +8,10 @@
 #ifndef SkSwizzler_DEFINED
 #define SkSwizzler_DEFINED
 
-#include "include/codec/SkCodec.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkTypes.h"
-#include "src/codec/SkSampler.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-
-struct SkEncodedInfo;
-struct SkIRect;
-struct SkImageInfo;
+#include "SkCodec.h"
+#include "SkColor.h"
+#include "SkImageInfo.h"
+#include "SkSampler.h"
 
 class SkSwizzler : public SkSampler {
 public:
@@ -29,10 +21,15 @@ public:
      *  @param ctable Unowned pointer to an array of up to 256 colors for an
      *                index source.
      *  @param dstInfo Describes the destination.
-     *  @param options Contains partial scanline information and whether the dst is zero-
-     *                 initialized.
+     *  @param options Indicates if dst is zero-initialized. The
+     *                         implementation may choose to skip writing zeroes
+     *                         if set to kYes_ZeroInitialized.
+     *                 Contains partial scanline information.
      *  @param frame   Is non-NULL if the source pixels are part of an image
      *                 frame that is a subset of the full image.
+     *  @param preSwizzled Indicates that the codec has already swizzled to the
+     *                     destination format.  The swizzler only needs to sample
+     *                     and/or subset.
      *
      *  Note that a deeper discussion of partial scanline subsets and image frame
      *  subsets is below.  Currently, we do not support both simultaneously.  If
@@ -40,22 +37,9 @@ public:
      *
      *  @return A new SkSwizzler or nullptr on failure.
      */
-    static std::unique_ptr<SkSwizzler> Make(const SkEncodedInfo& encodedInfo,
-            const SkPMColor* ctable, const SkImageInfo& dstInfo, const SkCodec::Options&,
-            const SkIRect* frame = nullptr);
-
-    /**
-     *  Create a simplified swizzler that does not need to do format conversion. The swizzler
-     *  only needs to sample and/or subset.
-     *
-     *  @param srcBPP Bytes per pixel of the source.
-     *  @param dstInfo Describes the destination.
-     *  @param options Contains partial scanline information and whether the dst is zero-
-     *                 initialized.
-     *  @return A new SkSwizzler or nullptr on failure.
-     */
-    static std::unique_ptr<SkSwizzler> MakeSimple(int srcBPP, const SkImageInfo& dstInfo,
-                                                  const SkCodec::Options&);
+    static SkSwizzler* CreateSwizzler(const SkEncodedInfo& encodedInfo, const SkPMColor* ctable,
+                                      const SkImageInfo& dstInfo, const SkCodec::Options&,
+                                      const SkIRect* frame = nullptr, bool preSwizzled = false);
 
     /**
      *  Swizzle a line. Generally this will be called height times, once
@@ -69,8 +53,13 @@ public:
      */
     void swizzle(void* dst, const uint8_t* SK_RESTRICT src);
 
-    int fillWidth() const override {
-        return fAllocatedWidth;
+    /**
+     * Implement fill using a custom width.
+     */
+    void fill(const SkImageInfo& info, void* dst, size_t rowBytes, uint64_t colorOrIndex,
+            SkCodec::ZeroInitialized zeroInit) override {
+        const SkImageInfo fillInfo = info.makeWH(fAllocatedWidth, info.height());
+        SkSampler::Fill(fillInfo, dst, rowBytes, colorOrIndex, zeroInit);
     }
 
     /**
@@ -220,9 +209,6 @@ private:
 
     SkSwizzler(RowProc fastProc, RowProc proc, const SkPMColor* ctable, int srcOffset,
             int srcWidth, int dstOffset, int dstWidth, int srcBPP, int dstBPP);
-    static std::unique_ptr<SkSwizzler> Make(const SkImageInfo& dstInfo, RowProc fastProc,
-            RowProc proc, const SkPMColor* ctable, int srcBPP, int dstBPP,
-            const SkCodec::Options& options, const SkIRect* frame);
 
     int onSetSampleX(int) override;
 

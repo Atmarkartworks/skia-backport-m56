@@ -8,11 +8,11 @@
 #ifndef SkATrace_DEFINED
 #define SkATrace_DEFINED
 
-#include "include/utils/SkEventTracer.h"
+#include "SkEventTracer.h"
 
 /**
  * This class is used to support ATrace in android apps. It hooks into the SkEventTracer system. It
- * currently supports the macros TRACE_EVENT*, TRACE_EVENT_INSTANT*, and TRACE_EVENT_BEGIN/END*.
+ * currently supports the macros TRACE_EVENT*, TRACE_EVENT_INSTANT*, and TRANCE_EVENT_BEGIN/END*.
  * For versions of these calls that take additoinal args and value pairs we currently just drop them
  * and report only the name. Since ATrace is a simple push and pop system (all traces are fully
  * nested), if using BEGIN and END you should also make sure your calls are properly nested (i.e. if
@@ -44,16 +44,11 @@ public:
         return category;
     }
 
-    // Atrace does not yet support splitting up trace output into sections.
-    void newTracingSection(const char* name) override {}
-
 private:
-    SkATrace(const SkATrace&) = delete;
-    SkATrace& operator=(const SkATrace&) = delete;
-
     void (*fBeginSection)(const char*);
     void (*fEndSection)(void);
     bool (*fIsEnabled)(void);
 };
 
 #endif
+

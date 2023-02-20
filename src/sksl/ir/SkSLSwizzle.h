@@ -4,99 +4,84 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
+ 
 #ifndef SKSL_SWIZZLE
 #define SKSL_SWIZZLE
 
-#include "include/core/SkTypes.h"
-#include "include/private/SkSLDefines.h"
-#include "include/private/SkSLIRNode.h"
-#include "include/sksl/SkSLPosition.h"
-#include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLType.h"
-
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <string_view>
-#include <utility>
+#include "SkSLExpression.h"
+#include "SkSLUtil.h"
 
 namespace SkSL {
 
-class Context;
-enum class OperatorPrecedence : uint8_t;
+/**
+ * Given a type and a swizzle component count, returns the type that will result from swizzling. For 
+ * instance, swizzling a vec3 with two components will result in a vec2. It is possible to swizzle
+ * with more components than the source vector, as in 'vec2(1).xxxx'.
+ */
+static const Type& get_type(const Context& context, Expression& value, size_t count) {
+    const Type& base = value.fType.componentType();
+    if (count == 1) {
+        return base;
+    }
+    if (base == *context.fFloat_Type) {
+        switch (count) {
+            case 2: return *context.fVec2_Type;
+            case 3: return *context.fVec3_Type;
+            case 4: return *context.fVec4_Type;
+        }
+    } else if (base == *context.fDouble_Type) {
+        switch (count) {
+            case 2: return *context.fDVec2_Type;
+            case 3: return *context.fDVec3_Type;
+            case 4: return *context.fDVec4_Type;
+        }
+    } else if (base == *context.fInt_Type) {
+        switch (count) {
+            case 2: return *context.fIVec2_Type;
+            case 3: return *context.fIVec3_Type;
+            case 4: return *context.fIVec4_Type;
+        }
+    } else if (base == *context.fUInt_Type) {
+        switch (count) {
+            case 2: return *context.fUVec2_Type;
+            case 3: return *context.fUVec3_Type;
+            case 4: return *context.fUVec4_Type;
+        }
+    } else if (base == *context.fBool_Type) {
+        switch (count) {
+            case 2: return *context.fBVec2_Type;
+            case 3: return *context.fBVec3_Type;
+            case 4: return *context.fBVec4_Type;
+        }
+    }
+    ABORT("cannot swizzle %s\n", value.description().c_str());
+}
 
 /**
- * Represents a vector swizzle operation such as 'float3(1, 2, 3).zyx'.
+ * Represents a vector swizzle operation such as 'vec2(1, 2, 3).zyx'.
  */
-struct Swizzle final : public Expression {
-    inline static constexpr Kind kIRNodeKind = Kind::kSwizzle;
-
-    Swizzle(const Context& context, Position pos, std::unique_ptr<Expression> base,
-            const ComponentArray& components)
-            : INHERITED(pos, kIRNodeKind,
-                        &base->type().componentType().toCompound(context, components.size(), 1))
-            , fBase(std::move(base))
-            , fComponents(components) {
-        SkASSERT(this->components().size() >= 1 && this->components().size() <= 4);
+struct Swizzle : public Expression {
+    Swizzle(const Context& context, std::unique_ptr<Expression> base, std::vector<int> components)
+    : INHERITED(base->fPosition, kSwizzle_Kind, get_type(context, *base, components.size()))
+    , fBase(std::move(base))
+    , fComponents(std::move(components)) {
+        ASSERT(fComponents.size() >= 1 && fComponents.size() <= 4);
     }
 
-    // Swizzle::Convert permits component arrays containing ZERO or ONE, does typechecking, reports
-    // errors via ErrorReporter, and returns an expression that combines constructors and native
-    // swizzles (comprised solely of X/Y/W/Z).
-    static std::unique_ptr<Expression> Convert(const Context& context,
-                                               Position pos,
-                                               Position maskPos,
-                                               std::unique_ptr<Expression> base,
-                                               ComponentArray inComponents);
-
-    static std::unique_ptr<Expression> Convert(const Context& context,
-                                               Position pos,
-                                               Position maskPos,
-                                               std::unique_ptr<Expression> base,
-                                               std::string_view maskString);
-
-    // Swizzle::Make does not permit ZERO or ONE in the component array, just X/Y/Z/W; errors are
-    // reported via ASSERT.
-    static std::unique_ptr<Expression> Make(const Context& context,
-                                            Position pos,
-                                            std::unique_ptr<Expression> expr,
-                                            ComponentArray inComponents);
-
-    std::unique_ptr<Expression>& base() {
-        return fBase;
+    std::string description() const override {
+        std::string result = fBase->description() + ".";
+        for (int x : fComponents) {
+            result += "xyzw"[x];
+        }
+        return result;
     }
 
-    const std::unique_ptr<Expression>& base() const {
-        return fBase;
-    }
+    const std::unique_ptr<Expression> fBase;
+    const std::vector<int> fComponents;
 
-    const ComponentArray& components() const {
-        return fComponents;
-    }
-
-    std::unique_ptr<Expression> clone(Position pos) const override {
-        return std::unique_ptr<Expression>(new Swizzle(pos, &this->type(), this->base()->clone(),
-                                                       this->components()));
-    }
-
-    std::string description(OperatorPrecedence) const override;
-
-private:
-    Swizzle(Position pos, const Type* type, std::unique_ptr<Expression> base,
-            const ComponentArray& components)
-        : INHERITED(pos, kIRNodeKind, type)
-        , fBase(std::move(base))
-        , fComponents(components) {
-        SkASSERT(this->components().size() >= 1 && this->components().size() <= 4);
-    }
-
-    std::unique_ptr<Expression> fBase;
-    ComponentArray fComponents;
-
-    using INHERITED = Expression;
+    typedef Expression INHERITED;
 };
 
-}  // namespace SkSL
+} // namespace
 
 #endif

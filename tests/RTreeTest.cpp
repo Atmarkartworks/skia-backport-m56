@@ -5,18 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkRect.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkRTree.h"
-#include "tests/Test.h"
-
-#include <cmath>
-#include <cstddef>
-#include <vector>
-
-using namespace skia_private;
+#include "SkRTree.h"
+#include "SkRandom.h"
+#include "Test.h"
 
 static const int NUM_RECTS = 200;
 static const size_t NUM_ITERATIONS = 100;
@@ -34,19 +25,19 @@ static SkRect random_rect(SkRandom& rand) {
     return rect;
 }
 
-static bool verify_query(SkRect query, SkRect rects[], const std::vector<int>& found) {
-    std::vector<int> expected;
+static bool verify_query(SkRect query, SkRect rects[], SkTDArray<int>& found) {
+    SkTDArray<int> expected;
     // manually intersect with every rectangle
     for (int i = 0; i < NUM_RECTS; ++i) {
         if (SkRect::Intersects(query, rects[i])) {
-            expected.push_back(i);
+            expected.push(i);
         }
     }
 
-    if (expected.size() != found.size()) {
+    if (expected.count() != found.count()) {
         return false;
     }
-    if (0 == expected.size()) {
+    if (0 == expected.count()) {
         return true;
     }
     return found == expected;
@@ -55,7 +46,7 @@ static bool verify_query(SkRect query, SkRect rects[], const std::vector<int>& f
 static void run_queries(skiatest::Reporter* reporter, SkRandom& rand, SkRect rects[],
                         const SkRTree& tree) {
     for (size_t i = 0; i < NUM_QUERIES; ++i) {
-        std::vector<int> hits;
+        SkTDArray<int> hits;
         SkRect query = random_rect(rand);
         tree.search(query, &hits);
         REPORTER_ASSERT(reporter, verify_query(query, rects, hits));
@@ -80,7 +71,7 @@ DEF_TEST(RTree, reporter) {
     }
 
     SkRandom rand;
-    AutoTMalloc<SkRect> rects(NUM_RECTS);
+    SkAutoTMalloc<SkRect> rects(NUM_RECTS);
     for (size_t i = 0; i < NUM_ITERATIONS; ++i) {
         SkRTree rtree;
         REPORTER_ASSERT(reporter, 0 == rtree.getCount());

@@ -5,18 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkRefCnt.h"
-#include "include/private/chromium/SkDiscardableMemory.h"
-#include "src/lazy/SkDiscardableMemoryPool.h"
-#include "tests/Test.h"
+#include "SkDiscardableMemoryPool.h"
 
-#include <cstring>
-#include <memory>
+#include "Test.h"
 
 namespace {
 constexpr char kTestString[] = "HELLO, WORLD!";
 constexpr size_t kTestStringLength = sizeof(kTestString);
-}  // namespace
+}
 
 static void test_dm(skiatest::Reporter* reporter,
                     SkDiscardableMemory* dm,
@@ -56,9 +52,9 @@ DEF_TEST(DiscardableMemory_global, reporter) {
 }
 
 DEF_TEST(DiscardableMemory_nonglobal, reporter) {
-    sk_sp<SkDiscardableMemoryPool> pool(
-        SkDiscardableMemoryPool::Make(1024));
+    std::unique_ptr<SkDiscardableMemoryPool> pool(
+        SkDiscardableMemoryPool::Create(1024, /* mutex = */ nullptr));
     std::unique_ptr<SkDiscardableMemory> dm(pool->create(kTestStringLength));
     test_dm(reporter, dm.get(), true);
 }
-
+    

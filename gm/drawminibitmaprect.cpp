@@ -5,31 +5,21 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkRandom.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkColorPriv.h"
+#include "SkGradientShader.h"
+#include "SkImage.h"
+#include "SkMathPriv.h"
+#include "SkRandom.h"
+#include "SkShader.h"
+#include "SkSurface.h"
 
-static sk_sp<SkImage> makebm(int w, int h) {
+static sk_sp<SkImage> makebm(SkCanvas* caller, int w, int h) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(w, h);
-    auto surface(SkSurface::MakeRaster(info));
+    auto surface(caller->makeSurface(info));
+    if (nullptr == surface) {
+        surface = SkSurface::MakeRaster(info);
+    }
     SkCanvas* canvas = surface->getCanvas();
 
     const SkScalar wScalar = SkIntToScalar(w);
@@ -37,7 +27,7 @@ static sk_sp<SkImage> makebm(int w, int h) {
 
     const SkPoint     pt = { wScalar / 2, hScalar / 2 };
 
-    const SkScalar    radius = 4 * std::max(wScalar, hScalar);
+    const SkScalar    radius = 4 * SkMaxScalar(wScalar, hScalar);
 
     constexpr SkColor     colors[] = { SK_ColorRED, SK_ColorYELLOW,
                                           SK_ColorGREEN, SK_ColorMAGENTA,
@@ -52,7 +42,7 @@ static sk_sp<SkImage> makebm(int w, int h) {
                                       5 * SK_Scalar1 / 6,
                                       SK_Scalar1};
 
-    SkASSERT(std::size(colors) == std::size(pos));
+    SkASSERT(SK_ARRAY_COUNT(colors) == SK_ARRAY_COUNT(pos));
     SkPaint     paint;
     SkRect rect = SkRect::MakeWH(wScalar, hScalar);
     SkMatrix mat = SkMatrix::I();
@@ -60,8 +50,8 @@ static sk_sp<SkImage> makebm(int w, int h) {
         paint.setShader(SkGradientShader::MakeRadial(
                         pt, radius,
                         colors, pos,
-                        std::size(colors),
-                        SkTileMode::kRepeat,
+                        SK_ARRAY_COUNT(colors),
+                        SkShader::kRepeat_TileMode,
                         0, &mat));
         canvas->drawRect(rect, paint);
         rect.inset(wScalar / 8, hScalar / 8);
@@ -73,8 +63,8 @@ static sk_sp<SkImage> makebm(int w, int h) {
 constexpr int gSize = 1024;
 constexpr int gSurfaceSize = 2048;
 
-// This GM calls drawImageRect several times using the same texture. This is intended to exercise
-// combining GrDrawOps during these calls.
+// This GM calls drawImageRect several times using the same texture. This is
+// intended to exercise batching of these calls.
 class DrawMiniBitmapRectGM : public skiagm::GM {
 public:
     DrawMiniBitmapRectGM(bool antiAlias) : fAA(antiAlias) {
@@ -91,7 +81,7 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         if (nullptr == fImage) {
-            fImage = ToolUtils::MakeTextureImage(canvas, makebm(gSurfaceSize, gSurfaceSize));
+            fImage = makebm(canvas, gSurfaceSize, gSurfaceSize);
         }
 
         const SkRect dstRect = { 0, 0, SkIntToScalar(64), SkIntToScalar(64)};
@@ -124,8 +114,7 @@ protected:
                         // rect stays rect
                         break;
                 }
-                canvas->drawImageRect(fImage.get(), SkRect::Make(srcRect), dstRect,
-                                      SkSamplingOptions(), &paint,
+                canvas->drawImageRect(fImage.get(), srcRect, dstRect, &paint,
                                       SkCanvas::kFast_SrcRectConstraint);
                 canvas->restore();
 
@@ -147,7 +136,7 @@ private:
     sk_sp<SkImage>  fImage;
     SkString        fName;
 
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM( return new DrawMiniBitmapRectGM(true); )

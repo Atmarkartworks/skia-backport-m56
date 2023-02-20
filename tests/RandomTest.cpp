@@ -5,14 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkMath.h"
-#include "src/base/SkRandom.h"
-#include "src/base/SkTSort.h"
-#include "tests/Test.h"
-
-#include <cmath>
-#include <cstring>
+#include "SkRandom.h"
+#include "SkTSort.h"
+#include "Test.h"
 
 static bool anderson_darling_test(double p[32]) {
     // Min and max Anderson-Darling values allowable for k=32
@@ -20,7 +15,7 @@ static bool anderson_darling_test(double p[32]) {
     const double kADMax32 = 3.89;         // p-value of ~0.99
 
     // sort p values
-    SkTQSort<double>(p, p + 32);
+    SkTQSort<double>(p, p + 31);
 
     // and compute Anderson-Darling statistic to ensure these are uniform
     double s = 0.0;

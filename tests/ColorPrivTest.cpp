@@ -1,17 +1,6 @@
-/*
- * Copyright 2017 Google Inc.
- *
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
+#include "Test.h"
 
-#include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
-#include "include/core/SkTypes.h"
-#include "include/private/SkColorData.h"
-#include "tests/Test.h"
-
-#include <cstdint>
+#include "SkColorPriv.h"
 
 #define ASSERT(expr) REPORTER_ASSERT(r, expr)
 

@@ -8,8 +8,8 @@
 #ifndef SkDWrite_DEFINED
 #define SkDWrite_DEFINED
 
-#include "include/core/SkFontStyle.h"
-#include "include/private/base/SkTemplates.h"
+#include "SkFontStyle.h"
+#include "SkTemplates.h"
 
 #include <dwrite.h>
 #include <winsdkver.h>
@@ -19,13 +19,21 @@ class SkString;
 ////////////////////////////////////////////////////////////////////////////////
 // Factory
 
+#ifndef SK_HAS_DWRITE_1_H
+#define SK_HAS_DWRITE_1_H (WINVER_MAXVER >= 0x0602)
+#endif
+
+#ifndef SK_HAS_DWRITE_2_H
+#define SK_HAS_DWRITE_2_H (WINVER_MAXVER >= 0x0603)
+#endif
+
 IDWriteFactory* sk_get_dwrite_factory();
 
 ////////////////////////////////////////////////////////////////////////////////
 // String conversion
 
 /** Prefer to use this type to prevent template proliferation. */
-typedef skia_private::AutoSTMalloc<16, WCHAR> SkSMallocWCHAR;
+typedef SkAutoSTMalloc<16, WCHAR> SkSMallocWCHAR;
 
 /** Converts a utf8 string to a WCHAR string. */
 HRESULT sk_cstring_to_wchar(const char* skname, SkSMallocWCHAR* name);
@@ -38,8 +46,8 @@ HRESULT sk_wchar_to_skstring(WCHAR* name, int nameLen, SkString* skname);
 ////////////////////////////////////////////////////////////////////////////////
 // Locale
 
-HRESULT sk_get_locale_string(IDWriteLocalizedStrings* names, const WCHAR* preferedLocale,
-                             SkString* skname);
+void sk_get_locale_string(IDWriteLocalizedStrings* names, const WCHAR* preferedLocale,
+                       SkString* skname);
 
 typedef int (WINAPI *SkGetUserDefaultLocaleNameProc)(LPWSTR, int);
 HRESULT SkGetGetUserDefaultLocaleNameProc(SkGetUserDefaultLocaleNameProc* proc);

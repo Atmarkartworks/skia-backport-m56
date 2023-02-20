@@ -5,44 +5,25 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import os
-import platform
-import shutil
-import stat
+import subprocess
 import sys
-import tempfile
-import zipfile
 
-if sys.version_info[0] < 3:
-  from urllib2 import urlopen
-else:
-  from urllib.request import urlopen
+def quiet(*cmd):
+  cmd = ' '.join(cmd).split()
+  subprocess.check_output(cmd)
 
-os.chdir(os.path.join(os.path.dirname(__file__), os.pardir))
+def gn_path():
+  if 'linux' in sys.platform:
+    return 'buildtools/linux64/gn'
+  if 'darwin' in sys.platform:
+    return 'buildtools/mac/gn'
+  return 'buildtools/win/gn.exe'
 
-gnzip = os.path.join(tempfile.mkdtemp(), 'gn.zip')
-with open(gnzip, 'wb') as f:
-  OS  = {'darwin': 'mac', 'linux': 'linux', 'linux2': 'linux', 'win32': 'windows'}[sys.platform]
-  cpu = {'aarch64': 'arm64', 'amd64': 'amd64', 'arm64': 'arm64', 'x86_64': 'amd64'}[platform.machine().lower()]
-
-  rev = 'd62642c920e6a0d1756316d225a90fd6faa9e21e'
-  url = 'https://chrome-infra-packages.appspot.com/dl/gn/gn/{}-{}/+/git_revision:{}'.format(
-          OS,cpu,rev)
-  f.write(urlopen(url).read())
-
-gn = 'gn.exe' if 'win32' in sys.platform else 'gn'
-with zipfile.ZipFile(gnzip, 'r') as f:
-  f.extract(gn, 'bin')
-
-gn = os.path.join('bin', gn)
-
-os.chmod(gn, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
-             stat.S_IRGRP                | stat.S_IXGRP |
-             stat.S_IROTH                | stat.S_IXOTH )
-
-# We'll also copy to a path that depot_tools' GN wrapper will expect to find the binary.
-copy_path = 'buildtools/linux64/gn' if 'linux'  in sys.platform else \
-            'buildtools/mac/gn'     if 'darwin' in sys.platform else \
-            'buildtools/win/gn.exe'
-if os.path.isdir(os.path.dirname(copy_path)):
-  shutil.copy(gn, copy_path)
+def download_tool():
+	if 'linux' in sys.platform or 'darwin' in sys.platform:
+		return 'download_from_google_storage'
+	return 'download_from_google_storage.bat'
+	 
+quiet(download_tool(),
+      '--no_resume --no_auth --bucket chromium-gn',
+      '-s ', gn_path() + '.sha1')

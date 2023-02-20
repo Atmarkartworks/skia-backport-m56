@@ -4,16 +4,9 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPoint.h"
-#include "include/core/SkTypes.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsTypes.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cmath>
-#include <cstddef>
+#include "PathOpsTestCommon.h"
+#include "SkPathOpsPoint.h"
+#include "Test.h"
 
 static const SkDPoint tests[] = {
     {0, 0},
@@ -25,7 +18,7 @@ static const SkDPoint tests[] = {
     {2, 2}
 };
 
-static const size_t tests_count = std::size(tests);
+static const size_t tests_count = SK_ARRAY_COUNT(tests);
 
 DEF_TEST(PathOpsDPoint, reporter) {
     for (size_t index = 0; index < tests_count; ++index) {

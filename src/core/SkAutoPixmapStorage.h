@@ -8,22 +8,12 @@
 #ifndef SkAutoPixmapStorage_DEFINED
 #define SkAutoPixmapStorage_DEFINED
 
-#include "include/core/SkPixmap.h"
-#include "include/private/base/SkMalloc.h"
+#include "SkPixmap.h"
 
-class SkData;
-
-class SkAutoPixmapStorage : public SkPixmap {
+class SK_API SkAutoPixmapStorage : public SkPixmap {
 public:
     SkAutoPixmapStorage();
     ~SkAutoPixmapStorage();
-
-    SkAutoPixmapStorage(SkAutoPixmapStorage&& other);
-
-    /**
-    * Leave the moved-from object in a free-but-valid state.
-    */
-    SkAutoPixmapStorage& operator=(SkAutoPixmapStorage&& other);
 
     /**
     *  Try to allocate memory for the pixels needed to match the specified Info. On success
@@ -39,7 +29,7 @@ public:
     *  to point to that memory. The storage will be freed when this object is destroyed,
     *  or if another call to tryAlloc() or alloc() is made.
     *
-    *  If the memory cannot be allocated, calls SK_ABORT().
+    *  If the memory cannot be allocated, calls sk_throw().
     */
     void alloc(const SkImageInfo&);
 
@@ -50,17 +40,10 @@ public:
     static size_t AllocSize(const SkImageInfo& info, size_t* rowBytes);
 
     /**
-    * Returns a void* of the allocated pixel memory and resets the pixmap. If the storage hasn't
-    * been allocated, the result is NULL. The caller is responsible for calling sk_free to free
-    * the returned memory.
-    */
-    void* SK_WARN_UNUSED_RESULT detachPixels();
-
-    /**
     *  Returns an SkData object wrapping the allocated pixels memory, and resets the pixmap.
     *  If the storage hasn't been allocated, the result is NULL.
     */
-    sk_sp<SkData> SK_WARN_UNUSED_RESULT detachPixelsAsData();
+    const SkData* SK_WARN_UNUSED_RESULT detachPixelsAsData();
 
     // We wrap these so we can clear our internal storage
 
@@ -68,11 +51,14 @@ public:
         this->freeStorage();
         this->INHERITED::reset();
     }
-    void reset(const SkImageInfo& info, const void* addr, size_t rb) {
+    void reset(const SkImageInfo& info, const void* addr, size_t rb, SkColorTable* ctable = NULL) {
         this->freeStorage();
-        this->INHERITED::reset(info, addr, rb);
+        this->INHERITED::reset(info, addr, rb, ctable);
     }
-
+    void reset(const SkImageInfo& info) {
+        this->freeStorage();
+        this->INHERITED::reset(info);
+    }
     bool SK_WARN_UNUSED_RESULT reset(const SkMask& mask) {
         this->freeStorage();
         return this->INHERITED::reset(mask);
@@ -86,7 +72,7 @@ private:
         fStorage = nullptr;
     }
 
-    using INHERITED = SkPixmap;
+    typedef SkPixmap INHERITED;
 };
 
 #endif

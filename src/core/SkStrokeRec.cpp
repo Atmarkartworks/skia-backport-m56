@@ -5,12 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkStrokeRec.h"
-
-#include "src/core/SkPaintDefaults.h"
-#include "src/core/SkStroke.h"
-
-#include <algorithm>
+#include "SkStrokeRec.h"
+#include "SkPaintDefaults.h"
 
 // must be < 0, since ==0 means hairline, and >0 means normal stroke
 #define kStrokeRec_FillStyleWidth     (-SK_Scalar1)
@@ -98,8 +94,10 @@ void SkStrokeRec::setStrokeStyle(SkScalar width, bool strokeAndFill) {
     }
 }
 
+#include "SkStroke.h"
+
 #ifdef SK_DEBUG
-    // enables tweaking these values at runtime from Viewer
+    // enables tweaking these values at runtime from SampleApp
     bool gDebugStrokerErrorSet = false;
     SkScalar gDebugStrokerError;
 #endif
@@ -137,36 +135,30 @@ void SkStrokeRec::applyToPaint(SkPaint* paint) const {
     paint->setStrokeJoin((SkPaint::Join)fJoin);
 }
 
+static inline SkScalar get_inflation_bounds(SkPaint::Join join,
+                                            SkScalar strokeWidth,
+                                            SkScalar miterLimit) {
+    if (strokeWidth < 0) {  // fill
+        return 0;
+    } else if (0 == strokeWidth) {
+        return SK_Scalar1;
+    }
+    // since we're stroked, outset the rect by the radius (and join type)
+    SkScalar radius = SkScalarHalf(strokeWidth);
+    if (SkPaint::kMiter_Join == join) {
+        if (miterLimit > SK_Scalar1) {
+            radius = SkScalarMul(miterLimit, radius);
+        }
+    }
+    return radius;
+}
+
 SkScalar SkStrokeRec::getInflationRadius() const {
-    return GetInflationRadius((SkPaint::Join)fJoin, fMiterLimit, (SkPaint::Cap)fCap, fWidth);
+    return get_inflation_bounds((SkPaint::Join)fJoin, fWidth, fMiterLimit);
 }
 
 SkScalar SkStrokeRec::GetInflationRadius(const SkPaint& paint, SkPaint::Style style) {
     SkScalar width = SkPaint::kFill_Style == style ? -SK_Scalar1 : paint.getStrokeWidth();
-    return GetInflationRadius(paint.getStrokeJoin(), paint.getStrokeMiter(), paint.getStrokeCap(),
-                              width);
+    return get_inflation_bounds(paint.getStrokeJoin(), width, paint.getStrokeMiter());
 
 }
-
-SkScalar SkStrokeRec::GetInflationRadius(SkPaint::Join join, SkScalar miterLimit, SkPaint::Cap cap,
-                                         SkScalar strokeWidth) {
-    if (strokeWidth < 0) {  // fill
-        return 0;
-    } else if (0 == strokeWidth) {
-        // FIXME: We need a "matrixScale" parameter here in order to properly handle hairlines.
-        // Their with is determined in device space, unlike other strokes.
-        // http://skbug.com/8157
-        return SK_Scalar1;
-    }
-
-    // since we're stroked, outset the rect by the radius (and join type, caps)
-    SkScalar multiplier = SK_Scalar1;
-    if (SkPaint::kMiter_Join == join) {
-        multiplier = std::max(multiplier, miterLimit);
-    }
-    if (SkPaint::kSquare_Cap == cap) {
-        multiplier = std::max(multiplier, SK_ScalarSqrt2);
-    }
-    return strokeWidth/2 * multiplier;
-}
-

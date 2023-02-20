@@ -5,15 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
+#include "gm.h"
+#include "SkRandom.h"
 
 namespace skiagm {
 
@@ -23,7 +16,7 @@ namespace skiagm {
 class ArcOfZorroGM : public GM {
 public:
     ArcOfZorroGM() {
-        this->setBGColor(0xFFCCCCCC);
+        this->setBGColor(sk_tool_utils::color_to_565(0xFFCCCCCC));
     }
 
 protected:
@@ -81,10 +74,10 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new ArcOfZorroGM;)
-}  // namespace skiagm
+}

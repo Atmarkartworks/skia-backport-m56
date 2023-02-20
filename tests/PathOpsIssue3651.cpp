@@ -4,15 +4,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPath.h"
-#include "include/pathops/SkPathOps.h"
-#include "include/private/base/SkFloatBits.h"
-#include "src/pathops/SkPathOpsTypes.h"
-#include "tests/PathOpsExtendedTest.h"
-#include "tests/Test.h"
-
-#include <cstddef>
-#include <iterator>
+#include "PathOpsExtendedTest.h"
+#include "PathOpsTestCommon.h"
 
 #define TEST(name) { name, #name }
 
@@ -1666,9 +1659,9 @@ path.close();
 }
 
 
-static void (*skipTest)(skiatest::Reporter* , const char* filename) = nullptr;
+static void (*skipTest)(skiatest::Reporter* , const char* filename) = 0;
 static void (*firstTest)(skiatest::Reporter* , const char* filename) = issue3651_1;
-static void (*stopTest)(skiatest::Reporter* , const char* filename) = nullptr;
+static void (*stopTest)(skiatest::Reporter* , const char* filename) = 0;
 
 static struct TestDesc tests[] = {
     TEST(issue3651_6),
@@ -1681,10 +1674,13 @@ static struct TestDesc tests[] = {
     TEST(issue3651_3),
 };
 
-static const size_t testCount = std::size(tests);
+static const size_t testCount = SK_ARRAY_COUNT(tests);
 
 static bool runReverse = false;
 
 DEF_TEST(PathOpsIssue3651, reporter) {
+#if DEBUG_SHOW_TEST_NAME
+    strncpy(DEBUG_FILENAME_STRING, "", DEBUG_FILENAME_STRING_LENGTH);
+#endif
     RunTestSet(reporter, tests, testCount, firstTest, skipTest, stopTest, runReverse);
 }

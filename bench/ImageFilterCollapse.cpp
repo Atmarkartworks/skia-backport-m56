@@ -5,13 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkSurface.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/effects/SkImageFilters.h"
+#include "Benchmark.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkColorFilterImageFilter.h"
+#include "SkColorMatrixFilter.h"
+#include "SkGradientShader.h"
+#include "SkImageFilter.h"
+#include "SkTableColorFilter.h"
 
 // Chains several matrix color filters image filter or several
 // table filter image filters and draws a bitmap.
@@ -29,7 +30,7 @@ protected:
 
         // Create a chain of ImageFilters from colorFilters
         for(int i = nFilters; i --> 0;) {
-            fImageFilter = SkImageFilters::ColorFilter(colorFilters[i], fImageFilter);
+            fImageFilter = SkColorFilterImageFilter::Make(colorFilters[i], fImageFilter);
         }
     }
 
@@ -39,29 +40,30 @@ protected:
         for(int i = 0; i < loops; i++) {
             SkPaint paint;
             paint.setImageFilter(fImageFilter);
-            canvas->drawImage(fImage, 0, 0, SkSamplingOptions(), &paint);
+            canvas->drawBitmap(fBitmap, 0, 0, &paint);
         }
     }
 
 private:
     sk_sp<SkImageFilter> fImageFilter;
-    sk_sp<SkImage> fImage;
+    SkBitmap fBitmap;
 
     void makeBitmap() {
         int W = 400;
         int H = 400;
-        auto surf = SkSurface::MakeRasterN32Premul(W, H);
+        fBitmap.allocN32Pixels(W, H);
+        fBitmap.eraseColor(SK_ColorTRANSPARENT);
 
+        SkCanvas canvas(fBitmap);
         SkPaint paint;
         SkPoint pts[] = { {0, 0}, {SkIntToScalar(W), SkIntToScalar(H)} };
         SkColor colors[] = {
             SK_ColorBLACK, SK_ColorGREEN, SK_ColorCYAN,
             SK_ColorRED, 0, SK_ColorBLUE, SK_ColorWHITE
         };
-        paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
-                                                     SkTileMode::kClamp));
-        surf->getCanvas()->drawPaint(paint);
-        fImage = surf->makeImageSnapshot();       // shader->makeImage()
+        paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+                                                     SkShader::kClamp_TileMode));
+        canvas.drawPaint(paint);
     }
 };
 
@@ -83,12 +85,12 @@ protected:
         }
 
         sk_sp<SkColorFilter> colorFilters[] = {
-            SkColorFilters::Table(table1),
-            SkColorFilters::Table(table2),
-            SkColorFilters::Table(table3),
+            SkTableColorFilter::Make(table1),
+            SkTableColorFilter::Make(table2),
+            SkTableColorFilter::Make(table3),
         };
 
-        this->doPreDraw(colorFilters, std::size(colorFilters));
+        this->doPreDraw(colorFilters, SK_ARRAY_COUNT(colorFilters));
     }
 
 private:
@@ -96,21 +98,22 @@ private:
 };
 
 static sk_sp<SkColorFilter> make_brightness(float amount) {
-    SkScalar matrix[20] = { 1, 0, 0, 0, amount,
-                            0, 1, 0, 0, amount,
-                            0, 0, 1, 0, amount,
+    SkScalar amount255 = SkScalarMul(amount, SkIntToScalar(255));
+    SkScalar matrix[20] = { 1, 0, 0, 0, amount255,
+                            0, 1, 0, 0, amount255,
+                            0, 0, 1, 0, amount255,
                             0, 0, 0, 1, 0 };
-    return SkColorFilters::Matrix(matrix);
+    return SkColorFilter::MakeMatrixFilterRowMajor255(matrix);
 }
 
 static sk_sp<SkColorFilter> make_grayscale() {
-    float matrix[20];
-    memset(matrix, 0, 20 * sizeof(float));
+    SkScalar matrix[20];
+    memset(matrix, 0, 20 * sizeof(SkScalar));
     matrix[0] = matrix[5] = matrix[10] = 0.2126f;
     matrix[1] = matrix[6] = matrix[11] = 0.7152f;
     matrix[2] = matrix[7] = matrix[12] = 0.0722f;
     matrix[18] = 1.0f;
-    return SkColorFilters::Matrix(matrix);
+    return SkColorFilter::MakeMatrixFilterRowMajor255(matrix);
 }
 
 class MatrixCollapseBench: public BaseImageFilterCollapseBench {
@@ -126,7 +129,7 @@ protected:
             make_brightness(-0.1f),
         };
 
-        this->doPreDraw(colorFilters, std::size(colorFilters));
+        this->doPreDraw(colorFilters, SK_ARRAY_COUNT(colorFilters));
     }
 };
 

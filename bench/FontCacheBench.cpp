@@ -5,17 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkString.h"
-#include "include/private/SkChecksum.h"
-#include "include/private/base/SkTemplates.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkChecksum.h"
+#include "SkPaint.h"
+#include "SkString.h"
+#include "SkTemplates.h"
 
-#include "bench/gUniqueGlyphIDs.h"
-
+#include "gUniqueGlyphIDs.h"
 #define gUniqueGlyphIDs_Sentinel    0xFFFF
 
 static int count_glyphs(const uint16_t start[]) {
@@ -36,21 +33,22 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        SkFont font;
-        font.setEdging(SkFont::Edging::kAntiAlias);
+        SkPaint paint;
+        this->setupPaint(&paint);
+        paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
         const uint16_t* array = gUniqueGlyphIDs;
         while (*array != gUniqueGlyphIDs_Sentinel) {
             int count = count_glyphs(array);
             for (int i = 0; i < loops; ++i) {
-                (void)font.measureText(array, count * sizeof(uint16_t), SkTextEncoding::kGlyphID);
+                paint.measureText(array, count * sizeof(uint16_t));
             }
             array += count + 1;    // skip the sentinel
         }
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -101,8 +99,8 @@ static void dump_array(const uint16_t array[], int count) {
 class FontCacheEfficiency : public Benchmark {
 public:
     FontCacheEfficiency()  {
-        if ((false)) dump_array(nullptr, 0);
-        if ((false)) rotr(0, 0);
+        if (false) dump_array(nullptr, 0);
+        if (false) rotr(0, 0);
     }
 
 protected:
@@ -120,12 +118,12 @@ protected:
         for (int hashBits = 6; hashBits <= 12; hashBits += 1) {
             int hashMask = ((1 << hashBits) - 1);
             for (int limit = 32; limit <= 1024; limit <<= 1) {
-                for (size_t i = 0; i < std::size(gRec); ++i) {
+                for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); ++i) {
                     int collisions = 0;
                     int glyphs = 0;
                     const uint16_t* array = gUniqueGlyphIDs;
                     while (*array != gUniqueGlyphIDs_Sentinel) {
-                        int count = std::min(count_glyphs(array), limit);
+                        int count = SkMin32(count_glyphs(array), limit);
                         collisions += count_collisions(array, count, gRec[i].fHasher, hashMask);
                         glyphs += count;
                         array += count + 1;    // skip the sentinel
@@ -138,62 +136,12 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
+
+///////////////////////////////////////////////////////////////////////////////
+
 DEF_BENCH( return new FontCacheBench(); )
 
 // undefine this to run the efficiency test
 //DEF_BENCH( return new FontCacheEfficiency(); )
-
-///////////////////////////////////////////////////////////////////////////////
-
-class FontPathBench : public Benchmark {
-    SkFont fFont;
-    uint16_t fGlyphs[100];
-    SkString fName;
-    const bool fOneAtATime;
-
-public:
-    FontPathBench(bool oneAtATime) : fOneAtATime(oneAtATime) {
-        fName.printf("font-path-%s", oneAtATime ? "loop" : "batch");
-    }
-
-protected:
-    const char* onGetName() override {
-        return fName.c_str();
-    }
-
-    bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
-    }
-
-    void onDelayedSetup() override {
-        fFont.setSize(32);
-        for (size_t i = 0; i < std::size(fGlyphs); ++i) {
-            fGlyphs[i] = i;
-        }
-    }
-
-    void onDraw(int loops, SkCanvas* canvas) override {
-        SkPath path;
-        for (int loop = 0; loop < loops; ++loop) {
-            if (fOneAtATime) {
-                for (size_t i = 0; i < std::size(fGlyphs); ++i) {
-                    fFont.getPath(fGlyphs[i], &path);
-                }
-            } else {
-                fFont.getPaths(fGlyphs, std::size(fGlyphs),
-                               [](const SkPath* src, const SkMatrix& mx, void* ctx) {
-                                   if (src) {
-                                       src->transform(mx, static_cast<SkPath*>(ctx));
-                                   }
-                               }, &path);
-            }
-        }
-    }
-
-private:
-    using INHERITED = Benchmark;
-};
-DEF_BENCH( return new FontPathBench(true); )
-DEF_BENCH( return new FontPathBench(false); )

@@ -5,39 +5,19 @@
  * found in the LICENSE file.
  */
 
-// This test only works with the GL backend.
+// This test only works with the GPU backend.
 
-#include "gm/gm.h"
+#include "gm.h"
 
-#ifdef SK_GL
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
-#include "src/core/SkAutoPixmapStorage.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpu.h"
-#include "src/gpu/ganesh/gl/GrGLCaps.h"
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+#if SK_SUPPORT_GPU
 
-#include <algorithm>
-#include <cstdint>
-#include <memory>
+#include "GrContext.h"
+#include "GrGpu.h"
+#include "GrTest.h"
+#include "gl/GrGLContext.h"
+#include "SkBitmap.h"
+#include "SkGradientShader.h"
+#include "SkImage.h"
 
 namespace skiagm {
 class RectangleTexture : public GM {
@@ -46,213 +26,166 @@ public:
         this->setBGColor(0xFFFFFFFF);
     }
 
-private:
-    enum class ImageType {
-        kGradientCircle,
-        k2x2
-    };
-
+protected:
     SkString onShortName() override {
         return SkString("rectangle_texture");
     }
 
-    SkISize onISize() override { return SkISize::Make(1180, 710); }
-
-    SkBitmap makeImagePixels(int size, ImageType type) {
-        auto ii = SkImageInfo::Make(size, size, kRGBA_8888_SkColorType, kOpaque_SkAlphaType);
-        switch (type) {
-            case ImageType::kGradientCircle: {
-                SkBitmap bmp;
-                bmp.allocPixels(ii);
-                SkPaint paint;
-                SkCanvas canvas(bmp);
-                SkPoint pts[] = {{0, 0}, {0, SkIntToScalar(size)}};
-                SkColor colors0[] = {0xFF1060B0, 0xFF102030};
-                paint.setShader(
-                        SkGradientShader::MakeLinear(pts, colors0, nullptr, 2, SkTileMode::kClamp));
-                canvas.drawPaint(paint);
-                SkColor colors1[] = {0xFFA07010, 0xFFA02080};
-                paint.setAntiAlias(true);
-                paint.setShader(
-                        SkGradientShader::MakeLinear(pts, colors1, nullptr, 2, SkTileMode::kClamp));
-                canvas.drawCircle(size/2.f, size/2.f, 2.f*size/5, paint);
-                return bmp;
-            }
-            case ImageType::k2x2: {
-                SkBitmap bmp;
-                bmp.allocPixels(ii);
-                *bmp.getAddr32(0, 0) = 0xFF0000FF;
-                *bmp.getAddr32(1, 0) = 0xFF00FF00;
-                *bmp.getAddr32(0, 1) = 0xFFFF0000;
-                *bmp.getAddr32(1, 1) = 0xFFFFFFFF;
-                return bmp;
-            }
-        }
-        SkUNREACHABLE;
+    SkISize onISize() override {
+        return SkISize::Make(1035, 240);
     }
 
-    sk_sp<SkImage> createRectangleTextureImg(GrDirectContext* dContext, GrSurfaceOrigin origin,
-                                             const SkBitmap content) {
-        SkASSERT(content.colorType() == kRGBA_8888_SkColorType);
-        auto format = GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_RECTANGLE);
-        auto bet = dContext->createBackendTexture(content.width(),
-                                                  content.height(),
-                                                  format,
-                                                  GrMipmapped::kNo,
-                                                  GrRenderable::kNo,
-                                                  GrProtected::kNo,
-                                                  /*label=*/"CreateRectangleTextureImage");
-        if (!bet.isValid()) {
+    void fillPixels(int width, int height, void *pixels) {
+        SkBitmap bmp;
+        bmp.setInfo(SkImageInfo::MakeN32(width, height, kOpaque_SkAlphaType), width * 4);
+        bmp.setPixels(pixels);
+        SkPaint paint;
+        SkCanvas canvas(bmp);
+        SkPoint pts[] = { {0, 0}, {0, SkIntToScalar(height)} };
+        SkColor colors0[] = { 0xFF1060B0 , 0xFF102030 };
+        paint.setShader(SkGradientShader::MakeLinear(pts, colors0, nullptr, 2,
+                                                     SkShader::kClamp_TileMode));
+        canvas.drawPaint(paint);
+
+        SkColor colors1[] = { 0xFFA07010 , 0xFFA02080 };
+        paint.setAntiAlias(true);
+        paint.setShader(SkGradientShader::MakeLinear(pts, colors1, nullptr, 2,
+                                                     SkShader::kClamp_TileMode));
+        canvas.drawCircle(SkIntToScalar(width) / 2, SkIntToScalar(height) / 2,
+                          SkIntToScalar(width + height) / 5, paint);
+    }
+
+    sk_sp<SkImage> createRectangleTextureImg(GrContext* context, int width, int height,
+                                             void* pixels) {
+        if (!context) {
             return nullptr;
         }
-        if (!dContext->updateBackendTexture(bet, content.pixmap(), origin, nullptr, nullptr)) {
-            dContext->deleteBackendTexture(bet);
+        GrGpu* gpu = context->getGpu();
+        if (!gpu) {
+            return nullptr;
         }
-        return SkImage::MakeFromAdoptedTexture(dContext, bet, origin, kRGBA_8888_SkColorType);
+        const GrGLContext* glCtx = gpu->glContextForTesting();
+        if (!glCtx) {
+            return nullptr;
+        }
+
+        if (!(kGL_GrGLStandard == glCtx->standard() && glCtx->version() >= GR_GL_VER(3, 1)) &&
+            !glCtx->hasExtension("GL_ARB_texture_rectangle")) {
+            return nullptr;
+        }
+
+        // We will always create the GL texture as GL_RGBA, however the pixels uploaded may be
+        // be RGBA or BGRA, depending on how SkPMColor was compiled.
+        GrGLenum format;
+        if (kSkia8888_GrPixelConfig == kBGRA_8888_GrPixelConfig) {
+            format = GR_GL_BGRA;
+        } else {
+            SkASSERT(kSkia8888_GrPixelConfig == kRGBA_8888_GrPixelConfig);
+            format = GR_GL_RGBA;
+        }
+
+        const GrGLInterface* gl = glCtx->interface();
+// Useful for debugging whether errors result from use of RECTANGLE
+// #define TARGET GR_GL_TEXTURE_2D
+#define TARGET GR_GL_TEXTURE_RECTANGLE
+        GrGLuint id = 0;
+        GR_GL_CALL(gl, GenTextures(1, &id));
+        GR_GL_CALL(gl, BindTexture(TARGET, id));
+        GR_GL_CALL(gl, TexParameteri(TARGET, GR_GL_TEXTURE_MAG_FILTER,
+                                     GR_GL_NEAREST));
+        GR_GL_CALL(gl, TexParameteri(TARGET, GR_GL_TEXTURE_MIN_FILTER,
+                                     GR_GL_NEAREST));
+        GR_GL_CALL(gl, TexParameteri(TARGET, GR_GL_TEXTURE_WRAP_S,
+                                     GR_GL_CLAMP_TO_EDGE));
+        GR_GL_CALL(gl, TexParameteri(TARGET, GR_GL_TEXTURE_WRAP_T,
+                                     GR_GL_CLAMP_TO_EDGE));
+        GR_GL_CALL(gl, TexImage2D(TARGET, 0, GR_GL_RGBA, width, height, 0,
+                                  format, GR_GL_UNSIGNED_BYTE, pixels));
+
+
+        context->resetContext();
+        GrGLTextureInfo info;
+        info.fID = id;
+        info.fTarget = TARGET;
+        GrBackendTextureDesc desc;
+        desc.fConfig = kRGBA_8888_GrPixelConfig;
+        desc.fWidth = width;
+        desc.fHeight = height;
+        desc.fOrigin = kTopLeft_GrSurfaceOrigin;
+        desc.fTextureHandle = reinterpret_cast<GrBackendObject>(&info);
+        if (sk_sp<SkImage> image = SkImage::MakeFromAdoptedTexture(context, desc)) {
+            return image;
+        }
+        GR_GL_CALL(gl, DeleteTextures(1, &id));
+        return nullptr;
     }
 
-    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
-        auto context = GrAsDirectContext(canvas->recordingContext());
-        if (!context || context->abandoned()) {
-            return DrawResult::kSkip;
+    void onDraw(SkCanvas* canvas) override {
+        GrContext *context = canvas->getGrContext();
+        if (!context) {
+            skiagm::GM::DrawGpuOnlyMessage(canvas);
+            return;
         }
 
-        if (context->backend() != GrBackendApi::kOpenGL_GrBackend ||
-            !static_cast<const GrGLCaps*>(context->priv().caps())->rectangleTextureSupport()) {
-            *errorMsg = "This GM requires an OpenGL context that supports texture rectangles.";
-            return DrawResult::kSkip;
+        constexpr int kWidth = 50;
+        constexpr int kHeight = 50;
+        constexpr SkScalar kPad = 5.f;
+
+        SkPMColor pixels[kWidth * kHeight];
+        this->fillPixels(kWidth, kHeight, pixels);
+        sk_sp<SkImage> rectImg(this->createRectangleTextureImg(context, kWidth, kHeight, pixels));
+
+        if (!rectImg) {
+            SkPaint paint;
+            paint.setAntiAlias(true);
+            const char* kMsg = "Could not create rectangle texture image.";
+            canvas->drawText(kMsg, strlen(kMsg), 10, 100, paint);
+            return;
         }
 
-        auto gradCircle = this->makeImagePixels(50, ImageType::kGradientCircle);
-
-        fGradImgs[0] = this->createRectangleTextureImg(context, kTopLeft_GrSurfaceOrigin,
-                                                       gradCircle);
-        fGradImgs[1] = this->createRectangleTextureImg(context, kBottomLeft_GrSurfaceOrigin,
-                                                       gradCircle);
-        SkASSERT(SkToBool(fGradImgs[0]) == SkToBool(fGradImgs[1]));
-        if (!fGradImgs[0]) {
-            *errorMsg = "Could not create gradient rectangle texture images.";
-            return DrawResult::kFail;
-        }
-
-        fSmallImg = this->createRectangleTextureImg(context, kTopLeft_GrSurfaceOrigin,
-                                                    this->makeImagePixels(2, ImageType::k2x2));
-        if (!fSmallImg) {
-            *errorMsg = "Could not create 2x2 rectangle texture image.";
-            return DrawResult::kFail;
-        }
-
-        return DrawResult::kOk;
-    }
-
-    void onGpuTeardown() override {
-        fGradImgs[0] = fGradImgs[1] = nullptr;
-        fSmallImg = nullptr;
-    }
-
-    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
-        SkASSERT(fGradImgs[0] && fGradImgs[1] && fSmallImg);
-
-        static constexpr SkScalar kPad = 5.f;
-
-        const SkSamplingOptions kSamplings[] = {
-            SkSamplingOptions(SkFilterMode::kNearest),
-            SkSamplingOptions(SkFilterMode::kLinear),
-            SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear),
-            SkSamplingOptions(SkCubicResampler::Mitchell()),
+        constexpr SkFilterQuality kQualities[] = {
+            kNone_SkFilterQuality,
+            kLow_SkFilterQuality,
+            kMedium_SkFilterQuality,
+            kHigh_SkFilterQuality,
         };
 
-        constexpr SkScalar kScales[] = {1.0f, 1.2f, 0.75f};
+        constexpr SkScalar kScales[] = { 1.0f, 1.2f, 0.75f };
 
         canvas->translate(kPad, kPad);
-        for (size_t i = 0; i < kNumGradImages; ++i) {
-            auto img = fGradImgs[i];
-            int w = img->width();
-            int h = img->height();
-            for (auto scale : kScales) {
-                canvas->save();
-                canvas->scale(scale, scale);
-                for (auto s : kSamplings) {
-                    // drawImage
-                    canvas->drawImage(img, 0, 0, s);
-                    canvas->translate(w + kPad, 0);
-
-                    // clamp/clamp shader
-                    SkPaint clampPaint;
-                    clampPaint.setShader(fGradImgs[i]->makeShader(s));
-                    canvas->drawRect(SkRect::MakeWH(1.5f*w, 1.5f*h), clampPaint);
-                    canvas->translate(1.5f*w + kPad, 0);
-
-                    // repeat/mirror shader
-                    SkPaint repeatPaint;
-                    repeatPaint.setShader(fGradImgs[i]->makeShader(SkTileMode::kRepeat,
-                                                                   SkTileMode::kMirror,
-                                                                   s));
-                    canvas->drawRect(SkRect::MakeWH(1.5f*w, 1.5f*h), repeatPaint);
-                    canvas->translate(1.5f*w + kPad, 0);
-
-                    // drawImageRect with kStrict
-                    auto srcRect = SkRect::MakeXYWH(.25f*w, .25f*h, .50f*w, .50f*h);
-                    auto dstRect = SkRect::MakeXYWH(      0,     0, .50f*w, .50f*h);
-                    canvas->drawImageRect(fGradImgs[i], srcRect, dstRect, s, nullptr,
-                                          SkCanvas::kStrict_SrcRectConstraint);
-                    canvas->translate(.5f*w + kPad, 0);
-                }
-                canvas->restore();
-                canvas->translate(0, kPad + 1.5f*h*scale);
-            }
-        }
-
-        static constexpr SkScalar kOutset = 25.f;
-        canvas->translate(kOutset, kOutset);
-        auto dstRect = SkRect::Make(fSmallImg->dimensions()).makeOutset(kOutset, kOutset);
-
-        const SkSamplingOptions gSamplings[] = {
-            SkSamplingOptions(SkFilterMode::kNearest),
-            SkSamplingOptions(SkFilterMode::kLinear),
-            SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear),
-            SkSamplingOptions(SkCubicResampler::Mitchell()),
-        };
-
-        for (const auto& sampling : gSamplings) {
-            if (!sampling.useCubic && sampling.mipmap != SkMipmapMode::kNone) {
-                // Medium is the same as Low for upscaling.
-                continue;
-            }
+        for (auto s : kScales) {
             canvas->save();
-            for (int ty = 0; ty < kSkTileModeCount; ++ty) {
-                canvas->save();
-                for (int tx = 0; tx < kSkTileModeCount; ++tx) {
-                    SkMatrix lm;
-                    lm.setRotate(45.f, 1, 1);
-                    lm.postScale(6.5f, 6.5f);
-                    SkPaint paint;
-                    paint.setShader(fSmallImg->makeShader(static_cast<SkTileMode>(tx),
-                                                          static_cast<SkTileMode>(ty),
-                                                          sampling,
-                                                          lm));
-                    canvas->drawRect(dstRect, paint);
-                    canvas->translate(dstRect.width() + kPad, 0);
-                }
-                canvas->restore();
-                canvas->translate(0, dstRect.height() + kPad);
+            canvas->scale(s, s);
+            for (auto q : kQualities) {
+                SkPaint plainPaint;
+                plainPaint.setFilterQuality(q);
+                canvas->drawImage(rectImg.get(), 0, 0, &plainPaint);
+                canvas->translate(kWidth + kPad, 0);
+
+                SkPaint clampPaint;
+                clampPaint.setFilterQuality(q);
+                clampPaint.setShader(rectImg->makeShader(SkShader::kClamp_TileMode,
+                                                         SkShader::kClamp_TileMode));
+                canvas->drawRect(SkRect::MakeWH(1.5f * kWidth, 1.5f * kHeight), clampPaint);
+                canvas->translate(kWidth * 1.5f + kPad, 0);
+
+                SkPaint repeatPaint;
+                repeatPaint.setFilterQuality(q);
+                repeatPaint.setShader(rectImg->makeShader(SkShader::kRepeat_TileMode,
+                                                          SkShader::kMirror_TileMode));
+                canvas->drawRect(SkRect::MakeWH(1.5f * kWidth, 1.5f * kHeight), repeatPaint);
+                canvas->translate(1.5f * kWidth + kPad, 0);
             }
             canvas->restore();
-            canvas->translate((dstRect.width() + kPad)*kSkTileModeCount, 0);
+            canvas->translate(0, kPad + 1.5f * kHeight * s);
         }
-
-        return DrawResult::kOk;
     }
 
 private:
-    static const int kNumGradImages = 2;
-
-    sk_sp<SkImage> fGradImgs[kNumGradImages];
-    sk_sp<SkImage> fSmallImg;
-
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 DEF_GM(return new RectangleTexture;)
-}  // namespace skiagm
+}
+
 #endif

@@ -5,22 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPathBuilder.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/utils/SkTextUtils.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkArithmeticMode.h"
+#include "SkBlendModePriv.h"
+#include "SkPath.h"
+#include "SkShader.h"
 
 enum {
     kXfermodeCount = (int)SkBlendMode::kLastMode + 1 + 1,   // extra for arith
@@ -78,9 +67,10 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        fLabelFont.setTypeface(ToolUtils::create_portable_typeface());
-        fLabelFont.setSize(5 * kShapeSize/8);
-        fLabelFont.setSubpixel(true);
+        fLabelPaint.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&fLabelPaint);
+        fLabelPaint.setTextSize(5 * kShapeSize/8);
+        fLabelPaint.setSubpixelText(true);
 
         constexpr SkScalar radius = -1.4f * kShapeSize/2;
         SkPoint pts[4] = {
@@ -89,18 +79,16 @@ protected:
             {radius, 0},
             {0, 1.33f * radius}
         };
-        fOval = SkPathBuilder().moveTo(pts[0])
-                               .quadTo(pts[1], pts[2])
-                               .quadTo(pts[3], pts[0])
-                               .detach();
+        fOval.moveTo(pts[0]);
+        fOval.quadTo(pts[1], pts[2]);
+        fOval.quadTo(pts[3], pts[0]);
 
-        fConcave = SkPathBuilder().moveTo(-radius, 0)
-                                  .quadTo(0, 0, 0, -radius)
-                                  .quadTo(0, 0, radius, 0)
-                                  .quadTo(0, 0, 0, radius)
-                                  .quadTo(0, 0, -radius, 0)
-                                  .close()
-                                  .detach();
+        fConcave.moveTo(-radius, 0);
+        fConcave.quadTo(0, 0, 0, -radius);
+        fConcave.quadTo(0, 0, radius, 0);
+        fConcave.quadTo(0, 0, 0, radius);
+        fConcave.quadTo(0, 0, -radius, 0);
+        fConcave.close();
     }
 
     void draw_pass(SkCanvas* canvas, DrawingPass drawingPass) {
@@ -118,14 +106,14 @@ protected:
             canvas->save();
 
             if (kShape_Pass == drawingPass) {
-                SkTextUtils::DrawString(canvas, "Src Unknown",
+                fLabelPaint.setTextAlign(SkPaint::kCenter_Align);
+                canvas->drawText("Src Unknown", sizeof("Src Unknown") - 1,
                         kLabelSpacing + kShapeTypeSpacing * 1.5f + kShapeSpacing / 2,
-                        kSubtitleSpacing / 2 + fLabelFont.getSize() / 3, fLabelFont, SkPaint(),
-                                        SkTextUtils::kCenter_Align);
-                SkTextUtils::DrawString(canvas, "Src Opaque",
+                        kSubtitleSpacing / 2 + fLabelPaint.getTextSize() / 3, fLabelPaint);
+                canvas->drawText("Src Opaque", sizeof("Src Opaque") - 1,
                         kLabelSpacing + kShapeTypeSpacing * 1.5f + kShapeSpacing / 2 +
-                        kPaintSpacing, kSubtitleSpacing / 2 + fLabelFont.getSize() / 3,
-                                        fLabelFont, SkPaint(), SkTextUtils::kCenter_Align);
+                        kPaintSpacing, kSubtitleSpacing / 2 + fLabelPaint.getTextSize() / 3,
+                        fLabelPaint);
             }
 
             canvas->translate(0, kSubtitleSpacing + kShapeSpacing/2);
@@ -142,7 +130,7 @@ protected:
                 }
                 canvas->translate(kLabelSpacing + kShapeSpacing/2, 0);
 
-                for (size_t colorIdx = 0; colorIdx < std::size(kShapeColors); colorIdx++) {
+                for (size_t colorIdx = 0; colorIdx < SK_ARRAY_COUNT(kShapeColors); colorIdx++) {
                     SkPaint paint;
                     this->setupShapePaint(canvas, kShapeColors[colorIdx], mode, &paint);
                     SkASSERT(colorIdx == 0 || 255 == paint.getAlpha());
@@ -153,7 +141,8 @@ protected:
                             canvas->save();
                             canvas->clipRect(clipRect);
                             if (kCheckerboard_Pass == drawingPass) {
-                                ToolUtils::draw_checkerboard(canvas, 0xffffffff, 0xffc6c3c6, 10);
+                                sk_tool_utils::draw_checkerboard(canvas, 0xffffffff, 0xffc6c3c6,
+                                        10);
                             } else {
                                 SkASSERT(kBackground_Pass == drawingPass);
                                 canvas->drawColor(kBGColor, SkBlendMode::kSrc);
@@ -187,17 +176,16 @@ protected:
         canvas->translate(kMargin, kMargin);
         draw_pass(canvas, kBackground_Pass);
 
-        SkFont titleFont(fLabelFont);
-        titleFont.setSize(9 * titleFont.getSize() / 8);
-        titleFont.setEmbolden(true);
-        SkTextUtils::DrawString(canvas, "Porter Duff",
-                                kLabelSpacing + 4 * kShapeTypeSpacing,
-                                kTitleSpacing / 2 + titleFont.getSize() / 3, titleFont, SkPaint(),
-                                SkTextUtils::kCenter_Align);
-        SkTextUtils::DrawString(canvas, "Advanced",
-                                kXfermodeTypeSpacing + kLabelSpacing + 4 * kShapeTypeSpacing,
-                                kTitleSpacing / 2 + titleFont.getSize() / 3, titleFont, SkPaint(),
-                                SkTextUtils::kCenter_Align);
+        SkPaint titlePaint(fLabelPaint);
+        titlePaint.setTextSize(9 * titlePaint.getTextSize() / 8);
+        titlePaint.setFakeBoldText(true);
+        titlePaint.setTextAlign(SkPaint::kCenter_Align);
+        canvas->drawText("Porter Duff", sizeof("Porter Duff") - 1,
+                         kLabelSpacing + 4 * kShapeTypeSpacing,
+                         kTitleSpacing / 2 + titlePaint.getTextSize() / 3, titlePaint);
+        canvas->drawText("Advanced", sizeof("Advanced") - 1,
+                         kXfermodeTypeSpacing + kLabelSpacing + 4 * kShapeTypeSpacing,
+                         kTitleSpacing / 2 + titlePaint.getTextSize() / 3, titlePaint);
 
         draw_pass(canvas, kShape_Pass);
         canvas->restore();
@@ -205,19 +193,19 @@ protected:
 
     void drawModeName(SkCanvas* canvas, SkBlendMode mode) {
         const char* modeName = SkBlendMode_Name(mode);
-        SkTextUtils::DrawString(canvas, modeName, kLabelSpacing - kShapeSize / 4,
-                                fLabelFont.getSize() / 4, fLabelFont, SkPaint(),
-                                SkTextUtils::kRight_Align);
+        fLabelPaint.setTextAlign(SkPaint::kRight_Align);
+        canvas->drawText(modeName, strlen(modeName), kLabelSpacing - kShapeSize / 4,
+                         fLabelPaint.getTextSize() / 4, fLabelPaint);
     }
 
-    void setupShapePaint(SkCanvas* canvas, SkColor color, SkBlendMode mode, SkPaint* paint) {
+    void setupShapePaint(SkCanvas* canvas, GrColor color, SkBlendMode mode, SkPaint* paint) {
         paint->setColor(color);
 
         if (mode == SkBlendMode::kPlus) {
             // Check for overflow, otherwise we might get confusing AA artifacts.
-            int maxSum = std::max(std::max(SkColorGetA(kBGColor) + SkColorGetA(color),
+            int maxSum = SkTMax(SkTMax(SkColorGetA(kBGColor) + SkColorGetA(color),
                                        SkColorGetR(kBGColor) + SkColorGetR(color)),
-                                std::max(SkColorGetG(kBGColor) + SkColorGetG(color),
+                                SkTMax(SkColorGetG(kBGColor) + SkColorGetG(color),
                                        SkColorGetB(kBGColor) + SkColorGetB(color)));
 
             if (maxSum > 255) {
@@ -232,9 +220,9 @@ protected:
                     // Just clear the dst, we need to preserve the paint's opacity.
                     dimPaint.setARGB(0, 0, 0, 0);
                 }
-                canvas->drawRect({ -kShapeSpacing/2, -kShapeSpacing/2,
-                                   kShapeSpacing/2 + 3 * kShapeTypeSpacing, kShapeSpacing/2 },
-                                 dimPaint);
+                canvas->drawRectCoords(-kShapeSpacing/2, -kShapeSpacing/2,
+                                       kShapeSpacing/2 + 3 * kShapeTypeSpacing,
+                                       kShapeSpacing/2, dimPaint);
             }
         }
     }
@@ -247,15 +235,15 @@ protected:
 
         switch (shape) {
             case kSquare_Shape:
-                canvas->drawRect({ -kShapeSize/2, -kShapeSize/2, kShapeSize/2, kShapeSize/2 },
-                                 shapePaint);
+                canvas->drawRectCoords(-kShapeSize/2, -kShapeSize/2, kShapeSize/2, kShapeSize/2,
+                                       shapePaint);
                 break;
 
             case kDiamond_Shape:
                 canvas->save();
                 canvas->rotate(45);
-                canvas->drawRect({ -kShapeSize/2, -kShapeSize/2, kShapeSize/2, kShapeSize/2 },
-                                 shapePaint);
+                canvas->drawRectCoords(-kShapeSize/2, -kShapeSize/2, kShapeSize/2, kShapeSize/2,
+                                       shapePaint);
                 canvas->restore();
                 break;
 
@@ -271,15 +259,15 @@ protected:
                 break;
 
             default:
-                SK_ABORT("Invalid shape.");
+                SkFAIL("Invalid shape.");
         }
     }
 
 private:
-    SkFont    fLabelFont;
+    SkPaint   fLabelPaint;
     SkPath    fOval;
     SkPath    fConcave;
 
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 DEF_GM( return new AAXfermodesGM; )

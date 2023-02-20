@@ -5,18 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
 
 class AlphaGradientsGM : public skiagm::GM {
 public:
@@ -38,7 +29,7 @@ protected:
         SkPaint paint;
         uint32_t flags = doPreMul ? SkGradientShader::kInterpolateColorsInPremul_Flag : 0;
         paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2,
-                                                     SkTileMode::kClamp, flags, nullptr));
+                                                     SkShader::kClamp_TileMode, flags, nullptr));
         canvas->drawRect(r, paint);
 
         paint.setShader(nullptr);
@@ -71,7 +62,7 @@ protected:
 
         for (int doPreMul = 0; doPreMul <= 1; ++doPreMul) {
             canvas->save();
-            for (size_t i = 0; i < std::size(gRec); ++i) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); ++i) {
                 draw_grad(canvas, r, gRec[i].fColor0, gRec[i].fColor1, SkToBool(doPreMul));
                 canvas->translate(0, r.height() + 8);
             }
@@ -81,7 +72,7 @@ protected:
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM(return new AlphaGradientsGM;)

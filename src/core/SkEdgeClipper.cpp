@@ -5,17 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkEdgeClipper.h"
 
-#include "include/core/SkRect.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkMacros.h"
-#include "src/core/SkGeometry.h"
-#include "src/core/SkLineClipper.h"
-#include "src/core/SkPathPriv.h"
-
-#include <algorithm>
-#include <cstring>
+#include "SkEdgeClipper.h"
+#include "SkGeometry.h"
 
 static bool quick_reject(const SkRect& bounds, const SkRect& clip) {
     return bounds.fTop >= clip.fBottom || bounds.fBottom <= clip.fTop;
@@ -48,23 +40,6 @@ static bool sort_increasing_Y(SkPoint dst[], const SkPoint src[], int count) {
         memcpy(dst, src, count * sizeof(SkPoint));
         return false;
     }
-}
-
-bool SkEdgeClipper::clipLine(SkPoint p0, SkPoint p1, const SkRect& clip) {
-    fCurrPoint = fPoints;
-    fCurrVerb = fVerbs;
-
-    SkPoint lines[SkLineClipper::kMaxPoints];
-    const SkPoint pts[] = { p0, p1 };
-    int lineCount = SkLineClipper::ClipLine(pts, clip, lines, fCanCullToTheRight);
-    for (int i = 0; i < lineCount; i++) {
-        this->appendLine(lines[i], lines[i + 1]);
-    }
-
-    *fCurrVerb = SkPath::kDone_Verb;
-    fCurrPoint = fPoints;
-    fCurrVerb = fVerbs;
-    return SkPath::kDone_Verb != fVerbs[0];
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -159,8 +134,7 @@ void SkEdgeClipper::clipMonoQuad(const SkPoint srcPts[3], const SkRect& clip) {
     chop_quad_in_Y(pts, clip);
 
     if (pts[0].fX > pts[2].fX) {
-        using std::swap;
-        swap(pts[0], pts[2]);
+        SkTSwap<SkPoint>(pts[0], pts[2]);
         reverse = !reverse;
     }
     SkASSERT(pts[0].fX <= pts[1].fX);
@@ -214,9 +188,7 @@ void SkEdgeClipper::clipMonoQuad(const SkPoint srcPts[3], const SkRect& clip) {
         } else {
             // if chopMonoQuadAtY failed, then we may have hit inexact numerics
             // so we just clamp against the right
-            pts[1].fX = std::min(pts[1].fX, clip.fRight);
-            pts[2].fX = std::min(pts[2].fX, clip.fRight);
-            this->appendQuad(pts, reverse);
+            this->appendVLine(clip.fRight, pts[0].fY, pts[2].fY, reverse);
         }
     } else {    // wholly inside the clip
         this->appendQuad(pts, reverse);
@@ -228,7 +200,7 @@ bool SkEdgeClipper::clipQuad(const SkPoint srcPts[3], const SkRect& clip) {
     fCurrVerb = fVerbs;
 
     SkRect  bounds;
-    bounds.setBounds(srcPts, 3);
+    bounds.set(srcPts, 3);
 
     if (!quick_reject(bounds, clip)) {
         SkPoint monoY[5];
@@ -352,9 +324,8 @@ void SkEdgeClipper::clipMonoCubic(const SkPoint src[4], const SkRect& clip) {
     chop_cubic_in_Y(pts, clip);
 
     if (pts[0].fX > pts[3].fX) {
-        using std::swap;
-        swap(pts[0], pts[3]);
-        swap(pts[1], pts[2]);
+        SkTSwap<SkPoint>(pts[0], pts[3]);
+        SkTSwap<SkPoint>(pts[1], pts[2]);
         reverse = !reverse;
     }
 
@@ -402,49 +373,28 @@ void SkEdgeClipper::clipMonoCubic(const SkPoint src[4], const SkRect& clip) {
     }
 }
 
-static SkRect compute_cubic_bounds(const SkPoint pts[4]) {
-    SkRect r;
-    r.setBounds(pts, 4);
-    return r;
-}
+static bool quick_reject_in_y(const SkPoint pts[4], const SkRect& clip) {
+    Sk4s ys(pts[0].fY, pts[1].fY, pts[2].fY, pts[3].fY);
+    Sk4s t(clip.top());
+    Sk4s b(clip.bottom());
 
-static bool too_big_for_reliable_float_math(const SkRect& r) {
-    // limit set as the largest float value for which we can still reliably compute things like
-    // - chopping at XY extrema
-    // - chopping at Y or X values for clipping
-    //
-    // Current value chosen just by experiment. Larger (and still succeeds) is always better.
-    //
-    const SkScalar limit = 1 << 22;
-    return r.fLeft < -limit || r.fTop < -limit || r.fRight > limit || r.fBottom > limit;
+    return (ys < t).allTrue() || (ys > b).allTrue();
 }
 
 bool SkEdgeClipper::clipCubic(const SkPoint srcPts[4], const SkRect& clip) {
     fCurrPoint = fPoints;
     fCurrVerb = fVerbs;
 
-    const SkRect bounds = compute_cubic_bounds(srcPts);
-    // check if we're clipped out vertically
-    if (bounds.fBottom > clip.fTop && bounds.fTop < clip.fBottom) {
-        if (too_big_for_reliable_float_math(bounds)) {
-            // can't safely clip the cubic, so we give up and draw a line (which we can safely clip)
-            //
-            // If we rewrote chopcubicat*extrema and chopmonocubic using doubles, we could very
-            // likely always handle the cubic safely, but (it seems) at a big loss in speed, so
-            // we'd only want to take that alternate impl if needed. Perhaps a TODO to try it.
-            //
-            return this->clipLine(srcPts[0], srcPts[3], clip);
-        } else {
-            SkPoint monoY[10];
-            int countY = SkChopCubicAtYExtrema(srcPts, monoY);
-            for (int y = 0; y <= countY; y++) {
-                SkPoint monoX[10];
-                int countX = SkChopCubicAtXExtrema(&monoY[y * 3], monoX);
-                for (int x = 0; x <= countX; x++) {
-                    this->clipMonoCubic(&monoX[x * 3], clip);
-                    SkASSERT(fCurrVerb - fVerbs < kMaxVerbs);
-                    SkASSERT(fCurrPoint - fPoints <= kMaxPoints);
-                }
+    if (!quick_reject_in_y(srcPts, clip)) {
+        SkPoint monoY[10];
+        int countY = SkChopCubicAtYExtrema(srcPts, monoY);
+        for (int y = 0; y <= countY; y++) {
+            SkPoint monoX[10];
+            int countX = SkChopCubicAtXExtrema(&monoY[y * 3], monoX);
+            for (int x = 0; x <= countX; x++) {
+                this->clipMonoCubic(&monoX[x * 3], clip);
+                SkASSERT(fCurrVerb - fVerbs < kMaxVerbs);
+                SkASSERT(fCurrPoint - fPoints <= kMaxPoints);
             }
         }
     }
@@ -457,19 +407,12 @@ bool SkEdgeClipper::clipCubic(const SkPoint srcPts[4], const SkRect& clip) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void SkEdgeClipper::appendLine(SkPoint p0, SkPoint p1) {
-    *fCurrVerb++ = SkPath::kLine_Verb;
-    fCurrPoint[0] = p0;
-    fCurrPoint[1] = p1;
-    fCurrPoint += 2;
-}
-
-void SkEdgeClipper::appendVLine(SkScalar x, SkScalar y0, SkScalar y1, bool reverse) {
+void SkEdgeClipper::appendVLine(SkScalar x, SkScalar y0, SkScalar y1,
+                                bool reverse) {
     *fCurrVerb++ = SkPath::kLine_Verb;
 
     if (reverse) {
-        using std::swap;
-        swap(y0, y1);
+        SkTSwap<SkScalar>(y0, y1);
     }
     fCurrPoint[0].set(x, y0);
     fCurrPoint[1].set(x, y1);
@@ -562,43 +505,3 @@ void sk_assert_monotonic_x(const SkPoint pts[], int count) {
     }
 }
 #endif
-
-void SkEdgeClipper::ClipPath(const SkPath& path, const SkRect& clip, bool canCullToTheRight,
-                             void (*consume)(SkEdgeClipper*, bool newCtr, void* ctx), void* ctx) {
-    SkASSERT(path.isFinite());
-
-    SkAutoConicToQuads quadder;
-    const SkScalar conicTol = SK_Scalar1 / 4;
-
-    SkPathEdgeIter iter(path);
-    SkEdgeClipper clipper(canCullToTheRight);
-
-    while (auto e = iter.next()) {
-        switch (e.fEdge) {
-            case SkPathEdgeIter::Edge::kLine:
-                if (clipper.clipLine(e.fPts[0], e.fPts[1], clip)) {
-                    consume(&clipper, e.fIsNewContour, ctx);
-                }
-                break;
-            case SkPathEdgeIter::Edge::kQuad:
-                if (clipper.clipQuad(e.fPts, clip)) {
-                    consume(&clipper, e.fIsNewContour, ctx);
-                }
-                break;
-            case SkPathEdgeIter::Edge::kConic: {
-                const SkPoint* quadPts = quadder.computeQuads(e.fPts, iter.conicWeight(), conicTol);
-                for (int i = 0; i < quadder.countQuads(); ++i) {
-                    if (clipper.clipQuad(quadPts, clip)) {
-                        consume(&clipper, e.fIsNewContour, ctx);
-                    }
-                    quadPts += 2;
-                }
-            } break;
-            case SkPathEdgeIter::Edge::kCubic:
-                if (clipper.clipCubic(e.fPts, clip)) {
-                    consume(&clipper, e.fIsNewContour, ctx);
-                }
-                break;
-        }
-    }
-}

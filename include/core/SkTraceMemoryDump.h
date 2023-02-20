@@ -8,7 +8,7 @@
 #ifndef SkTraceMemoryDump_DEFINED
 #define SkTraceMemoryDump_DEFINED
 
-#include "include/core/SkTypes.h"
+#include "SkTypes.h"
 
 class SkDiscardableMemory;
 
@@ -50,10 +50,6 @@ public:
                                   const char* units,
                                   uint64_t value) = 0;
 
-    virtual void dumpStringValue(const char* /*dumpName*/,
-                                 const char* /*valueName*/,
-                                 const char* /*value*/) { }
-
     /**
      * Sets the memory backing for an existing dump.
      * backingType and backingObjectId are used by the embedder to associate the memory dumped via
@@ -77,23 +73,8 @@ public:
      */
     virtual LevelOfDetail getRequestedDetails() const = 0;
 
-    /**
-     * Returns true if we should dump wrapped objects. Wrapped objects come from outside Skia, and
-     * may be independently tracked there.
-     */
-    virtual bool shouldDumpWrappedObjects() const { return true; }
-
-    /**
-     * If shouldDumpWrappedObjects() returns true then this function will be called to populate
-     * the output with information on whether the item being dumped is a wrapped object.
-     */
-    virtual void dumpWrappedState(const char* /*dumpName*/, bool /*isWrappedObject*/) {}
-
 protected:
-    virtual ~SkTraceMemoryDump() = default;
-    SkTraceMemoryDump() = default;
-    SkTraceMemoryDump(const SkTraceMemoryDump&) = delete;
-    SkTraceMemoryDump& operator=(const SkTraceMemoryDump&) = delete;
+    virtual ~SkTraceMemoryDump() { }
 };
 
 #endif

@@ -8,14 +8,11 @@
 #ifndef GrGLExtensions_DEFINED
 #define GrGLExtensions_DEFINED
 
-#include "include/core/SkString.h"
-#include "include/gpu/gl/GrGLFunctions.h"
-#include "include/private/base/SkTArray.h"
-
-#include <utility>
+#include "../../private/SkTArray.h"
+#include "GrGLFunctions.h"
+#include "SkString.h"
 
 struct GrGLInterface;
-class SkJSONWriter;
 
 /**
  * This helper queries the current GL context for its extensions, remembers them, and can be
@@ -25,16 +22,15 @@ class SkJSONWriter;
  */
 class SK_API GrGLExtensions {
 public:
-    GrGLExtensions() {}
+    GrGLExtensions() : fInitialized(false), fStrings(new SkTArray<SkString>) {}
 
     GrGLExtensions(const GrGLExtensions&);
 
     GrGLExtensions& operator=(const GrGLExtensions&);
 
     void swap(GrGLExtensions* that) {
-        using std::swap;
-        swap(fStrings, that->fStrings);
-        swap(fInitialized, that->fInitialized);
+        fStrings.swap(that->fStrings);
+        SkTSwap(fInitialized, that->fInitialized);
     }
 
     /**
@@ -43,10 +39,10 @@ public:
      * NULL if on desktop GL with version 3.0 or higher. Otherwise it will fail.
      */
     bool init(GrGLStandard standard,
-              GrGLFunction<GrGLGetStringFn> getString,
-              GrGLFunction<GrGLGetStringiFn> getStringi,
-              GrGLFunction<GrGLGetIntegervFn> getIntegerv,
-              GrGLFunction<GrEGLQueryStringFn> queryString = nullptr,
+              GrGLFunction<GrGLGetStringProc> getString,
+              GrGLFunction<GrGLGetStringiProc> getStringi,
+              GrGLFunction<GrGLGetIntegervProc> getIntegerv,
+              GrGLFunction<GrEGLQueryStringProc> queryString = nullptr,
               GrEGLDisplay eglDisplay = nullptr);
 
     bool isInitialized() const { return fInitialized; }
@@ -66,13 +62,13 @@ public:
      */
     void add(const char[]);
 
-    void reset() { fStrings.clear(); }
+    void reset() { fStrings->reset(); }
 
-    void dumpJSON(SkJSONWriter*) const;
+    void print(const char* sep = "\n") const;
 
 private:
-    bool fInitialized = false;
-    SkTArray<SkString> fStrings;
+    bool                                fInitialized;
+    std::unique_ptr<SkTArray<SkString>> fStrings;
 };
 
 #endif

@@ -5,138 +5,118 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/core/SkVertices.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/effects/SkRuntimeEffect.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkVerticesPriv.h"
-#include "src/shaders/SkLocalMatrixShader.h"
-#include "src/utils/SkPatchUtils.h"
-#include "tools/Resources.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkColorFilter.h"
+#include "SkGradientShader.h"
+#include "SkRandom.h"
 
-#include <initializer_list>
-#include <utility>
-
-static constexpr SkScalar kShaderSize = 40;
-static sk_sp<SkShader> make_shader1(SkScalar shaderScale) {
+static sk_sp<SkShader> make_shader1(SkScalar w, SkScalar h) {
     const SkColor colors[] = {
         SK_ColorRED, SK_ColorCYAN, SK_ColorGREEN, SK_ColorWHITE,
         SK_ColorMAGENTA, SK_ColorBLUE, SK_ColorYELLOW,
     };
-    const SkPoint pts[] = {{kShaderSize / 4, 0}, {3 * kShaderSize / 4, kShaderSize}};
-    const SkMatrix localMatrix = SkMatrix::Scale(shaderScale, shaderScale);
+    const SkPoint pts[] = { { w/4, 0 }, { 3*w/4, h } };
 
-    sk_sp<SkShader> grad = SkGradientShader::MakeLinear(pts, colors, nullptr,
-                                                        std::size(colors),
-                                                        SkTileMode::kMirror, 0,
-                                                        &localMatrix);
-    // Throw in a couple of local matrix wrappers for good measure.
-    return shaderScale == 1
-        ? grad
-        : sk_make_sp<SkLocalMatrixShader>(
-              sk_make_sp<SkLocalMatrixShader>(std::move(grad), SkMatrix::Translate(-10, 0)),
-              SkMatrix::Translate(10, 0));
+    return SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+                                        SkShader::kMirror_TileMode);
 }
 
 static sk_sp<SkShader> make_shader2() {
-    return SkShaders::Color(SK_ColorBLUE);
+    return SkShader::MakeColorShader(SK_ColorBLUE);
 }
 
 static sk_sp<SkColorFilter> make_color_filter() {
-    return SkColorFilters::Blend(0xFFAABBCC, SkBlendMode::kDarken);
-}
-
-static constexpr SkScalar kMeshSize = 30;
-
-// start with the center of a 3x3 grid of vertices.
-static constexpr uint16_t kMeshFan[] = {
-        4,
-        0, 1, 2, 5, 8, 7, 6, 3, 0
-};
-
-static const int kMeshIndexCnt = (int)std::size(kMeshFan);
-static const int kMeshVertexCnt = 9;
-
-static void fill_mesh(SkPoint pts[kMeshVertexCnt], SkPoint texs[kMeshVertexCnt],
-                      SkColor colors[kMeshVertexCnt], SkScalar shaderScale) {
-    pts[0].set(0, 0);
-    pts[1].set(kMeshSize / 2, 3);
-    pts[2].set(kMeshSize, 0);
-    pts[3].set(3, kMeshSize / 2);
-    pts[4].set(kMeshSize / 2, kMeshSize / 2);
-    pts[5].set(kMeshSize - 3, kMeshSize / 2);
-    pts[6].set(0, kMeshSize);
-    pts[7].set(kMeshSize / 2, kMeshSize - 3);
-    pts[8].set(kMeshSize, kMeshSize);
-
-    const auto shaderSize = kShaderSize * shaderScale;
-    texs[0].set(0, 0);
-    texs[1].set(shaderSize / 2, 0);
-    texs[2].set(shaderSize, 0);
-    texs[3].set(0, shaderSize / 2);
-    texs[4].set(shaderSize / 2, shaderSize / 2);
-    texs[5].set(shaderSize, shaderSize / 2);
-    texs[6].set(0, shaderSize);
-    texs[7].set(shaderSize / 2, shaderSize);
-    texs[8].set(shaderSize, shaderSize);
-
-    SkRandom rand;
-    for (size_t i = 0; i < kMeshVertexCnt; ++i) {
-        colors[i] = rand.nextU() | 0xFF000000;
-    }
+    return SkColorFilter::MakeModeFilter(0xFFAABBCC, SkBlendMode::kDarken);
 }
 
 class VerticesGM : public skiagm::GM {
-    SkPoint                 fPts[kMeshVertexCnt];
-    SkPoint                 fTexs[kMeshVertexCnt];
-    SkColor                 fColors[kMeshVertexCnt];
+    SkPoint                 fPts[9];
+    SkPoint                 fTexs[9];
+    SkColor                 fColors[9];
     sk_sp<SkShader>         fShader1;
     sk_sp<SkShader>         fShader2;
     sk_sp<SkColorFilter>    fColorFilter;
-    SkScalar                fShaderScale;
 
 public:
-    VerticesGM(SkScalar shaderScale) : fShaderScale(shaderScale) {}
+    VerticesGM() {}
 
 protected:
 
     void onOnceBeforeDraw() override {
-        fill_mesh(fPts, fTexs, fColors, fShaderScale);
-        fShader1 = make_shader1(fShaderScale);
+        const SkScalar X = 30;
+        const SkScalar Y = 30;
+
+        fPts[0].set(0, 0);    fPts[1].set(X/2, 3);   fPts[2].set(X, 0);
+        fPts[3].set(3, Y/2);  fPts[4].set(X/2, Y/2); fPts[5].set(X-3, Y/2);
+        fPts[6].set(0, Y);    fPts[7].set(X/2, Y-3); fPts[8].set(X, Y);
+
+        const SkScalar w = 40;
+        const SkScalar h = 40;
+
+        fTexs[0].set(0, 0);     fTexs[1].set(w/2, 0);   fTexs[2].set(w, 0);
+        fTexs[3].set(0, h/2);   fTexs[4].set(w/2, h/2); fTexs[5].set(w, h/2);
+        fTexs[6].set(0, h);     fTexs[7].set(w/2, h);   fTexs[8].set(w, h);
+
+        fShader1 = make_shader1(w, h);
         fShader2 = make_shader2();
         fColorFilter = make_color_filter();
+
+        SkRandom rand;
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fColors); ++i) {
+            fColors[i] = rand.nextU() | 0xFF000000;
+        }
     }
 
     SkString onShortName() override {
         SkString name("vertices");
-        if (fShaderScale != 1) {
-            name.append("_scaled_shader");
-        }
         return name;
     }
 
     SkISize onISize() override {
-        return SkISize::Make(975, 1175);
+        return SkISize::Make(600, 600);
     }
 
     void onDraw(SkCanvas* canvas) override {
+        // start with the center of a 3x3 grid
+        constexpr uint16_t fan[] = {
+            4,
+            0, 1, 2, 5, 8, 7, 6, 3, 0
+        };
+
+        const struct {
+            const SkColor*              fColors;
+            const SkPoint*              fTexs;
+            const sk_sp<SkShader>&      fShader;
+            const sk_sp<SkColorFilter>& fColorFilter;
+            uint8_t                     fAlpha;
+        } rec[] = {
+            { fColors,  nullptr, fShader1, nullptr     , 0xFF },
+            { nullptr,  fTexs  , fShader1, nullptr     , 0xFF },
+            { fColors,  fTexs  , fShader1, nullptr     , 0xFF },
+            { fColors,  nullptr, fShader2, nullptr     , 0xFF },
+            { nullptr,  fTexs  , fShader2, nullptr     , 0xFF },
+            { fColors,  fTexs  , fShader2, nullptr     , 0xFF },
+            { fColors,  nullptr, fShader1, fColorFilter, 0xFF },
+            { nullptr,  fTexs  , fShader1, fColorFilter, 0xFF },
+            { fColors,  fTexs  , fShader1, fColorFilter, 0xFF },
+            { fColors,  nullptr, fShader2, fColorFilter, 0xFF },
+            { nullptr,  fTexs  , fShader2, fColorFilter, 0xFF },
+            { fColors,  fTexs  , fShader2, fColorFilter, 0xFF },
+            { fColors,  nullptr, fShader1, nullptr     , 0x80 },
+            { nullptr,  fTexs  , fShader1, nullptr     , 0x80 },
+            { fColors,  fTexs  , fShader1, nullptr     , 0x80 },
+            { fColors,  nullptr, fShader2, nullptr     , 0x80 },
+            { nullptr,  fTexs  , fShader2, nullptr     , 0x80 },
+            { fColors,  fTexs  , fShader2, nullptr     , 0x80 },
+            { fColors,  nullptr, fShader1, fColorFilter, 0x80 },
+            { nullptr,  fTexs  , fShader1, fColorFilter, 0x80 },
+            { fColors,  fTexs  , fShader1, fColorFilter, 0x80 },
+            { fColors,  nullptr, fShader2, fColorFilter, 0x80 },
+            { nullptr,  fTexs  , fShader2, fColorFilter, 0x80 },
+            { fColors,  fTexs  , fShader2, fColorFilter, 0x80 },
+        };
+
         const SkBlendMode modes[] = {
             SkBlendMode::kClear,
             SkBlendMode::kSrc,
@@ -172,30 +152,20 @@ protected:
         SkPaint paint;
 
         canvas->translate(4, 4);
-        for (auto mode : modes) {
+        int x = 0;
+        for (size_t j = 0; j < SK_ARRAY_COUNT(modes); ++j) {
             canvas->save();
-            for (float alpha : {1.0f, 0.5f}) {
-                for (const auto& cf : {sk_sp<SkColorFilter>(nullptr), fColorFilter}) {
-                    for (const auto& shader : {fShader1, fShader2}) {
-                        static constexpr struct {
-                            bool fHasColors;
-                            bool fHasTexs;
-                        } kAttrs[] = {{true, false}, {false, true}, {true, true}};
-                        for (auto attrs : kAttrs) {
-                            paint.setShader(shader);
-                            paint.setColorFilter(cf);
-                            paint.setAlphaf(alpha);
-
-                            const SkColor* colors = attrs.fHasColors ? fColors : nullptr;
-                            const SkPoint* texs = attrs.fHasTexs ? fTexs : nullptr;
-                            auto v = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode,
-                                                          kMeshVertexCnt, fPts, texs, colors,
-                                                          kMeshIndexCnt, kMeshFan);
-                            canvas->drawVertices(v, mode, paint);
-                            canvas->translate(40, 0);
-                        }
-                    }
-                }
+            for (size_t i = 0; i < SK_ARRAY_COUNT(rec); ++i) {
+                paint.setShader(rec[i].fShader);
+                paint.setColorFilter(rec[i].fColorFilter);
+                paint.setAlpha(rec[i].fAlpha);
+                //if (2 == x)
+                canvas->drawVertices(SkCanvas::kTriangleFan_VertexMode,
+                                     SK_ARRAY_COUNT(fPts), fPts,
+                                     rec[i].fTexs, rec[i].fColors,
+                                     modes[j], fan, SK_ARRAY_COUNT(fan), paint);
+                canvas->translate(40, 0);
+                ++x;
             }
             canvas->restore();
             canvas->translate(0, 40);
@@ -203,131 +173,9 @@ protected:
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-DEF_GM(return new VerticesGM(1);)
-DEF_GM(return new VerticesGM(1 / kShaderSize);)
-
-static void draw_batching(SkCanvas* canvas) {
-    // Triangle fans can't batch so we convert to regular triangles,
-    static constexpr int kNumTris = kMeshIndexCnt - 2;
-    SkVertices::Builder builder(SkVertices::kTriangles_VertexMode, kMeshVertexCnt, 3 * kNumTris,
-                                SkVertices::kHasColors_BuilderFlag |
-                                SkVertices::kHasTexCoords_BuilderFlag);
-
-    SkPoint* pts = builder.positions();
-    SkPoint* texs = builder.texCoords();
-    SkColor* colors = builder.colors();
-    fill_mesh(pts, texs, colors, 1);
-
-    SkTDArray<SkMatrix> matrices;
-    matrices.append()->reset();
-    matrices.append()->setTranslate(0, 40);
-    matrices.append()
-            ->setRotate(45, kMeshSize / 2, kMeshSize / 2)
-            .postScale(1.2f, .8f, kMeshSize / 2, kMeshSize / 2)
-            .postTranslate(0, 80);
-
-    auto shader = make_shader1(1);
-
-    uint16_t* indices = builder.indices();
-    for (size_t i = 0; i < kNumTris; ++i) {
-        indices[3 * i] = kMeshFan[0];
-        indices[3 * i + 1] = kMeshFan[i + 1];
-        indices[3 * i + 2] = kMeshFan[i + 2];
-
-    }
-
-    canvas->save();
-    canvas->translate(10, 10);
-    for (bool useShader : {false, true}) {
-        for (bool useTex : {false, true}) {
-            for (const auto& m : matrices) {
-                canvas->save();
-                canvas->concat(m);
-                SkPaint paint;
-                paint.setShader(useShader ? shader : nullptr);
-                paint.setColor(SK_ColorWHITE);
-
-                const SkPoint* t = useTex ? texs : nullptr;
-                auto v = SkVertices::MakeCopy(SkVertices::kTriangles_VertexMode, kMeshVertexCnt,
-                                              pts, t, colors, kNumTris * 3, indices);
-                canvas->drawVertices(v, SkBlendMode::kModulate, paint);
-                canvas->restore();
-            }
-            canvas->translate(0, 120);
-        }
-    }
-    canvas->restore();
-}
-
-// This test exists to exercise batching in the gpu backend.
-DEF_SIMPLE_GM(vertices_batching, canvas, 100, 500) {
-    draw_batching(canvas);
-    canvas->translate(50, 0);
-    draw_batching(canvas);
-}
-
-// Test case for skbug.com/10069. We need to draw the vertices twice (with different matrices) to
-// trigger the bug.
-DEF_SIMPLE_GM(vertices_perspective, canvas, 256, 256) {
-    SkPaint paint;
-    paint.setShader(ToolUtils::create_checkerboard_shader(SK_ColorBLACK, SK_ColorWHITE, 32));
-
-    SkRect r = SkRect::MakeWH(128, 128);
-
-    SkPoint pos[4];
-    r.toQuad(pos);
-    auto verts = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode, 4, pos, pos, nullptr);
-
-    SkMatrix persp;
-    persp.setPerspY(SK_Scalar1 / 100);
-
-    canvas->save();
-    canvas->concat(persp);
-    canvas->drawRect(r, paint);
-    canvas->restore();
-
-    canvas->save();
-    canvas->translate(r.width(), 0);
-    canvas->concat(persp);
-    canvas->drawRect(r, paint);
-    canvas->restore();
-
-    canvas->save();
-    canvas->translate(0, r.height());
-    canvas->concat(persp);
-    canvas->drawVertices(verts, SkBlendMode::kModulate, paint);
-    canvas->restore();
-
-    canvas->save();
-    canvas->translate(r.width(), r.height());
-    canvas->concat(persp);
-    canvas->drawVertices(verts, SkBlendMode::kModulate, paint);
-    canvas->restore();
-}
-
-DEF_SIMPLE_GM(skbug_13047, canvas, 200, 200) {
-    auto image = GetResourceAsImage("images/mandrill_128.png");
-
-    const float w = image->width();
-    const float h = image->height();
-
-    SkPoint verts[] = {{0, 0}, {200, 0}, {200, 200}, {0, 200}};
-    SkPoint texs[] = {{0, 0}, {w, 0}, {w, h}, {0, h}};
-    uint16_t indices[] = {0, 1, 2, 2, 3, 0};
-
-    auto v = SkVertices::MakeCopy(
-            SkVertices::kTriangles_VertexMode, 4, verts, texs, nullptr, 6, indices);
-
-    auto m = SkMatrix::Scale(2, 2);  // ignored in CPU ???
-    auto s = image->makeShader(SkSamplingOptions(SkFilterMode::kLinear), &m);
-
-    SkPaint p;
-    p.setShader(s);
-
-    canvas->drawVertices(v, SkBlendMode::kModulate, p);
-}
+DEF_GM(return new VerticesGM();)

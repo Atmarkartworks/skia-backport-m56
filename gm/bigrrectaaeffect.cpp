@@ -5,43 +5,25 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkCanvasPriv.h"
-#include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/GrFragmentProcessor.h"
-#include "src/gpu/ganesh/GrPaint.h"
-#include "src/gpu/ganesh/SurfaceDrawContext.h"
-#include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
-#include "src/gpu/ganesh/effects/GrRRectEffect.h"
-#include "src/gpu/ganesh/ops/FillRectOp.h"
-#include "src/gpu/ganesh/ops/GrDrawOp.h"
-#include "tools/ToolUtils.h"
-
-#include <memory>
-#include <utility>
+#include "gm.h"
+#if SK_SUPPORT_GPU
+#include "GrContext.h"
+#include "GrRenderTargetContextPriv.h"
+#include "SkRRect.h"
+#include "batches/GrDrawBatch.h"
+#include "batches/GrRectBatchFactory.h"
+#include "effects/GrRRectEffect.h"
 
 namespace skiagm {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class BigRRectAAEffectGM : public GpuGM {
+class BigRRectAAEffectGM : public GM {
 public:
     BigRRectAAEffectGM(const SkRRect& rrect, const char* name)
         : fRRect(rrect)
         , fName(name) {
-        this->setBGColor(ToolUtils::color_to_565(SK_ColorBLUE));
+        this->setBGColor(sk_tool_utils::color_to_565(SK_ColorBLUE));
         // Each test case draws the rrect with gaps around it.
         fTestWidth = SkScalarCeilToInt(rrect.width()) + 2 * kGap;
         fTestHeight = SkScalarCeilToInt(rrect.height()) + 2 * kGap;
@@ -65,22 +47,25 @@ protected:
 
     SkISize onISize() override { return SkISize::Make(fWidth, fHeight); }
 
-    DrawResult onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) override {
-        auto sdc = SkCanvasPriv::TopDeviceSurfaceDrawContext(canvas);
-        if (!sdc) {
-            *errorMsg = kErrorMsg_DrawSkippedGpuOnly;
-            return DrawResult::kSkip;
+    void onDraw(SkCanvas* canvas) override {
+        GrRenderTargetContext* renderTargetContext =
+            canvas->internal_private_accessTopLayerRenderTargetContext();
+        if (!renderTargetContext) {
+            skiagm::GM::DrawGpuOnlyMessage(canvas);
+            return;
         }
+
+        SkPaint paint;
 
         int y = kPad;
         int x = kPad;
-        constexpr GrClipEdgeType kEdgeTypes[] = {
-            GrClipEdgeType::kFillAA,
-            GrClipEdgeType::kInverseFillAA,
+        constexpr GrPrimitiveEdgeType kEdgeTypes[] = {
+            kFillAA_GrProcessorEdgeType,
+            kInverseFillAA_GrProcessorEdgeType,
         };
         SkRect testBounds = SkRect::MakeIWH(fTestWidth, fTestHeight);
-        for (size_t et = 0; et < std::size(kEdgeTypes); ++et) {
-            GrClipEdgeType edgeType = kEdgeTypes[et];
+        for (size_t et = 0; et < SK_ARRAY_COUNT(kEdgeTypes); ++et) {
+            GrPrimitiveEdgeType edgeType = kEdgeTypes[et];
             canvas->save();
                 canvas->translate(SkIntToScalar(x), SkIntToScalar(y));
 
@@ -89,37 +74,34 @@ protected:
                 paint.setColor(SK_ColorWHITE);
                 canvas->drawRect(testBounds, paint);
 
+                GrPaint grPaint;
+                grPaint.setXPFactory(GrPorterDuffXPFactory::Make(SkBlendMode::kSrc));
+
                 SkRRect rrect = fRRect;
                 rrect.offset(SkIntToScalar(x + kGap), SkIntToScalar(y + kGap));
-                const auto& caps = *rContext->priv().caps()->shaderCaps();
-                auto [success, fp] = GrRRectEffect::Make(/*inputFP=*/nullptr, edgeType, rrect,
-                                                         caps);
-                SkASSERT(success);
-                if (success) {
-                    SkASSERT(fp);
-                    GrPaint grPaint;
-                    grPaint.setColor4f({ 0, 0, 0, 1.f });
-                    grPaint.setXPFactory(GrPorterDuffXPFactory::Get(SkBlendMode::kSrc));
-                    grPaint.setCoverageFragmentProcessor(std::move(fp));
+                sk_sp<GrFragmentProcessor> fp(GrRRectEffect::Make(edgeType, rrect));
+                SkASSERT(fp);
+                if (fp) {
+                    grPaint.addCoverageFragmentProcessor(std::move(fp));
 
                     SkRect bounds = testBounds;
                     bounds.offset(SkIntToScalar(x), SkIntToScalar(y));
 
-                    sdc->addDrawOp(skgpu::v1::FillRectOp::MakeNonAARect(
-                            rContext, std::move(grPaint), SkMatrix::I(), bounds));
+                    sk_sp<GrDrawBatch> batch(
+                            GrRectBatchFactory::CreateNonAAFill(0xff000000, SkMatrix::I(), bounds,
+                                                                nullptr, nullptr));
+                    renderTargetContext->priv().testingOnly_drawBatch(grPaint, batch.get());
                 }
             canvas->restore();
             x = x + fTestOffsetX;
         }
-
-        return DrawResult::kOk;
     }
 
 private:
     // pad between test cases
-    inline static constexpr int kPad = 7;
+    static constexpr int kPad = 7;
     // gap between rect for each case that is rendered and exterior of rrect
-    inline static constexpr int kGap = 3;
+    static constexpr int kGap = 3;
 
     SkRRect fRRect;
     int fWidth;
@@ -129,7 +111,7 @@ private:
     int fTestOffsetX;
     int fTestOffsetY;
     const char* fName;
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -144,4 +126,5 @@ DEF_GM( return new BigRRectAAEffectGM (SkRRect::MakeOval(SkRect::MakeIWH(kSize -
 DEF_GM( return new BigRRectAAEffectGM (SkRRect::MakeRectXY(SkRect::MakeIWH(kSize - 1, kSize - 10), kSize/2.f - 10.f, kSize/2.f - 10.f), "circular_corner"); )
 DEF_GM( return new BigRRectAAEffectGM (SkRRect::MakeRectXY(SkRect::MakeIWH(kSize - 1, kSize - 10), kSize/2.f - 10.f, kSize/2.f - 15.f), "elliptical_corner"); )
 
-}  // namespace skiagm
+}
+#endif

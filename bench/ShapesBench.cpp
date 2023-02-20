@@ -5,14 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
-#include "tools/flags/CommandLineFlags.h"
-
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkCommandLineFlags.h"
+#include "SkPaint.h"
+#include "SkRandom.h"
+#include "SkRRect.h"
+#include "SkString.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <functional>
@@ -20,15 +19,13 @@
 #define ENABLE_COMMAND_LINE_SHAPES_BENCH 0
 
 #if ENABLE_COMMAND_LINE_SHAPES_BENCH
-static DEFINE_string(shapesType, "mixed",
-                     "Type of shape to use in ShapesBench. Must be one of: "
-                     "rect, oval, rrect, mixed.");
-static DEFINE_string(innerShapesType, "none",
-                     "Type of inner shape to use in ShapesBench. Must be one of: "
-                     "none, rect, oval, rrect, mixed.");
-static DEFINE_int(numShapes, 10000, "Number of shapes to draw in ShapesBench.");
-static DEFINE_string(shapesSize, "32x32", "Size of shapes to draw in ShapesBench.");
-static DEFINE_bool(shapesPersp, false, "Use slight perspective tilt in ShapesBench?");
+DEFINE_string(shapesType, "mixed", "Type of shape to use in ShapesBench. Must be one of: "
+                                   "rect, oval, rrect, mixed.");
+DEFINE_string(innerShapesType, "none", "Type of inner shape to use in ShapesBench. Must be one of: "
+                                       "none, rect, oval, rrect, mixed.");
+DEFINE_int32(numShapes, 10000, "Number of shapes to draw in ShapesBench.");
+DEFINE_string(shapesSize, "32x32", "Size of shapes to draw in ShapesBench.");
+DEFINE_bool(shapesPersp, false, "Use slight perspective tilt in ShapesBench?");
 #endif
 
 /*
@@ -100,9 +97,11 @@ public:
     }
 #endif
 
+    bool isVisual() override { return true; }
+
 private:
     void clampShapeSize() {
-        float maxDiagonal = static_cast<float>(std::min(kBenchWidth, kBenchHeight));
+        float maxDiagonal = static_cast<float>(SkTMin(kBenchWidth, kBenchHeight));
         float diagonal = sqrtf(static_cast<float>(fShapesSize.width() * fShapesSize.width()) +
                                static_cast<float>(fShapesSize.height() * fShapesSize.height()));
         if (diagonal > maxDiagonal) {
@@ -187,13 +186,13 @@ private:
                         break;
                 }
             } else {
-                const SkRRect* outer = nullptr;
+                const SkRRect* outer;
                 switch (shapeType) {
                     case kRect_ShapesType: outer = &fRect; break;
                     case kOval_ShapesType: outer = &fOval; break;
                     case kRRect_ShapesType: outer = &fRRect; break;
                 }
-                const SkRRect* inner = nullptr;
+                const SkRRect* inner;
                 switch (innerShapeType) {
                     case kRect_ShapesType: inner = &fInnerRect; break;
                     case kOval_ShapesType: inner = &fInnerOval; break;
@@ -246,7 +245,7 @@ private:
     SkTArray<ShapeInfo>   fShapes;
 
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 #if ENABLE_COMMAND_LINE_SHAPES_BENCH

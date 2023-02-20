@@ -5,21 +5,14 @@
 * found in the LICENSE file.
 */
 
-#include "gm/gm.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPathBuilder.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkBlurMask.h"
-#include "tools/timer/TimeUtils.h"
+#include "gm.h"
+#include "SkAnimTimer.h"
+#include "SkBlurMask.h"
+#include "SkBlurMaskFilter.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkString.h"
 
 /**
  * In GM mode this draws an array of circles with different radii and different blur radii. Below
@@ -34,13 +27,11 @@
 class BlurCircles2GM : public skiagm::GM {
 public:
     BlurCircles2GM() {
-        fAnimRadius = TimeUtils::PingPong(
-                0, kRadiusPingPoingPeriod, kRadiusPingPoingShift, kMinRadius, kMaxRadius);
-        fAnimBlurRadius = TimeUtils::PingPong(0,
-                                              kBlurRadiusPingPoingPeriod,
-                                              kBlurRadiusPingPoingShift,
-                                              kMinBlurRadius,
-                                              kMaxBlurRadius);
+        fAnimRadius = SkAnimTimer::PingPong(0, kRadiusPingPoingPeriod, kRadiusPingPoingShift,
+                                            kMinRadius, kMaxRadius);
+        fAnimBlurRadius = SkAnimTimer::PingPong(0, kBlurRadiusPingPoingPeriod,
+                                                kBlurRadiusPingPoingShift, kMinBlurRadius,
+                                                kMaxBlurRadius);
     }
 
 protected:
@@ -55,16 +46,17 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         constexpr SkScalar kMaxR = kMaxRadius + kMaxBlurRadius;
 
-        auto almostCircleMaker = [] (SkScalar radius) {
-            return SkPathBuilder().addArc(SkRect::MakeXYWH(-radius, -radius, 2 * radius, 2 * radius), 0, 355)
-                                  .setIsVolatile(true)
-                                  .close()
-                                  .detach();
+        auto almostCircleMaker = [] (SkScalar radius, SkPath* dst) {
+            dst->reset();
+            dst->addArc(SkRect::MakeXYWH(-radius, -radius, 2 * radius, 2 * radius), 0, 355);
+            dst->setIsVolatile(true);
+            dst->close();
         };
 
         auto blurMaker = [] (SkScalar radius) ->sk_sp<SkMaskFilter> {
-            return SkMaskFilter::MakeBlur(kNormal_SkBlurStyle,
-                                          SkBlurMask::ConvertRadiusToSigma(radius));
+            return SkBlurMaskFilter::Make(kNormal_SkBlurStyle,
+                                          SkBlurMask::ConvertRadiusToSigma(radius),
+                                          SkBlurMaskFilter::kHighQuality_BlurFlag);
         };
 
         SkPaint paint;
@@ -73,7 +65,8 @@ protected:
         if (this->getMode() == kSample_Mode) {
             paint.setMaskFilter(blurMaker(fAnimBlurRadius));
             SkISize size = canvas->getBaseLayerSize();
-            SkPath almostCircle = almostCircleMaker(fAnimRadius);
+            SkPath almostCircle;
+            almostCircleMaker(fAnimRadius, &almostCircle);
             canvas->save();
                 canvas->translate(size.fWidth / 2.f, size.fHeight / 4.f);
                 canvas->drawCircle(0, 0, fAnimRadius, paint);
@@ -113,7 +106,7 @@ protected:
                     }
                     SkPath almostCircle;
                     if (!benchMode) {
-                        almostCircle = almostCircleMaker(radius);
+                        almostCircleMaker(radius, &almostCircle);
                     }
                     canvas->save();
                         canvas->drawCircle(0, 0, radius, paint);
@@ -140,31 +133,31 @@ protected:
         }
     }
 
-    bool onAnimate(double nanos) override {
-        fAnimRadius = TimeUtils::PingPong(1e-9 * nanos, kRadiusPingPoingPeriod, kRadiusPingPoingShift, kMinRadius,
+    bool onAnimate(const SkAnimTimer& timer) override {
+        fAnimRadius = timer.pingPong(kRadiusPingPoingPeriod, kRadiusPingPoingShift, kMinRadius,
                                      kMaxRadius);
-        fAnimBlurRadius = TimeUtils::PingPong(1e-9 * nanos, kBlurRadiusPingPoingPeriod, kBlurRadiusPingPoingShift,
+        fAnimBlurRadius = timer.pingPong(kBlurRadiusPingPoingPeriod, kBlurRadiusPingPoingShift,
                                          kMinBlurRadius, kMaxBlurRadius);
         return true;
     }
 
 private:
-    inline static constexpr SkScalar kMinRadius = 15;
-    inline static constexpr SkScalar kMaxRadius = 45;
-    inline static constexpr SkScalar kRadiusPingPoingPeriod = 8;
-    inline static constexpr SkScalar kRadiusPingPoingShift = 3;
+    static constexpr SkScalar kMinRadius = 15;
+    static constexpr SkScalar kMaxRadius = 45;
+    static constexpr SkScalar kRadiusPingPoingPeriod = 8;
+    static constexpr SkScalar kRadiusPingPoingShift = 3;
 
-    inline static constexpr SkScalar kMinBlurRadius = 5;
-    inline static constexpr SkScalar kMaxBlurRadius = 45;
-    inline static constexpr SkScalar kBlurRadiusPingPoingPeriod = 3;
-    inline static constexpr SkScalar kBlurRadiusPingPoingShift = 1.5;
+    static constexpr SkScalar kMinBlurRadius = 5;
+    static constexpr SkScalar kMaxBlurRadius = 45;
+    static constexpr SkScalar kBlurRadiusPingPoingPeriod = 3;
+    static constexpr SkScalar kBlurRadiusPingPoingShift = 1.5;
 
     SkScalar    fAnimRadius;
     SkScalar    fAnimBlurRadius;
 
     SkRandom    fRandom;
 
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM(return new BlurCircles2GM();)

@@ -10,10 +10,7 @@
 #ifndef SkTime_DEFINED
 #define SkTime_DEFINED
 
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkMacros.h"
-
-#include <cinttypes>
+#include "SkTypes.h"
 
 class SkString;
 
@@ -53,11 +50,12 @@ public:
         , fNow(SkTime::GetMSecs()) {}
     ~SkAutoTime() {
         uint64_t dur = static_cast<uint64_t>(SkTime::GetMSecs() - fNow);
-        SkDebugf("%s %" PRIu64 "\n", fLabel ? fLabel : "", dur);
+        SkDebugf("%s %ld\n", fLabel ? fLabel : "", dur);
     }
 private:
     const char* fLabel;
     double      fNow;
 };
+#define SkAutoTime(...) SK_REQUIRE_LOCAL_VAR(SkAutoTime)
 
 #endif

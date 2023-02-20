@@ -5,36 +5,27 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkColorPriv.h"
+#include "SkShader.h"
 
-constexpr SkBlendMode gModes[] = {
-    SkBlendMode::kClear,
-    SkBlendMode::kSrc,
-    SkBlendMode::kDst,
-    SkBlendMode::kSrcOver,
-    SkBlendMode::kDstOver,
-    SkBlendMode::kSrcIn,
-    SkBlendMode::kDstIn,
-    SkBlendMode::kSrcOut,
-    SkBlendMode::kDstOut,
-    SkBlendMode::kSrcATop,
-    SkBlendMode::kDstATop,
-    SkBlendMode::kXor,
+constexpr struct {
+    SkBlendMode fMode;
+    const char* fLabel;
+} gModes[] = {
+    { SkBlendMode::kClear,    "Clear"     },
+    { SkBlendMode::kSrc,      "Src"       },
+    { SkBlendMode::kDst,      "Dst"       },
+    { SkBlendMode::kSrcOver,  "SrcOver"   },
+    { SkBlendMode::kDstOver,  "DstOver"   },
+    { SkBlendMode::kSrcIn,    "SrcIn"     },
+    { SkBlendMode::kDstIn,    "DstIn"     },
+    { SkBlendMode::kSrcOut,   "SrcOut"    },
+    { SkBlendMode::kDstOut,   "DstOut"    },
+    { SkBlendMode::kSrcATop,  "SrcATop"   },
+    { SkBlendMode::kDstATop,  "DstATop"   },
+    { SkBlendMode::kXor,      "Xor"       },
 };
 
 const int gWidth = 64;
@@ -75,7 +66,8 @@ static sk_sp<SkShader> make_bg_shader() {
 
     SkMatrix m;
     m.setScale(SkIntToScalar(6), SkIntToScalar(6));
-    return bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions(), m);
+    return SkShader::MakeBitmapShader(bm,
+                                      SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode, &m);
 }
 
 namespace skiagm {
@@ -88,7 +80,7 @@ namespace skiagm {
             return SkString("hairmodes");
         }
 
-        SkISize onISize() override { return SkISize::Make(640, 480); }
+        virtual SkISize onISize() override { return SkISize::Make(640, 480); }
 
         void onOnceBeforeDraw() override {
             fBGPaint.setShader(make_bg_shader());
@@ -103,7 +95,7 @@ namespace skiagm {
             for (int alpha = 0; alpha < 4; ++alpha) {
                 canvas->save();
                 canvas->save();
-                for (size_t i = 0; i < std::size(gModes); ++i) {
+                for (size_t i = 0; i < SK_ARRAY_COUNT(gModes); ++i) {
                     if (6 == i) {
                         canvas->restore();
                         canvas->translate(W * 5, 0);
@@ -112,7 +104,7 @@ namespace skiagm {
 
                     canvas->drawRect(bounds, fBGPaint);
                     canvas->saveLayer(&bounds, nullptr);
-                    SkScalar dy = drawCell(canvas, gModes[i],
+                    SkScalar dy = drawCell(canvas, gModes[i].fMode,
                                            gAlphaValue[alpha & 1],
                                            gAlphaValue[alpha & 2]);
                     canvas->restore();
@@ -126,10 +118,12 @@ namespace skiagm {
         }
 
     private:
-        using INHERITED = GM;
+        typedef GM INHERITED;
     };
 
     //////////////////////////////////////////////////////////////////////////////
 
-    DEF_GM( return new HairModesGM; )
-}  // namespace skiagm
+    static GM* MyFactory(void*) { return new HairModesGM; }
+    static GMRegistry reg(MyFactory);
+
+}

@@ -5,24 +5,16 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/private/base/SkTArray.h"
-#include "src/base/SkRandom.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkTArray.h"
+#include "SkRandom.h"
+#include "SkMatrix.h"
+#include "SkBlurMaskFilter.h"
+#include "SkColorFilter.h"
+#include "SkGradientShader.h"
+#include "SkBlurDrawLooper.h"
+#include "SkRect.h"
+#include "SkRRect.h"
 
 namespace skiagm {
 
@@ -32,7 +24,7 @@ static SkColor gen_color(SkRandom* rand) {
     hsv[1] = rand->nextRangeF(0.75f, 1.0f);
     hsv[2] = rand->nextRangeF(0.75f, 1.0f);
 
-    return ToolUtils::color_to_565(SkHSVToColor(hsv));
+    return sk_tool_utils::color_to_565(SkHSVToColor(hsv));
 }
 
 class RoundRectGM : public GM {
@@ -147,25 +139,25 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkRandom rand(1);
         canvas->translate(20 * SK_Scalar1, 20 * SK_Scalar1);
-        const SkRect kRect = SkRect::MakeLTRB(-20, -30, 20, 30);
-        SkRRect circleRRect;
-        circleRRect.setRectXY(kRect, 5, 5);
+        const SkRect rect = SkRect::MakeLTRB(-20, -30, 20, 30);
+        SkRRect circleRect;
+        circleRect.setRectXY(rect, 5, 5);
 
         const SkScalar kXStart = 60.0f;
         const SkScalar kYStart = 80.0f;
         const int kXStep = 150;
         const int kYStep = 160;
-        int maxX = fMatrices.size();
+        int maxX = fMatrices.count();
 
         SkPaint rectPaint;
         rectPaint.setAntiAlias(true);
         rectPaint.setStyle(SkPaint::kStroke_Style);
         rectPaint.setStrokeWidth(SkIntToScalar(0));
-        rectPaint.setColor(SK_ColorLTGRAY);
+        rectPaint.setColor(sk_tool_utils::color_to_565(SK_ColorLTGRAY));
 
         int testCount = 0;
-        for (int i = 0; i < fPaints.size(); ++i) {
-            for (int j = 0; j < fMatrices.size(); ++j) {
+        for (int i = 0; i < fPaints.count(); ++i) {
+            for (int j = 0; j < fMatrices.count(); ++j) {
                 canvas->save();
                 SkMatrix mat = fMatrices[j];
                 // position the roundrect, and make it at off-integer coords.
@@ -178,8 +170,8 @@ protected:
                 SkColor color = gen_color(&rand);
                 fPaints[i].setColor(color);
 
-                canvas->drawRect(kRect, rectPaint);
-                canvas->drawRRect(circleRRect, fPaints[i]);
+                canvas->drawRect(rect, rectPaint);
+                canvas->drawRRect(circleRect, fPaints[i]);
 
                 canvas->restore();
 
@@ -190,7 +182,7 @@ protected:
         // special cases
 
         // non-scaled tall and skinny roundrect
-        for (int i = 0; i < fPaints.size(); ++i) {
+        for (int i = 0; i < fPaints.count(); ++i) {
             SkRect rect = SkRect::MakeLTRB(-20, -60, 20, 60);
             SkRRect ellipseRect;
             ellipseRect.setRectXY(rect, 5, 10);
@@ -209,7 +201,7 @@ protected:
         }
 
         // non-scaled wide and short roundrect
-        for (int i = 0; i < fPaints.size(); ++i) {
+        for (int i = 0; i < fPaints.count(); ++i) {
             SkRect rect = SkRect::MakeLTRB(-80, -30, 80, 30);
             SkRRect ellipseRect;
             ellipseRect.setRectXY(rect, 20, 5);
@@ -229,7 +221,7 @@ protected:
         }
 
         // super skinny roundrect
-        for (int i = 0; i < fPaints.size(); ++i) {
+        for (int i = 0; i < fPaints.count(); ++i) {
             SkRect rect = SkRect::MakeLTRB(0, -60, 1, 60);
             SkRRect circleRect;
             circleRect.setRectXY(rect, 5, 5);
@@ -247,7 +239,7 @@ protected:
         }
 
         // super short roundrect
-        for (int i = 0; i < fPaints.size(); ++i) {
+        for (int i = 0; i < fPaints.count(); ++i) {
             SkRect rect = SkRect::MakeLTRB(-80, -1, 80, 0);
             SkRRect circleRect;
             circleRect.setRectXY(rect, 5, 5);
@@ -269,10 +261,10 @@ protected:
         SkPoint center = SkPoint::Make(SkIntToScalar(0), SkIntToScalar(0));
         SkColor colors[] = { SK_ColorBLUE, SK_ColorRED, SK_ColorGREEN };
         SkScalar pos[] = { 0, SK_ScalarHalf, SK_Scalar1 };
-        auto shader = SkGradientShader::MakeRadial(center, 20, colors, pos, std::size(colors),
-                                                   SkTileMode::kClamp);
+        auto shader = SkGradientShader::MakeRadial(center, 20, colors, pos, SK_ARRAY_COUNT(colors),
+                                                   SkShader::kClamp_TileMode);
 
-        for (int i = 0; i < fPaints.size(); ++i) {
+        for (int i = 0; i < fPaints.count(); ++i) {
             canvas->save();
             // position the path, and make it at off-integer coords.
             canvas->translate(kXStart + SK_Scalar1 * kXStep * 0 + SK_Scalar1 / 4,
@@ -283,8 +275,8 @@ protected:
             fPaints[i].setColor(color);
             fPaints[i].setShader(shader);
 
-            canvas->drawRect(kRect, rectPaint);
-            canvas->drawRRect(circleRRect, fPaints[i]);
+            canvas->drawRect(rect, rectPaint);
+            canvas->drawRRect(circleRect, fPaints[i]);
 
             fPaints[i].setShader(nullptr);
 
@@ -306,7 +298,7 @@ protected:
 
             for (int i = 0; i < 4; ++i) {
                 SkRRect circleRect;
-                circleRect.setRectXY(kRect, radii[i][0], radii[i][1]);
+                circleRect.setRectXY(rect, radii[i][0], radii[i][1]);
 
                 canvas->save();
                 // position the roundrect, and make it at off-integer coords.
@@ -375,11 +367,12 @@ private:
     SkTArray<SkPaint> fPaints;
     SkTArray<SkMatrix> fMatrices;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new RoundRectGM; )
+static GM* MyFactory(void*) { return new RoundRectGM; }
+static GMRegistry reg(MyFactory);
 
-}  // namespace skiagm
+}

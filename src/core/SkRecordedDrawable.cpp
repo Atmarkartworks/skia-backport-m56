@@ -5,30 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPictureRecorder.h"
-#include "src/core/SkPictureData.h"
-#include "src/core/SkPicturePlayback.h"
-#include "src/core/SkPictureRecord.h"
-#include "src/core/SkRecordDraw.h"
-#include "src/core/SkRecordedDrawable.h"
-
-#if SK_SUPPORT_GPU
-#include "include/private/chromium/Slug.h"
-#endif
-
-size_t SkRecordedDrawable::onApproximateBytesUsed() {
-    size_t drawablesSize = 0;
-    if (fDrawableList) {
-        for (auto&& drawable : *fDrawableList) {
-            drawablesSize += drawable->approximateBytesUsed();
-        }
-    }
-    return sizeof(*this) +
-           (fRecord ? fRecord->bytesUsed() : 0) +
-           (fBBH ? fBBH->bytesUsed() : 0) +
-           drawablesSize;
-}
+#include "SkMatrix.h"
+#include "SkPictureData.h"
+#include "SkPicturePlayback.h"
+#include "SkPictureRecord.h"
+#include "SkPictureRecorder.h"
+#include "SkPictureUtils.h"
+#include "SkRecordedDrawable.h"
+#include "SkRecordDraw.h"
 
 void SkRecordedDrawable::onDraw(SkCanvas* canvas) {
     SkDrawable* const* drawables = nullptr;
@@ -41,17 +25,21 @@ void SkRecordedDrawable::onDraw(SkCanvas* canvas) {
 }
 
 SkPicture* SkRecordedDrawable::onNewPictureSnapshot() {
-    // TODO: should we plumb-down the BBHFactory and recordFlags from our host
-    //       PictureRecorder?
-    std::unique_ptr<SkBigPicture::SnapshotArray> pictList{
-        fDrawableList ? fDrawableList->newDrawableSnapshot() : nullptr
-    };
+    SkBigPicture::SnapshotArray* pictList = nullptr;
+    if (fDrawableList) {
+        // TODO: should we plumb-down the BBHFactory and recordFlags from our host
+        //       PictureRecorder?
+        pictList = fDrawableList->newDrawableSnapshot();
+    }
 
     size_t subPictureBytes = 0;
     for (int i = 0; pictList && i < pictList->count(); i++) {
-        subPictureBytes += pictList->begin()[i]->approximateBytesUsed();
+        subPictureBytes += SkPictureUtils::ApproximateBytesUsed(pictList->begin()[i]);
     }
-    return new SkBigPicture(fBounds, fRecord, std::move(pictList), fBBH, subPictureBytes);
+    // SkBigPicture will take ownership of a ref on both fRecord and fBBH.
+    // We're not willing to give up our ownership, so we must ref them for SkPicture.
+    return new SkBigPicture(fBounds, SkRef(fRecord.get()), pictList, SkSafeRef(fBBH.get()),
+                            subPictureBytes);
 }
 
 void SkRecordedDrawable::flatten(SkWriteBuffer& buffer) const {
@@ -63,18 +51,19 @@ void SkRecordedDrawable::flatten(SkWriteBuffer& buffer) const {
     SkPictureRecord pictureRecord(SkISize::Make(fBounds.width(), fBounds.height()), 0);
 
     // If the query contains the whole picture, don't bother with the bounding box hierarchy.
+    SkRect clipBounds;
+    pictureRecord.getClipBounds(&clipBounds);
     SkBBoxHierarchy* bbh;
-    if (pictureRecord.getLocalClipBounds().contains(fBounds)) {
+    if (clipBounds.contains(fBounds)) {
         bbh = nullptr;
     } else {
         bbh = fBBH.get();
     }
 
     // Record the draw commands.
-    SkDrawable* const* drawables = fDrawableList ? fDrawableList->begin() : nullptr;
-    int drawableCount            = fDrawableList ? fDrawableList->count() : 0;
     pictureRecord.beginRecording();
-    SkRecordDraw(*fRecord, &pictureRecord, nullptr, drawables, drawableCount, bbh, nullptr);
+    SkRecordDraw(*fRecord, &pictureRecord, nullptr, fDrawableList->begin(), fDrawableList->count(),
+                bbh, nullptr);
     pictureRecord.endRecording();
 
     // Flatten the recorded commands and drawables.
@@ -91,6 +80,7 @@ sk_sp<SkFlattenable> SkRecordedDrawable::CreateProc(SkReadBuffer& buffer) {
     SkPictInfo info;
     info.setVersion(buffer.getVersion());
     info.fCullRect = bounds;
+    info.fFlags = 0;    // ???
     std::unique_ptr<SkPictureData> pictureData(SkPictureData::CreateFromBuffer(buffer, info));
     if (!pictureData) {
         return nullptr;

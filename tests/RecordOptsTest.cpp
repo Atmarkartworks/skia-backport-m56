@@ -5,29 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPicture.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSurface.h"
-#include "include/effects/SkImageFilters.h"
-#include "src/core/SkRecord.h"
-#include "src/core/SkRecordOpts.h"
-#include "src/core/SkRecorder.h"
-#include "src/core/SkRecords.h"
-#include "tests/RecordTestUtils.h"
-#include "tests/Test.h"
+#include "Test.h"
+#include "RecordTestUtils.h"
 
-#include <array>
-#include <cstddef>
+#include "SkColorFilter.h"
+#include "SkRecord.h"
+#include "SkRecordOpts.h"
+#include "SkRecorder.h"
+#include "SkRecords.h"
+#include "SkXfermode.h"
+#include "SkPictureRecorder.h"
+#include "SkPictureImageFilter.h"
+#include "SkSurface.h"
 
 static const int W = 1920, H = 1080;
 
@@ -112,7 +101,6 @@ DEF_TEST(RecordOpts_SaveSaveLayerRestoreRestore, r) {
     }
 }
 
-#ifndef SK_BUILD_FOR_ANDROID_FRAMEWORK
 static void assert_savelayer_restore(skiatest::Reporter* r,
                                      SkRecord* record,
                                      int i,
@@ -141,6 +129,7 @@ static void assert_savelayer_draw_restore(skiatest::Reporter* r,
     }
 }
 
+#include "SkBlurImageFilter.h"
 DEF_TEST(RecordOpts_NoopSaveLayerDrawRestore, r) {
     SkRecord record;
     SkRecorder recorder(&record, W, H);
@@ -200,13 +189,12 @@ DEF_TEST(RecordOpts_NoopSaveLayerDrawRestore, r) {
     REPORTER_ASSERT(r, drawRect->paint.getColor() == 0x03020202);
 
     // saveLayer w/ backdrop should NOT go away
-    sk_sp<SkImageFilter> filter(SkImageFilters::Blur(3, 3, nullptr));
+    sk_sp<SkImageFilter> filter(SkBlurImageFilter::Make(3, 3, nullptr));
     recorder.saveLayer({ nullptr, nullptr, filter.get(), 0});
         recorder.drawRect(draw, opaqueDrawPaint);
     recorder.restore();
     assert_savelayer_draw_restore(r, &record, 18, false);
 }
-#endif
 
 static void assert_merge_svg_opacity_and_filter_layers(skiatest::Reporter* r,
                                                        SkRecord* record,
@@ -237,7 +225,7 @@ DEF_TEST(RecordOpts_MergeSvgOpacityAndFilterLayers, r) {
     xfermodePaint.setBlendMode(SkBlendMode::kDstIn);
     SkPaint colorFilterPaint;
     colorFilterPaint.setColorFilter(
-        SkColorFilters::Blend(SK_ColorLTGRAY, SkBlendMode::kSrcIn));
+        SkColorFilter::MakeModeFilter(SK_ColorLTGRAY, SkBlendMode::kSrcIn));
 
     SkPaint opaqueFilterLayerPaint;
     opaqueFilterLayerPaint.setColor(0xFF020202);  // Opaque.
@@ -245,19 +233,19 @@ DEF_TEST(RecordOpts_MergeSvgOpacityAndFilterLayers, r) {
     translucentFilterLayerPaint.setColor(0x0F020202);  // Not opaque.
     sk_sp<SkPicture> shape;
     {
-        SkPictureRecorder picRecorder;
-        SkCanvas* canvas = picRecorder.beginRecording(SkIntToScalar(100), SkIntToScalar(100));
+        SkPictureRecorder recorder;
+        SkCanvas* canvas = recorder.beginRecording(SkIntToScalar(100), SkIntToScalar(100));
         SkPaint shapePaint;
         shapePaint.setColor(SK_ColorWHITE);
         canvas->drawRect(SkRect::MakeWH(SkIntToScalar(50), SkIntToScalar(50)), shapePaint);
-        shape = picRecorder.finishRecordingAsPicture();
+        shape = recorder.finishRecordingAsPicture();
     }
-    translucentFilterLayerPaint.setImageFilter(SkImageFilters::Picture(shape));
+    translucentFilterLayerPaint.setImageFilter(SkPictureImageFilter::Make(shape));
 
     int index = 0;
 
     {
-        sk_sp<SkImageFilter> filter(SkImageFilters::Blur(3, 3, nullptr));
+        sk_sp<SkImageFilter> filter(SkBlurImageFilter::Make(3, 3, nullptr));
         // first (null) should be optimized, 2nd should not
         SkImageFilter* filters[] = { nullptr, filter.get() };
 
@@ -270,10 +258,10 @@ DEF_TEST(RecordOpts_MergeSvgOpacityAndFilterLayers, r) {
         for (auto outerF : filters) {
             bool outerNoOped = !outerF;
             for (auto innerF : filters) {
-                for (size_t i = 0; i < std::size(firstBounds); ++ i) {
-                    for (size_t j = 0; j < std::size(firstPaints); ++j) {
-                        for (size_t k = 0; k < std::size(secondBounds); ++k) {
-                            for (size_t m = 0; m < std::size(secondPaints); ++m) {
+                for (size_t i = 0; i < SK_ARRAY_COUNT(firstBounds); ++ i) {
+                    for (size_t j = 0; j < SK_ARRAY_COUNT(firstPaints); ++j) {
+                        for (size_t k = 0; k < SK_ARRAY_COUNT(secondBounds); ++k) {
+                            for (size_t m = 0; m < SK_ARRAY_COUNT(secondPaints); ++m) {
                                 bool innerNoOped = !secondBounds[k] && !secondPaints[m] && !innerF;
 
                                 recorder.saveLayer({firstBounds[i], firstPaints[j], outerF, 0});
@@ -285,9 +273,7 @@ DEF_TEST(RecordOpts_MergeSvgOpacityAndFilterLayers, r) {
                                 recorder.restore();
                                 assert_merge_svg_opacity_and_filter_layers(r, &record, index,
                                                                            outerNoOped);
-                            #ifndef SK_BUILD_FOR_ANDROID_FRAMEWORK
                                 assert_savelayer_restore(r, &record, index + 3, innerNoOped);
-                            #endif
                                 index += 7;
                             }
                         }
@@ -317,7 +303,7 @@ DEF_TEST(RecordOpts_MergeSvgOpacityAndFilterLayers, r) {
         { &alphaOnlyLayerPaint, &colorFilterPaint }
     };
 
-    for (size_t i = 0; i < std::size(noChangeTests); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(noChangeTests); ++i) {
         recorder.saveLayer(nullptr, noChangeTests[i].firstPaint);
         recorder.save();
         recorder.clipRect(clip);

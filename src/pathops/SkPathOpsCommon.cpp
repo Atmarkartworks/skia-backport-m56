@@ -4,19 +4,34 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "SkAddIntersections.h"
+#include "SkOpCoincidence.h"
+#include "SkOpEdgeBuilder.h"
+#include "SkPathOpsCommon.h"
+#include "SkPathWriter.h"
+#include "SkTSort.h"
 
-#include "src/pathops/SkPathOpsCommon.h"
+SkScalar ScaleFactor(const SkPath& path) {
+    static const SkScalar twoTo10 = 1024.f;
+    SkScalar largest = 0;
+    const SkScalar* oneBounds = &path.getBounds().fLeft;
+    for (int index = 0; index < 4; ++index) {
+        largest = SkTMax(largest, SkScalarAbs(oneBounds[index]));
+    }
+    SkScalar scale = twoTo10;
+    SkScalar next;
+    while ((next = scale * twoTo10) < largest) {
+        scale = next;
+    }
+    return scale == twoTo10 ? SK_Scalar1 : scale;
+}
 
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkMacros.h"
-#include "include/private/base/SkMath.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkTSort.h"
-#include "src/pathops/SkOpAngle.h"
-#include "src/pathops/SkOpCoincidence.h"
-#include "src/pathops/SkOpContour.h"
-#include "src/pathops/SkOpSegment.h"
-#include "src/pathops/SkOpSpan.h"
+void ScalePath(const SkPath& path, SkScalar scale, SkPath* scaled) {
+    SkMatrix matrix;
+    matrix.setScale(scale, scale);
+    *scaled = path;
+    scaled->transform(matrix);
+}
 
 const SkOpAngle* AngleWinding(SkOpSpanBase* start, SkOpSpanBase* end, int* windingPtr,
         bool* sortablePtr) {
@@ -70,13 +85,12 @@ const SkOpAngle* AngleWinding(SkOpSpanBase* start, SkOpSpanBase* end, int* windi
     return angle;
 }
 
-SkOpSpan* FindUndone(SkOpContourHead* contourHead) {
-    SkOpContour* contour = contourHead;
+SkOpSegment* FindUndone(SkOpContourHead* contourList, SkOpSpanBase** startPtr,
+         SkOpSpanBase** endPtr) {
+    SkOpSegment* result;
+    SkOpContour* contour = contourList;
     do {
-        if (contour->done()) {
-            continue;
-        }
-        SkOpSpan* result = contour->undoneSpan();
+        result = contour->undoneSegment(startPtr, endPtr);
         if (result) {
             return result;
         }
@@ -86,9 +100,9 @@ SkOpSpan* FindUndone(SkOpContourHead* contourHead) {
 
 SkOpSegment* FindChase(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** startPtr,
         SkOpSpanBase** endPtr) {
-    while (!chase->empty()) {
-        SkOpSpanBase* span = chase->back();
-        chase->pop_back();
+    while (chase->count()) {
+        SkOpSpanBase* span;
+        chase->pop(&span);
         SkOpSegment* segment = span->segment();
         *startPtr = span->ptT()->next()->span();
         bool done = true;
@@ -139,8 +153,7 @@ SkOpSegment* FindChase(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** startPtr,
                 }
                 // OPTIMIZATION: should this also add to the chase?
                 if (sortable) {
-                    // TODO: add error handling
-                    SkAssertResult(segment->markAngle(maxWinding, sumWinding, angle, nullptr));
+                    (void) segment->markAngle(maxWinding, sumWinding, angle);
                 }
             }
         }
@@ -165,12 +178,12 @@ bool SortContourList(SkOpContourHead** contourList, bool evenOdd, bool oppEvenOd
             *list.append() = contour;
         }
     } while ((contour = contour->next()));
-    int count = list.size();
+    int count = list.count();
     if (!count) {
         return false;
     }
     if (count > 1) {
-        SkTQSort<SkOpContour>(list.begin(), list.end());
+        SkTQSort<SkOpContour>(list.begin(), list.end() - 1);
     }
     contour = list[0];
     SkOpContourHead* contourHead = static_cast<SkOpContourHead*>(contour);
@@ -214,15 +227,12 @@ static bool move_multiples(SkOpContourHead* contourList  DEBUG_COIN_DECLARE_PARA
     return true;
 }
 
-static bool move_nearby(SkOpContourHead* contourList  DEBUG_COIN_DECLARE_PARAMS()) {
+static void move_nearby(SkOpContourHead* contourList  DEBUG_COIN_DECLARE_PARAMS()) {
     DEBUG_STATIC_SET_PHASE(contourList);
     SkOpContour* contour = contourList;
     do {
-        if (!contour->moveNearby()) {
-            return false;
-        }
+        contour->moveNearby();
     } while ((contour = contour->next()));
-    return true;
 }
 
 static bool sort_angles(SkOpContourHead* contourList) {
@@ -246,9 +256,7 @@ bool HandleCoincidence(SkOpContourHead* contourList, SkOpCoincidence* coincidenc
         return false;
     }
     // move t values and points together to eliminate small/tiny gaps
-    if (!move_nearby(contourList  DEBUG_COIN_PARAMS())) {
-        return false;
-    }
+    move_nearby(contourList  DEBUG_COIN_PARAMS());
     // add coincidence formed by pairing on curve points and endpoints
     coincidence->correctEnds(DEBUG_PHASE_ONLY_PARAMS(kIntersecting));
     if (!coincidence->addEndMovedSpans(DEBUG_COIN_ONLY_PARAMS())) {
@@ -312,7 +320,7 @@ bool HandleCoincidence(SkOpContourHead* contourList, SkOpCoincidence* coincidenc
         // adjust the winding value to account for coincident edges
         if (!pairs->apply(DEBUG_ITER_ONLY_PARAMS(SAFETY_COUNT - safetyHatch))) {
             return false;
-        }
+        } 
         // For each coincident pair that overlaps another, when the receivers (the 1st of the pair)
         // are different, construct a new pair to resolve their mutual span
         if (!pairs->findOverlaps(&overlaps  DEBUG_ITER_PARAMS(SAFETY_COUNT - safetyHatch))) {

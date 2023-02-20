@@ -4,17 +4,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTDArray.h"
-#include "include/private/base/SkMalloc.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <array>
+#include "PathOpsTestCommon.h"
+#include "SkIntersections.h"
+#include "SkTDArray.h"
+#include "Test.h"
 
 // check intersections for consistency
 
@@ -40,11 +33,11 @@ static const struct TestSet {
     const Curve* tests;
     int testCount;
 } testSets[] = {
-    { testSet0, (int) std::size(testSet0) },
-    { testSet1, (int) std::size(testSet1) },
+    { testSet0, (int) SK_ARRAY_COUNT(testSet0) },
+    { testSet1, (int) SK_ARRAY_COUNT(testSet1) },
 };
 
-static const int testSetsCount = (int) std::size(testSets);
+static const int testSetsCount = (int) SK_ARRAY_COUNT(testSets);
 
 static void testSetTest(skiatest::Reporter* reporter, int index) {
     const TestSet& testSet = testSets[index];

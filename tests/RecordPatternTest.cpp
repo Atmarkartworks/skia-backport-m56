@@ -5,14 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "src/core/SkRecord.h"
-#include "src/core/SkRecordPattern.h"
-#include "src/core/SkRecorder.h"
-#include "src/core/SkRecords.h"
-#include "tests/Test.h"
+#include "Test.h"
+
+#include "SkRecord.h"
+#include "SkRecordPattern.h"
+#include "SkRecorder.h"
+#include "SkRecords.h"
 
 using namespace SkRecords;
 typedef Pattern<Is<Save>,

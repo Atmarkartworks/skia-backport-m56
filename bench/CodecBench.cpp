@@ -5,16 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "bench/CodecBench.h"
-#include "bench/CodecBenchPriv.h"
-#include "include/codec/SkCodec.h"
-#include "include/core/SkBitmap.h"
-#include "src/core/SkOSFile.h"
-#include "tools/flags/CommandLineFlags.h"
+#include "CodecBench.h"
+#include "CodecBenchPriv.h"
+#include "SkBitmap.h"
+#include "SkCodec.h"
+#include "SkCommandLineFlags.h"
+#include "SkOSFile.h"
 
 // Actually zeroing the memory would throw off timing, so we just lie.
-static DEFINE_bool(zero_init, false,
-                   "Pretend our destination is zero-intialized, simulating Android?");
+DEFINE_bool(zero_init, false, "Pretend our destination is zero-intialized, simulating Android?");
 
 CodecBench::CodecBench(SkString baseName, SkData* encoded, SkColorType colorType,
         SkAlphaType alphaType)
@@ -25,8 +24,11 @@ CodecBench::CodecBench(SkString baseName, SkData* encoded, SkColorType colorType
     // Parse filename and the color type to give the benchmark a useful name
     fName.printf("Codec_%s_%s%s", baseName.c_str(), color_type_to_str(colorType),
             alpha_type_to_str(alphaType));
+#ifdef SK_DEBUG
     // Ensure that we can create an SkCodec from this data.
-    SkASSERT(SkCodec::MakeFromData(fData));
+    std::unique_ptr<SkCodec> codec(SkCodec::NewFromData(fData));
+    SkASSERT(codec);
+#endif
 }
 
 const char* CodecBench::onGetName() {
@@ -38,28 +40,31 @@ bool CodecBench::isSuitableFor(Backend backend) {
 }
 
 void CodecBench::onDelayedSetup() {
-    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(fData);
+    std::unique_ptr<SkCodec> codec(SkCodec::NewFromData(fData));
 
     fInfo = codec->getInfo().makeColorType(fColorType)
                             .makeAlphaType(fAlphaType)
                             .makeColorSpace(nullptr);
 
-    fPixelStorage.reset(fInfo.computeMinByteSize());
+    fPixelStorage.reset(fInfo.getSafeSize(fInfo.minRowBytes()));
 }
 
 void CodecBench::onDraw(int n, SkCanvas* canvas) {
     std::unique_ptr<SkCodec> codec;
+    SkPMColor colorTable[256];
+    int colorCount;
     SkCodec::Options options;
     if (FLAGS_zero_init) {
         options.fZeroInitialized = SkCodec::kYes_ZeroInitialized;
     }
     for (int i = 0; i < n; i++) {
-        codec = SkCodec::MakeFromData(fData);
+        colorCount = 256;
+        codec.reset(SkCodec::NewFromData(fData));
 #ifdef SK_DEBUG
         const SkCodec::Result result =
 #endif
         codec->getPixels(fInfo, fPixelStorage.get(), fInfo.minRowBytes(),
-                         &options);
+                         &options, colorTable, &colorCount);
         SkASSERT(result == SkCodec::kSuccess
                  || result == SkCodec::kIncompleteInput);
     }

@@ -8,21 +8,14 @@
 #ifndef SkLayerDrawLooper_DEFINED
 #define SkLayerDrawLooper_DEFINED
 
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkDrawLooper.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
+#include "SkDrawLooper.h"
+#include "SkPaint.h"
+#include "SkPoint.h"
+#include "SkXfermode.h"
 
-#ifndef SK_SUPPORT_LEGACY_DRAWLOOPER
-#error "SkDrawLooper is unsupported"
-#endif
-
-/**
- *  DEPRECATED: No longer supported by Skia.
- */
 class SK_API SkLayerDrawLooper : public SkDrawLooper {
 public:
-    ~SkLayerDrawLooper() override;
+    virtual ~SkLayerDrawLooper();
 
     /**
      *  Bits specifies which aspects of the layer's paint should replace the
@@ -33,13 +26,12 @@ public:
      */
     enum Bits {
         kStyle_Bit      = 1 << 0,   //!< use this layer's Style/stroke settings
+        kTextSkewX_Bit  = 1 << 1,   //!< use this layer's textskewx
         kPathEffect_Bit = 1 << 2,   //!< use this layer's patheffect
         kMaskFilter_Bit = 1 << 3,   //!< use this layer's maskfilter
         kShader_Bit     = 1 << 4,   //!< use this layer's shader
         kColorFilter_Bit = 1 << 5,  //!< use this layer's colorfilter
         kXfermode_Bit   = 1 << 6,   //!< use this layer's xfermode
-
-        // unsupported kTextSkewX_Bit  = 1 << 1,
 
         /**
          *  Use the layer's paint entirely, with these exceptions:
@@ -59,9 +51,9 @@ public:
      *      The layer's paint's color is treated as the SRC
      *      The draw's paint's color is treated as the DST
      *      final-color = Mode(layers-color, draws-color);
-     *  Any SkBlendMode will work. Two common choices are:
-     *      kSrc: to use the layer's color, ignoring the draw's
-     *      kDst: to just keep the draw's color, ignoring the layer's
+     *  Any SkXfermode::Mode will work. Two common choices are:
+     *      kSrc_Mode: to use the layer's color, ignoring the draw's
+     *      kDst_Mode: to just keep the draw's color, ignoring the layer's
      */
     struct SK_API LayerInfo {
         BitFlags    fPaintBits;
@@ -79,9 +71,16 @@ public:
         LayerInfo();
     };
 
-    SkDrawLooper::Context* makeContext(SkArenaAlloc*) const override;
+    SkDrawLooper::Context* createContext(SkCanvas*, void* storage) const override;
+
+    size_t contextSize() const override { return sizeof(LayerDrawLooperContext); }
 
     bool asABlurShadow(BlurShadowRec* rec) const override;
+
+    SK_TO_STRING_OVERRIDE()
+
+    Factory getFactory() const override { return CreateProc; }
+    static sk_sp<SkFlattenable> CreateProc(SkReadBuffer& buffer);
 
 protected:
     SkLayerDrawLooper();
@@ -89,8 +88,6 @@ protected:
     void flatten(SkWriteBuffer&) const override;
 
 private:
-    SK_FLATTENABLE_HOOKS(SkLayerDrawLooper)
-
     struct Rec {
         Rec*    fNext;
         SkPaint fPaint;
@@ -105,7 +102,7 @@ private:
         explicit LayerDrawLooperContext(const SkLayerDrawLooper* looper);
 
     protected:
-        bool next(Info*, SkPaint* paint) override;
+        bool next(SkCanvas*, SkPaint* paint) override;
 
     private:
         Rec* fCurrRec;
@@ -113,13 +110,12 @@ private:
         static void ApplyInfo(SkPaint* dst, const SkPaint& src, const LayerInfo&);
     };
 
-    using INHERITED = SkDrawLooper;
+    typedef SkDrawLooper INHERITED;
 
 public:
     class SK_API Builder {
     public:
         Builder();
-
         ~Builder();
 
         /**
@@ -149,9 +145,6 @@ public:
         sk_sp<SkDrawLooper> detach();
 
     private:
-        Builder(const Builder&) = delete;
-        Builder& operator=(const Builder&) = delete;
-
         Rec* fRecs;
         Rec* fTopRec;
         int  fCount;

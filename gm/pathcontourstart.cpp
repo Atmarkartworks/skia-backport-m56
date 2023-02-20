@@ -5,28 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathEffect.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "include/private/base/SkTArray.h"
-#include "include/private/base/SkTemplates.h"
+#include "gm.h"
 
-using namespace skia_private;
+#include "SkDashPathEffect.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRRect.h"
 
 namespace skiagm {
 
 class ContourStartGM : public GM {
-protected:
-    void onOnceBeforeDraw() override {
+public:
+    ContourStartGM() {
         const SkScalar kMaxDashLen = 100;
         const SkScalar kDashGrowth = 1.2f;
 
@@ -40,7 +30,7 @@ protected:
         fDashPaint.setStyle(SkPaint::kStroke_Style);
         fDashPaint.setStrokeWidth(6);
         fDashPaint.setColor(0xff008000);
-        fDashPaint.setPathEffect(SkDashPathEffect::Make(intervals.begin(), intervals.size(), 0));
+        fDashPaint.setPathEffect(SkDashPathEffect::Make(intervals.begin(), intervals.count(), 0));
 
         fPointsPaint.setColor(0xff800000);
         fPointsPaint.setStrokeWidth(3);
@@ -48,6 +38,7 @@ protected:
         fRect = SkRect::MakeLTRB(10, 10, 100, 70);
     }
 
+protected:
     SkString onShortName() override {
         return SkString("contour_start");
     }
@@ -56,52 +47,65 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
 
-        drawDirs(canvas, [](const SkRect& rect, SkPathDirection dir, unsigned startIndex) {
-            return SkPath::Rect(rect, dir, startIndex);
+        drawDirs(canvas, [](const SkRect& rect, SkPath::Direction dir, unsigned startIndex) {
+            SkPath path;
+            path.addRect(rect, dir, startIndex);
+            return path;
         });
 
-        drawDirs(canvas, [](const SkRect& rect, SkPathDirection dir, unsigned startIndex) {
-            return SkPath::Oval(rect, dir, startIndex);
+        drawDirs(canvas, [](const SkRect& rect, SkPath::Direction dir, unsigned startIndex) {
+            SkPath path;
+            path.addOval(rect, dir, startIndex);
+            return path;
         });
 
-        drawDirs(canvas, [](const SkRect& rect, SkPathDirection dir, unsigned startIndex) {
+        drawDirs(canvas, [](const SkRect& rect, SkPath::Direction dir, unsigned startIndex) {
             SkRRect rrect;
             const SkVector radii[4] = { {15, 15}, {15, 15}, {15, 15}, {15, 15}};
             rrect.setRectRadii(rect, radii);
-            return SkPath::RRect(rrect, dir, startIndex);
+
+            SkPath path;
+            path.addRRect(rrect, dir, startIndex);
+            return path;
         });
 
-        drawDirs(canvas, [](const SkRect& rect, SkPathDirection dir, unsigned startIndex) {
+        drawDirs(canvas, [](const SkRect& rect, SkPath::Direction dir, unsigned startIndex) {
             SkRRect rrect;
             rrect.setRect(rect);
-            return SkPath::RRect(rrect, dir, startIndex);
+
+            SkPath path;
+            path.addRRect(rrect, dir, startIndex);
+            return path;
         });
 
-        drawDirs(canvas, [](const SkRect& rect, SkPathDirection dir, unsigned startIndex) {
+        drawDirs(canvas, [](const SkRect& rect, SkPath::Direction dir, unsigned startIndex) {
             SkRRect rrect;
             rrect.setOval(rect);
-            return SkPath::RRect(rrect, dir, startIndex);
+
+            SkPath path;
+            path.addRRect(rrect, dir, startIndex);
+            return path;
         });
 
     }
 
 private:
-    inline static constexpr int kImageWidth = 1200;
-    inline static constexpr int kImageHeight = 600;
+    static constexpr int kImageWidth = 1200;
+    static constexpr int kImageHeight = 600;
 
     SkPaint fDashPaint, fPointsPaint;
     SkRect  fRect;
 
     void drawDirs(SkCanvas* canvas,
-                  SkPath (*makePath)(const SkRect&, SkPathDirection, unsigned)) const {
-        drawOneColumn(canvas, SkPathDirection::kCW, makePath);
+                  SkPath (*makePath)(const SkRect&, SkPath::Direction, unsigned)) const {
+        drawOneColumn(canvas, SkPath::kCW_Direction, makePath);
         canvas->translate(kImageWidth / 10, 0);
-        drawOneColumn(canvas, SkPathDirection::kCCW, makePath);
+        drawOneColumn(canvas, SkPath::kCCW_Direction, makePath);
         canvas->translate(kImageWidth / 10, 0);
     }
 
-    void drawOneColumn(SkCanvas* canvas, SkPathDirection dir,
-                       SkPath (*makePath)(const SkRect&, SkPathDirection, unsigned)) const {
+    void drawOneColumn(SkCanvas* canvas, SkPath::Direction dir,
+                       SkPath (*makePath)(const SkRect&, SkPath::Direction, unsigned)) const {
         SkAutoCanvasRestore acr(canvas, true);
 
         for (unsigned i = 0; i < 8; ++i) {
@@ -109,7 +113,7 @@ private:
             canvas->drawPath(path, fDashPaint);
 
             const int n = path.countPoints();
-            AutoTArray<SkPoint> points(n);
+            SkAutoTArray<SkPoint> points(n);
             path.getPoints(points.get(), n);
             canvas->drawPoints(SkCanvas::kPoints_PointMode, n, points.get(), fPointsPaint);
 
@@ -117,7 +121,7 @@ private:
         }
     }
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 DEF_GM( return new ContourStartGM(); )

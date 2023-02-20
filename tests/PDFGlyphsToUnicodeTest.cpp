@@ -5,92 +5,70 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
+#include "SkBitSet.h"
+#include "SkData.h"
+#include "SkPDFMakeToUnicodeCmap.h"
+#include "SkStream.h"
+#include "Test.h"
 
-#ifdef SK_SUPPORT_PDF
-
-#include "include/core/SkStream.h"
-#include "include/private/base/SkTDArray.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
-#include "src/pdf/SkPDFGlyphUse.h"
-#include "src/pdf/SkPDFMakeToUnicodeCmap.h"
-#include "tests/Test.h"
-
-#include <algorithm>
-#include <cstdint>
-#include <cstring>
-
-using namespace skia_private;
-
-static constexpr SkGlyphID kMaximumGlyphIndex = UINT16_MAX;
+static const int kMaximumGlyphCount = SK_MaxU16 + 1;
 
 static bool stream_equals(const SkDynamicMemoryWStream& stream, size_t offset,
                           const char* buffer, size_t len) {
+    sk_sp<SkData> data = stream.snapshotAsData();
+    if (offset + len > data->size()) {
+        return false;
+    }
     if (len != strlen(buffer)) {
         return false;
     }
-
-    const size_t streamSize = stream.bytesWritten();
-
-    if (offset + len > streamSize) {
-        return false;
-    }
-
-    AutoTMalloc<char> data(streamSize);
-    stream.copyTo(data.get());
-    return memcmp(data.get() + offset, buffer, len) == 0;
+    return memcmp(data->bytes() + offset, buffer, len) == 0;
 }
 
 DEF_TEST(SkPDF_ToUnicode, reporter) {
     SkTDArray<SkUnichar> glyphToUnicode;
     SkTDArray<uint16_t> glyphsInSubset;
-    SkPDFGlyphUse subset(1, kMaximumGlyphIndex);
+    SkBitSet subset(kMaximumGlyphCount);
 
-    glyphToUnicode.push_back(0);  // 0
-    glyphToUnicode.push_back(0);  // 1
-    glyphToUnicode.push_back(0);  // 2
-    glyphsInSubset.push_back(3);
-    glyphToUnicode.push_back(0x20);  // 3
-    glyphsInSubset.push_back(4);
-    glyphToUnicode.push_back(0x25);  // 4
-    glyphsInSubset.push_back(5);
-    glyphToUnicode.push_back(0x27);  // 5
-    glyphsInSubset.push_back(6);
-    glyphToUnicode.push_back(0x28);  // 6
-    glyphsInSubset.push_back(7);
-    glyphToUnicode.push_back(0x29);  // 7
-    glyphsInSubset.push_back(8);
-    glyphToUnicode.push_back(0x2F);  // 8
-    glyphsInSubset.push_back(9);
-    glyphToUnicode.push_back(0x33);  // 9
-    glyphToUnicode.push_back(0);  // 10
-    glyphsInSubset.push_back(11);
-    glyphToUnicode.push_back(0x35);  // 11
-    glyphsInSubset.push_back(12);
-    glyphToUnicode.push_back(0x36);  // 12
-    glyphsInSubset.push_back(13);
-    glyphToUnicode.push_back(0x37);  // 13
+    glyphToUnicode.push(0);  // 0
+    glyphToUnicode.push(0);  // 1
+    glyphToUnicode.push(0);  // 2
+    glyphsInSubset.push(3);
+    glyphToUnicode.push(0x20);  // 3
+    glyphsInSubset.push(4);
+    glyphToUnicode.push(0x25);  // 4
+    glyphsInSubset.push(5);
+    glyphToUnicode.push(0x27);  // 5
+    glyphsInSubset.push(6);
+    glyphToUnicode.push(0x28);  // 6
+    glyphsInSubset.push(7);
+    glyphToUnicode.push(0x29);  // 7
+    glyphsInSubset.push(8);
+    glyphToUnicode.push(0x2F);  // 8
+    glyphsInSubset.push(9);
+    glyphToUnicode.push(0x33);  // 9
+    glyphToUnicode.push(0);  // 10
+    glyphsInSubset.push(11);
+    glyphToUnicode.push(0x35);  // 11
+    glyphsInSubset.push(12);
+    glyphToUnicode.push(0x36);  // 12
+    glyphsInSubset.push(13);
+    glyphToUnicode.push(0x37);  // 13
     for (uint16_t i = 14; i < 0xFE; ++i) {
-        glyphToUnicode.push_back(0);  // Zero from index 0x9 to 0xFD
+        glyphToUnicode.push(0);  // Zero from index 0x9 to 0xFD
     }
-    glyphsInSubset.push_back(0xFE);
-    glyphToUnicode.push_back(0x1010);
-    glyphsInSubset.push_back(0xFF);
-    glyphToUnicode.push_back(0x1011);
-    glyphsInSubset.push_back(0x100);
-    glyphToUnicode.push_back(0x1012);
-    glyphsInSubset.push_back(0x101);
-    glyphToUnicode.push_back(0x1013);
-
-    SkGlyphID lastGlyphID = SkToU16(glyphToUnicode.size() - 1);
+    glyphsInSubset.push(0xFE);
+    glyphToUnicode.push(0x1010);
+    glyphsInSubset.push(0xFF);
+    glyphToUnicode.push(0x1011);
+    glyphsInSubset.push(0x100);
+    glyphToUnicode.push(0x1012);
+    glyphsInSubset.push(0x101);
+    glyphToUnicode.push(0x1013);
 
     SkDynamicMemoryWStream buffer;
-    for (uint16_t v : glyphsInSubset) {
-        subset.set(v);
-    }
-    SkPDFAppendCmapSections(&glyphToUnicode[0], &subset, &buffer, true, 0,
-                            std::min<SkGlyphID>(0xFFFF,  lastGlyphID));
+    subset.setAll(glyphsInSubset.begin(), glyphsInSubset.count());
+    SkPDFAppendCmapSections(glyphToUnicode, &subset, &buffer, true, 0, 0xFFFF);
 
     char expectedResult[] =
 "4 beginbfchar\n\
@@ -107,13 +85,12 @@ endbfchar\n\
 endbfrange\n";
 
     REPORTER_ASSERT(reporter, stream_equals(buffer, 0, expectedResult,
-                                            buffer.bytesWritten()));
+                                            buffer.getOffset()));
 
     // Remove characters and ranges.
     buffer.reset();
 
-    SkPDFAppendCmapSections(&glyphToUnicode[0], &subset, &buffer, true, 8,
-                            std::min<SkGlyphID>(0x00FF, lastGlyphID));
+    SkPDFAppendCmapSections(glyphToUnicode, &subset, &buffer, true, 8, 0x00FF);
 
     char expectedResultChop1[] =
 "2 beginbfchar\n\
@@ -126,13 +103,12 @@ endbfchar\n\
 endbfrange\n";
 
     REPORTER_ASSERT(reporter, stream_equals(buffer, 0, expectedResultChop1,
-                                            buffer.bytesWritten()));
+                                            buffer.getOffset()));
 
     // Remove characters from range to downdrade it to one char.
     buffer.reset();
 
-    SkPDFAppendCmapSections(&glyphToUnicode[0], &subset, &buffer, true, 0x00D,
-                            std::min<SkGlyphID>(0x00FE, lastGlyphID));
+    SkPDFAppendCmapSections(glyphToUnicode, &subset, &buffer, true, 0x00D, 0x00FE);
 
     char expectedResultChop2[] =
 "2 beginbfchar\n\
@@ -141,12 +117,11 @@ endbfrange\n";
 endbfchar\n";
 
     REPORTER_ASSERT(reporter, stream_equals(buffer, 0, expectedResultChop2,
-                                            buffer.bytesWritten()));
+                                            buffer.getOffset()));
 
     buffer.reset();
 
-    SkPDFAppendCmapSections(&glyphToUnicode[0], nullptr, &buffer, false, 0xFC,
-                            std::min<SkGlyphID>(0x110, lastGlyphID));
+    SkPDFAppendCmapSections(glyphToUnicode, nullptr, &buffer, false, 0xFC, 0x110);
 
     char expectedResultSingleBytes[] =
 "2 beginbfchar\n\
@@ -159,34 +134,30 @@ endbfrange\n";
 
     REPORTER_ASSERT(reporter, stream_equals(buffer, 0,
                                             expectedResultSingleBytes,
-                                            buffer.bytesWritten()));
+                                            buffer.getOffset()));
 
     glyphToUnicode.reset();
     glyphsInSubset.reset();
-    SkPDFGlyphUse subset2(1, kMaximumGlyphIndex);
+    SkBitSet subset2(kMaximumGlyphCount);
 
     // Test mapping:
     //           I  n  s  t  a  l
     // Glyph id 2c 51 56 57 44 4f
     // Unicode  49 6e 73 74 61 6c
     for (SkUnichar i = 0; i < 100; ++i) {
-      glyphToUnicode.push_back(i + 29);
+      glyphToUnicode.push(i + 29);
     }
-    lastGlyphID = SkToU16(glyphToUnicode.size() - 1);
 
-    glyphsInSubset.push_back(0x2C);
-    glyphsInSubset.push_back(0x44);
-    glyphsInSubset.push_back(0x4F);
-    glyphsInSubset.push_back(0x51);
-    glyphsInSubset.push_back(0x56);
-    glyphsInSubset.push_back(0x57);
+    glyphsInSubset.push(0x2C);
+    glyphsInSubset.push(0x44);
+    glyphsInSubset.push(0x4F);
+    glyphsInSubset.push(0x51);
+    glyphsInSubset.push(0x56);
+    glyphsInSubset.push(0x57);
 
     SkDynamicMemoryWStream buffer2;
-    for (uint16_t v : glyphsInSubset) {
-        subset2.set(v);
-    }
-    SkPDFAppendCmapSections(&glyphToUnicode[0], &subset2, &buffer2, true, 0,
-                            std::min<SkGlyphID>(0xFFFF, lastGlyphID));
+    subset2.setAll(glyphsInSubset.begin(), glyphsInSubset.count());
+    SkPDFAppendCmapSections(glyphToUnicode, &subset2, &buffer2, true, 0, 0xffff);
 
     char expectedResult2[] =
 "4 beginbfchar\n\
@@ -200,7 +171,5 @@ endbfchar\n\
 endbfrange\n";
 
     REPORTER_ASSERT(reporter, stream_equals(buffer2, 0, expectedResult2,
-                                            buffer2.bytesWritten()));
+                                            buffer2.getOffset()));
 }
-
-#endif

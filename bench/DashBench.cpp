@@ -4,17 +4,17 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "bench/Benchmark.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathEffect.h"
-#include "include/core/SkString.h"
-#include "include/core/SkStrokeRec.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkDashPathEffect.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRandom.h"
+#include "SkString.h"
+#include "SkStrokeRec.h"
+#include "SkTDArray.h"
+
 
 /*
  *  Cases to consider:
@@ -71,7 +71,7 @@ protected:
         SkPath path;
         this->makePath(&path);
 
-        paint.setPathEffect(SkDashPathEffect::Make(fIntervals.begin(), fIntervals.size(), 0));
+        paint.setPathEffect(SkDashPathEffect::Make(fIntervals.begin(), fIntervals.count(), 0));
 
         if (fDoClip) {
             SkRect r = path.getBounds();
@@ -93,7 +93,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class RectDashBench : public DashBench {
@@ -104,7 +104,8 @@ public:
     }
 
 protected:
-    void handlePath(SkCanvas* canvas, const SkPath& path, const SkPaint& paint, int N) override {
+    virtual void handlePath(SkCanvas* canvas, const SkPath& path,
+                            const SkPaint& paint, int N) override {
         SkPoint pts[2];
         if (!path.isLine(pts) || pts[0].fY != pts[1].fY) {
             this->INHERITED::handlePath(canvas, path, paint, N);
@@ -133,7 +134,7 @@ protected:
     }
 
 private:
-    using INHERITED = DashBench;
+    typedef DashBench INHERITED;
 };
 
 static void make_unit_star(SkPath* path, int n) {
@@ -143,14 +144,15 @@ static void make_unit_star(SkPath* path, int n) {
     path->moveTo(0, -SK_Scalar1);
     for (int i = 1; i < n; i++) {
         rad += drad;
-        path->lineTo(SkScalarCos(rad), SkScalarSin(rad));
+        SkScalar cosV, sinV = SkScalarSinCos(rad, &cosV);
+        path->lineTo(cosV, sinV);
     }
     path->close();
 }
 
 static void make_poly(SkPath* path) {
     make_unit_star(path, 9);
-    const SkMatrix matrix = SkMatrix::Scale(100, 100);
+    const SkMatrix matrix = SkMatrix::MakeScale(SkIntToScalar(100), SkIntToScalar(100));
     path->transform(matrix);
 }
 
@@ -201,7 +203,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 /*
@@ -241,7 +243,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class DrawPointsDashingBench : public Benchmark {
@@ -288,7 +290,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 // Want to test how we handle dashing when 99% of the dash is clipped out
@@ -308,7 +310,7 @@ public:
 
     static const char* LineTypeName(LineType lt) {
         static const char* gNames[] = { "hori", "vert", "diag" };
-        static_assert(kLineTypeCount == std::size(gNames), "names_wrong_size");
+        static_assert(kLineTypeCount == SK_ARRAY_COUNT(gNames), "names_wrong_size");
         return gNames[lt];
     }
 
@@ -319,7 +321,7 @@ public:
         // deliberately pick intervals that won't be caught by asPoints(), so
         // we can test the filterPath code-path.
         const SkScalar intervals[] = { 20, 10, 10, 10 };
-        fPathEffect = SkDashPathEffect::Make(intervals, std::size(intervals), 0);
+        fPathEffect = SkDashPathEffect::Make(intervals, SK_ARRAY_COUNT(intervals), 0);
 
         SkScalar cx = 640 / 2;  // center X
         SkScalar cy = 480 / 2;  // center Y
@@ -365,7 +367,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 // Want to test how we draw a dashed grid (like what is used in spreadsheets) of many
@@ -432,14 +434,14 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
 static const SkScalar gDots[] = { SK_Scalar1, SK_Scalar1 };
 
-#define PARAM(array)    array, std::size(array)
+#define PARAM(array)    array, SK_ARRAY_COUNT(array)
 
 DEF_BENCH( return new DashBench(PARAM(gDots), 0); )
 DEF_BENCH( return new DashBench(PARAM(gDots), 1); )

@@ -5,15 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
+#include "gm.h"
 
 namespace skiagm {
 
@@ -51,7 +43,7 @@ protected:
         for (int i = 0; i < 8; ++i) {
             canvas->save();
             canvas->translate(i*0.125f, i*30.0f);
-            for (size_t j = 0; j < std::size(gStrokeWidths); ++j) {
+            for (size_t j = 0; j < SK_ARRAY_COUNT(gStrokeWidths); ++j) {
                 paint.setStrokeWidth(gStrokeWidths[j]);
                 canvas->drawRect(rect, paint);
                 canvas->translate(15, 0);
@@ -66,7 +58,7 @@ protected:
             canvas->save();
             canvas->translate(i*0.125f, i*30.0f);
             canvas->scale(0.5f, 0.5f);
-            for (size_t j = 0; j < std::size(gStrokeWidths); ++j) {
+            for (size_t j = 0; j < SK_ARRAY_COUNT(gStrokeWidths); ++j) {
                 paint.setStrokeWidth(2.0f * gStrokeWidths[j]);
                 canvas->drawRect(rect2, paint);
                 canvas->translate(30, 0);
@@ -76,10 +68,10 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new ThinStrokedRectsGM;)
-}  // namespace skiagm
+}

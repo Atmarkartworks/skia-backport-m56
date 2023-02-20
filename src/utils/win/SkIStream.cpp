@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-#if defined(SK_BUILD_FOR_WIN)
+#include "SkTypes.h"
+#if defined(SK_BUILD_FOR_WIN32)
 
-#include "include/core/SkStream.h"
-#include "src/utils/win/SkIStream.h"
+#include "SkIStream.h"
+#include "SkStream.h"
 
 /**
  * SkBaseIStream
@@ -17,7 +17,9 @@
 SkBaseIStream::SkBaseIStream() : _refcount(1) { }
 SkBaseIStream::~SkBaseIStream() { }
 
-SK_STDMETHODIMP SkBaseIStream::QueryInterface(REFIID iid, void ** ppvObject) {
+HRESULT STDMETHODCALLTYPE SkBaseIStream::QueryInterface(REFIID iid
+                                                      , void ** ppvObject)
+{
     if (nullptr == ppvObject) {
         return E_INVALIDARG;
     }
@@ -34,11 +36,11 @@ SK_STDMETHODIMP SkBaseIStream::QueryInterface(REFIID iid, void ** ppvObject) {
     }
 }
 
-SK_STDMETHODIMP_(ULONG) SkBaseIStream::AddRef() {
+ULONG STDMETHODCALLTYPE SkBaseIStream::AddRef(void) {
     return (ULONG)InterlockedIncrement(&_refcount);
 }
 
-SK_STDMETHODIMP_(ULONG) SkBaseIStream::Release() {
+ULONG STDMETHODCALLTYPE SkBaseIStream::Release(void) {
     ULONG res = (ULONG) InterlockedDecrement(&_refcount);
     if (0 == res) {
         delete this;
@@ -47,79 +49,102 @@ SK_STDMETHODIMP_(ULONG) SkBaseIStream::Release() {
 }
 
 // ISequentialStream Interface
-SK_STDMETHODIMP SkBaseIStream::Read(void* pv, ULONG cb, ULONG* pcbRead)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::Read(void* pv
+                                            , ULONG cb
+                                            , ULONG* pcbRead)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::Write(void const* pv, ULONG cb, ULONG* pcbWritten)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::Write(void const* pv
+                                             , ULONG cb
+                                             , ULONG* pcbWritten)
 { return E_NOTIMPL; }
 
 // IStream Interface
-SK_STDMETHODIMP SkBaseIStream::SetSize(ULARGE_INTEGER)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::SetSize(ULARGE_INTEGER)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::CopyTo(IStream*, ULARGE_INTEGER, ULARGE_INTEGER*, ULARGE_INTEGER*)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::CopyTo(IStream*
+                                              , ULARGE_INTEGER
+                                              , ULARGE_INTEGER*
+                                              , ULARGE_INTEGER*)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::Commit(DWORD)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::Commit(DWORD)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::Revert()
+HRESULT STDMETHODCALLTYPE SkBaseIStream::Revert(void)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::LockRegion(ULARGE_INTEGER, ULARGE_INTEGER, DWORD)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::LockRegion(ULARGE_INTEGER
+                                                  , ULARGE_INTEGER
+                                                  , DWORD)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::UnlockRegion(ULARGE_INTEGER, ULARGE_INTEGER, DWORD)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::UnlockRegion(ULARGE_INTEGER
+                                                    , ULARGE_INTEGER
+                                                    , DWORD)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::Clone(IStream**)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::Clone(IStream **)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::Seek(LARGE_INTEGER liDistanceToMove,
-                                    DWORD dwOrigin,
-                                    ULARGE_INTEGER* lpNewFilePointer)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::Seek(LARGE_INTEGER liDistanceToMove
+                                            , DWORD dwOrigin
+                                            , ULARGE_INTEGER* lpNewFilePointer)
 { return E_NOTIMPL; }
 
-SK_STDMETHODIMP SkBaseIStream::Stat(STATSTG* pStatstg, DWORD grfStatFlag)
+HRESULT STDMETHODCALLTYPE SkBaseIStream::Stat(STATSTG* pStatstg
+                                            , DWORD grfStatFlag)
 { return E_NOTIMPL; }
 
 
 /**
  * SkIStream
  */
-SkIStream::SkIStream(std::unique_ptr<SkStreamAsset> stream)
+SkIStream::SkIStream(SkStream* stream, bool deleteOnRelease)
     : SkBaseIStream()
-    , fSkStream(std::move(stream))
+    , fSkStream(stream)
+    , fDeleteOnRelease(deleteOnRelease)
     , fLocation()
 {
     this->fSkStream->rewind();
 }
 
-SkIStream::~SkIStream() {}
+SkIStream::~SkIStream() {
+    if (fDeleteOnRelease) {
+        delete this->fSkStream;
+    }
+}
 
-HRESULT SkIStream::CreateFromSkStream(std::unique_ptr<SkStreamAsset> stream, IStream** ppStream) {
+HRESULT SkIStream::CreateFromSkStream(SkStream* stream
+                                    , bool deleteOnRelease
+                                    , IStream ** ppStream)
+{
     if (nullptr == stream) {
         return E_INVALIDARG;
     }
-    *ppStream = new SkIStream(std::move(stream));
+    *ppStream = new SkIStream(stream, deleteOnRelease);
     return S_OK;
 }
 
 // ISequentialStream Interface
-SK_STDMETHODIMP SkIStream::Read(void* pv, ULONG cb, ULONG* pcbRead) {
+HRESULT STDMETHODCALLTYPE SkIStream::Read(void* pv, ULONG cb, ULONG* pcbRead) {
     *pcbRead = static_cast<ULONG>(this->fSkStream->read(pv, cb));
     this->fLocation.QuadPart += *pcbRead;
     return (*pcbRead == cb) ? S_OK : S_FALSE;
 }
 
-SK_STDMETHODIMP SkIStream::Write(void const* pv, ULONG cb, ULONG* pcbWritten) {
+HRESULT STDMETHODCALLTYPE SkIStream::Write(void const* pv
+                                         , ULONG cb
+                                         , ULONG* pcbWritten)
+{
     return STG_E_CANTSAVE;
 }
 
 // IStream Interface
-SK_STDMETHODIMP SkIStream::Seek(LARGE_INTEGER liDistanceToMove,
-                                DWORD dwOrigin,
-                                ULARGE_INTEGER* lpNewFilePointer)
+HRESULT STDMETHODCALLTYPE SkIStream::Seek(LARGE_INTEGER liDistanceToMove
+                                        , DWORD dwOrigin
+                                        , ULARGE_INTEGER* lpNewFilePointer)
 {
     HRESULT hr = S_OK;
 
@@ -128,20 +153,22 @@ SK_STDMETHODIMP SkIStream::Seek(LARGE_INTEGER liDistanceToMove,
         if (!this->fSkStream->rewind()) {
             hr = E_FAIL;
         } else {
-            size_t skip = static_cast<size_t>(liDistanceToMove.QuadPart);
-            size_t skipped = this->fSkStream->skip(skip);
+            size_t skipped = this->fSkStream->skip(
+                static_cast<size_t>(liDistanceToMove.QuadPart)
+            );
             this->fLocation.QuadPart = skipped;
-            if (skipped != skip) {
+            if (skipped != liDistanceToMove.QuadPart) {
                 hr = E_FAIL;
             }
         }
         break;
     }
     case STREAM_SEEK_CUR: {
-        size_t skip = static_cast<size_t>(liDistanceToMove.QuadPart);
-        size_t skipped = this->fSkStream->skip(skip);
+        size_t skipped = this->fSkStream->skip(
+            static_cast<size_t>(liDistanceToMove.QuadPart)
+        );
         this->fLocation.QuadPart += skipped;
-        if (skipped != skip) {
+        if (skipped != liDistanceToMove.QuadPart) {
             hr = E_FAIL;
         }
         break;
@@ -150,9 +177,11 @@ SK_STDMETHODIMP SkIStream::Seek(LARGE_INTEGER liDistanceToMove,
         if (!this->fSkStream->rewind()) {
             hr = E_FAIL;
         } else {
-            size_t skip = static_cast<size_t>(this->fSkStream->getLength() +
-                                              liDistanceToMove.QuadPart);
-            size_t skipped = this->fSkStream->skip(skip);
+            // FIXME: Should not depend on getLength.
+            // See https://code.google.com/p/skia/issues/detail?id=1570
+            LONGLONG skip = this->fSkStream->getLength()
+                          + liDistanceToMove.QuadPart;
+            size_t skipped = this->fSkStream->skip(static_cast<size_t>(skip));
             this->fLocation.QuadPart = skipped;
             if (skipped != skip) {
                 hr = E_FAIL;
@@ -171,11 +200,15 @@ SK_STDMETHODIMP SkIStream::Seek(LARGE_INTEGER liDistanceToMove,
     return hr;
 }
 
-SK_STDMETHODIMP SkIStream::Stat(STATSTG* pStatstg, DWORD grfStatFlag) {
+HRESULT STDMETHODCALLTYPE SkIStream::Stat(STATSTG* pStatstg
+                                        , DWORD grfStatFlag)
+{
     if (0 == (grfStatFlag & STATFLAG_NONAME)) {
         return STG_E_INVALIDFLAG;
     }
     pStatstg->pwcsName = nullptr;
+    // FIXME: Should not depend on getLength
+    // See https://code.google.com/p/skia/issues/detail?id=1570
     pStatstg->cbSize.QuadPart = this->fSkStream->getLength();
     pStatstg->clsid = CLSID_NULL;
     pStatstg->type = STGTY_STREAM;
@@ -198,13 +231,18 @@ SkWIStream::~SkWIStream() {
     }
 }
 
-HRESULT SkWIStream::CreateFromSkWStream(SkWStream* stream, IStream ** ppStream) {
+HRESULT SkWIStream::CreateFromSkWStream(SkWStream* stream
+                                      , IStream ** ppStream)
+{
     *ppStream = new SkWIStream(stream);
     return S_OK;
 }
 
 // ISequentialStream Interface
-SK_STDMETHODIMP SkWIStream::Write(void const* pv, ULONG cb, ULONG* pcbWritten) {
+HRESULT STDMETHODCALLTYPE SkWIStream::Write(void const* pv
+                                          , ULONG cb
+                                          , ULONG* pcbWritten)
+{
     HRESULT hr = S_OK;
     bool wrote = this->fSkWStream->write(pv, cb);
     if (wrote) {
@@ -217,12 +255,14 @@ SK_STDMETHODIMP SkWIStream::Write(void const* pv, ULONG cb, ULONG* pcbWritten) {
 }
 
 // IStream Interface
-SK_STDMETHODIMP SkWIStream::Commit(DWORD) {
+HRESULT STDMETHODCALLTYPE SkWIStream::Commit(DWORD) {
     this->fSkWStream->flush();
     return S_OK;
 }
 
-SK_STDMETHODIMP SkWIStream::Stat(STATSTG* pStatstg, DWORD grfStatFlag) {
+HRESULT STDMETHODCALLTYPE SkWIStream::Stat(STATSTG* pStatstg
+                                         , DWORD grfStatFlag)
+{
     if (0 == (grfStatFlag & STATFLAG_NONAME)) {
         return STG_E_INVALIDFLAG;
     }
@@ -233,4 +273,4 @@ SK_STDMETHODIMP SkWIStream::Stat(STATSTG* pStatstg, DWORD grfStatFlag) {
     pStatstg->grfMode = STGM_WRITE;
     return S_OK;
 }
-#endif//defined(SK_BUILD_FOR_WIN)
+#endif//defined(SK_BUILD_FOR_WIN32)

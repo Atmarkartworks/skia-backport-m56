@@ -5,20 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkImageFilters.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkMorphologyImageFilter.h"
 
 #define WIDTH 700
 #define HEIGHT 560
@@ -37,15 +25,18 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        auto surf = SkSurface::MakeRasterN32Premul(135, 135);
-
-        SkFont  font(ToolUtils::create_portable_typeface(), 64.0f);
+        fBitmap.allocN32Pixels(135, 135);
+        SkCanvas canvas(fBitmap);
+        canvas.clear(0x0);
         SkPaint paint;
+        paint.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&paint);
+        const char* str1 = "ABC";
+        const char* str2 = "XYZ";
         paint.setColor(0xFFFFFFFF);
-        surf->getCanvas()->drawString("ABC", 10, 55,  font, paint);
-        surf->getCanvas()->drawString("XYZ", 10, 110, font, paint);
-
-        fImage = surf->makeImageSnapshot();
+        paint.setTextSize(64);
+        canvas.drawText(str1, strlen(str1), 10, 55, paint);
+        canvas.drawText(str2, strlen(str2), 10, 110, paint);
     }
 
     SkISize onISize() override {
@@ -55,8 +46,9 @@ protected:
     void drawClippedBitmap(SkCanvas* canvas, const SkPaint& paint, int x, int y) {
         canvas->save();
         canvas->translate(SkIntToScalar(x), SkIntToScalar(y));
-        canvas->clipIRect(fImage->bounds());
-        canvas->drawImage(fImage, 0, 0, SkSamplingOptions(), &paint);
+        canvas->clipRect(SkRect::MakeWH(
+          SkIntToScalar(fBitmap.width()), SkIntToScalar(fBitmap.height())));
+        canvas->drawBitmap(fBitmap, 0, 0, &paint);
         canvas->restore();
     }
 
@@ -72,17 +64,21 @@ protected:
             {  24,  24,  25,  25 },
         };
         SkPaint paint;
-        SkIRect cropRect = SkIRect::MakeXYWH(25, 20, 100, 80);
+        SkImageFilter::CropRect cropRect(SkRect::MakeXYWH(25, 20, 100, 80));
 
         for (unsigned j = 0; j < 4; ++j) {
-            for (unsigned i = 0; i < std::size(samples); ++i) {
-                const SkIRect* cr = j & 0x02 ? &cropRect : nullptr;
+            for (unsigned i = 0; i < SK_ARRAY_COUNT(samples); ++i) {
+                const SkImageFilter::CropRect* cr = j & 0x02 ? &cropRect : nullptr;
                 if (j & 0x01) {
-                    paint.setImageFilter(SkImageFilters::Erode(
-                            samples[i].fRadiusX, samples[i].fRadiusY, nullptr, cr));
+                    paint.setImageFilter(SkErodeImageFilter::Make(samples[i].fRadiusX,
+                                                                  samples[i].fRadiusY,
+                                                                  nullptr,
+                                                                  cr));
                 } else {
-                    paint.setImageFilter(SkImageFilters::Dilate(
-                            samples[i].fRadiusX, samples[i].fRadiusY, nullptr, cr));
+                    paint.setImageFilter(SkDilateImageFilter::Make(samples[i].fRadiusX,
+                                                                   samples[i].fRadiusY,
+                                                                   nullptr,
+                                                                   cr));
                 }
                 this->drawClippedBitmap(canvas, paint, i * 140, j * 140);
             }
@@ -90,13 +86,13 @@ protected:
     }
 
 private:
-    sk_sp<SkImage> fImage;
+    SkBitmap fBitmap;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new MorphologyGM;)
 
-}  // namespace skiagm
+}

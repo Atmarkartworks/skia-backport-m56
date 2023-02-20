@@ -5,28 +5,22 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
+#include "SkGradientShader.h"
+#include "SkTypeface.h"
 
 static sk_sp<SkShader> make_heatGradient(const SkPoint pts[2]) {
     const SkColor bw[] = { SK_ColorBLACK, SK_ColorWHITE };
 
-    return SkGradientShader::MakeLinear(pts, bw, nullptr, std::size(bw), SkTileMode::kClamp);
+    return SkGradientShader::MakeLinear(pts, bw, nullptr, SK_ARRAY_COUNT(bw),
+                                        SkShader::kClamp_TileMode);
+}
+
+static bool setFont(SkPaint* paint, const char name[]) {
+    paint->setTypeface(SkTypeface::MakeFromName(name, SkFontStyle()));
+    return SkToBool(paint->getTypeface());
 }
 
 /**
@@ -41,7 +35,9 @@ static sk_sp<SkShader> make_heatGradient(const SkPoint pts[2]) {
 class GammaTextGM : public skiagm::GM {
 protected:
     SkString onShortName() override {
-        return SkString("gammatext");
+        SkString name("gammatext");
+        name.append(sk_tool_utils::major_platform_os_name());
+        return name;
     }
 
     SkISize onISize() override {
@@ -69,27 +65,30 @@ protected:
         };
 
         const char* text = "Hamburgefons";
+        size_t len = strlen(text);
 
         SkPaint paint;
-        SkFont font(nullptr, 16);
-        font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+        setFont(&paint, sk_tool_utils::platform_font_name("serif"));
+        paint.setTextSize(SkIntToScalar(16));
+        paint.setAntiAlias(true);
+        paint.setLCDRenderText(true);
 
         SkScalar x = SkIntToScalar(10);
-        for (size_t i = 0; i < std::size(fg); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fg); ++i) {
             paint.setColor(fg[i]);
 
             SkScalar y = SkIntToScalar(40);
             SkScalar stopy = SkIntToScalar(HEIGHT);
             while (y < stopy) {
-                canvas->drawString(text, x, y, font, paint);
-                y += font.getSize() * 2;
+                canvas->drawText(text, len, x, y, paint);
+                y += paint.getTextSize() * 2;
             }
-            x += SkIntToScalar(1024) / std::size(fg);
+            x += SkIntToScalar(1024) / SK_ARRAY_COUNT(fg);
         }
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM( return new GammaTextGM; )
@@ -101,19 +100,24 @@ static sk_sp<SkShader> make_gradient(SkColor c) {
     SkColor colors[2];
     colors[0] = c;
     colors[1] = SkColorSetA(c, 0);
-    return SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp);
+    return SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkShader::kClamp_TileMode);
 }
 
-static void draw_pair(SkCanvas* canvas, const SkFont& font, SkColor color,
-                      const sk_sp<SkShader>& shader) {
-    static const char text[] = "Now is the time for all good";
-    SkPaint paint;
-    paint.setColor(color);
-    canvas->drawString(text, 10, 20, font, paint);
-    paint.setShader(SkShaders::Color(paint.getColor()));
-    canvas->drawString(text, 10, 40, font, paint);
-    paint.setShader(shader);
-    canvas->drawString(text, 10, 60, font, paint);
+static void set_face(SkPaint* paint) {
+    paint->setTypeface(SkTypeface::MakeFromName("serif",
+                           SkFontStyle::FromOldStyle(SkTypeface::kItalic)));
+}
+
+static void draw_pair(SkCanvas* canvas, SkPaint* paint, const sk_sp<SkShader>& shader) {
+    const char text[] = "Now is the time for all good";
+    const size_t len = strlen(text);
+
+    paint->setShader(nullptr);
+    canvas->drawText(text, len, 10, 20, *paint);
+    paint->setShader(SkShader::MakeColorShader(paint->getColor()));
+    canvas->drawText(text, len, 10, 40, *paint);
+    paint->setShader(shader);
+    canvas->drawText(text, len, 10, 60, *paint);
 }
 
 class GammaShaderTextGM : public skiagm::GM {
@@ -123,7 +127,7 @@ class GammaShaderTextGM : public skiagm::GM {
 public:
     GammaShaderTextGM() {
         const SkColor colors[] = { SK_ColorBLACK, SK_ColorRED, SK_ColorBLUE };
-        for (size_t i = 0; i < std::size(fShaders); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fShaders); ++i) {
             fColors[i] = colors[i];
         }
     }
@@ -138,7 +142,7 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        for (size_t i = 0; i < std::size(fShaders); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fShaders); ++i) {
             fShaders[i] = make_gradient(fColors[i]);
         }
     }
@@ -146,17 +150,19 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
         paint.setAntiAlias(true);
-        SkFont font(SkTypeface::MakeFromName("serif", SkFontStyle::Italic()), 18);
-        font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+        paint.setLCDRenderText(true);
+        paint.setTextSize(18);
+        set_face(&paint);
 
-        for (size_t i = 0; i < std::size(fShaders); ++i) {
-            draw_pair(canvas, font, fColors[i], fShaders[i]);
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fShaders); ++i) {
+            paint.setColor(fColors[i]);
+            draw_pair(canvas, &paint, fShaders[i]);
             canvas->translate(0, 80);
         }
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM( return new GammaShaderTextGM; )

@@ -5,33 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/effects/SkLumaColorFilter.h"
-#include "include/effects/SkRuntimeEffect.h"
-#include "src/core/SkColorFilterPriv.h"
-#include "tools/Resources.h"
-#include "tools/ToolUtils.h"
-
-#include <string.h>
+#include "gm.h"
+#include "SkBlendModePriv.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkLumaColorFilter.h"
 
 static SkScalar kSize   = 80;
 static SkScalar kInset  = 10;
@@ -40,14 +18,13 @@ static SkColor  kColor2 = SkColorSetARGB(0xff, 0x82, 0xff, 0);
 
 static void draw_label(SkCanvas* canvas, const char* label,
                        const SkPoint& offset) {
-    SkFont font(ToolUtils::create_portable_typeface());
-    font.setEdging(SkFont::Edging::kAlias);
-
+    SkPaint paint;
+    sk_tool_utils::set_portable_typeface(&paint);
     size_t len = strlen(label);
 
-    SkScalar width = font.measureText(label, len, SkTextEncoding::kUTF8);
-    canvas->drawSimpleText(label, len, SkTextEncoding::kUTF8, offset.x() - width / 2, offset.y(),
-                           font, SkPaint());
+    SkScalar width = paint.measureText(label, len);
+    canvas->drawText(label, len, offset.x() - width / 2, offset.y(),
+                     paint);
 }
 
 static void draw_scene(SkCanvas* canvas, const sk_sp<SkColorFilter>& filter, SkBlendMode mode,
@@ -99,8 +76,8 @@ static void draw_scene(SkCanvas* canvas, const sk_sp<SkColorFilter>& filter, SkB
 }
 
 class LumaFilterGM : public skiagm::GM {
-protected:
-    void onOnceBeforeDraw() override {
+public:
+    LumaFilterGM() {
         SkColor  g1Colors[] = { kColor1, SkColorSetA(kColor1, 0x20) };
         SkColor  g2Colors[] = { kColor2, SkColorSetA(kColor2, 0x20) };
         SkPoint  g1Points[] = { { 0, 0 }, { 0,     100 } };
@@ -108,11 +85,13 @@ protected:
         SkScalar pos[] = { 0.2f, 1.0f };
 
         fFilter = SkLumaColorFilter::Make();
-        fGr1 = SkGradientShader::MakeLinear(g1Points, g1Colors, pos, std::size(g1Colors),
-                                            SkTileMode::kClamp);
-        fGr2 = SkGradientShader::MakeLinear(g2Points, g2Colors, pos, std::size(g2Colors),
-                                            SkTileMode::kClamp);
+        fGr1 = SkGradientShader::MakeLinear(g1Points, g1Colors, pos, SK_ARRAY_COUNT(g1Colors),
+                                            SkShader::kClamp_TileMode);
+        fGr2 = SkGradientShader::MakeLinear(g2Points, g2Colors, pos, SK_ARRAY_COUNT(g2Colors),
+                                            SkShader::kClamp_TileMode);
     }
+
+protected:
 
     SkString onShortName() override {
         return SkString("lumafilter");
@@ -142,15 +121,15 @@ protected:
         };
 
         SkScalar gridStep = kSize + 2 * kInset;
-        for (size_t i = 0; i < std::size(modes); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(modes); ++i) {
             draw_label(canvas, SkBlendMode_Name(modes[i]),
                        SkPoint::Make(gridStep * (0.5f + i), 20));
         }
 
-        for (size_t i = 0; i < std::size(shaders); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(shaders); ++i) {
             canvas->save();
             canvas->translate(kInset, gridStep * i + 30);
-            for (size_t m = 0; m < std::size(modes); ++m) {
+            for (size_t m = 0; m < SK_ARRAY_COUNT(modes); ++m) {
                 draw_scene(canvas, fFilter, modes[m], shaders[i].fShader1,
                            shaders[i].fShader2);
                 canvas->translate(gridStep, 0);
@@ -163,41 +142,9 @@ private:
     sk_sp<SkColorFilter>    fFilter;
     sk_sp<SkShader>         fGr1, fGr2;
 
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new LumaFilterGM;)
-
-DEF_SIMPLE_GM(AlternateLuma, canvas, 384,128) {
-    sk_sp<SkImage> img = GetResourceAsImage("images/mandrill_128.png");
-    if (!img) {
-        return;
-    }
-
-    // Normal luma colorfilter on the left.
-    SkPaint paint;
-    paint.setColorFilter(SkLumaColorFilter::Make());
-    canvas->drawImage(img, 0,0, SkSamplingOptions{}, &paint);
-    canvas->translate(128,0);
-
-    // Original image in the middle for reference.
-    canvas->drawImage(img, 0,0);
-    canvas->translate(128,0);
-
-    // Here, RGB holds CIE XYZ. Splatting the G (Y) channel should result in (near) greyscale.
-    auto [effect, err] = SkRuntimeEffect::MakeForColorFilter(SkString{
-            "half4 main(half4 inColor) { return inColor.ggga; }"});
-    SkASSERT(effect && err.isEmpty());
-
-    sk_sp<SkColorFilter> filter = effect->makeColorFilter(SkData::MakeEmpty());
-    SkASSERT(filter);
-
-    SkAlphaType unpremul = kUnpremul_SkAlphaType;
-    paint.setColorFilter(SkColorFilterPriv::WithWorkingFormat(std::move(filter),
-                                                              &SkNamedTransferFn::kLinear,
-                                                              &SkNamedGamut::kXYZ,
-                                                              &unpremul));
-    canvas->drawImage(img, 0,0, SkSamplingOptions{}, &paint);
-}

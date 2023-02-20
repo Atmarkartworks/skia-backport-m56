@@ -5,24 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "src/core/SkBlurMask.h"
-#include "tools/ToolUtils.h"
-
-#include <string.h>
+#include "gm.h"
+#include "SkBlurMask.h"
+#include "SkBlurMaskFilter.h"
+#include "SkCanvas.h"
+#include "SkTextBlob.h"
 
 #define WIDTH 800
 #define HEIGHT 800
@@ -53,17 +40,25 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
         paint.setAntiAlias(true);
+        paint.setStyle(SkPaint::kFill_Style);
 
-        SkFont font(ToolUtils::create_portable_typeface(), 256);
+        const char text[] = "hambur";
+
+        sk_tool_utils::set_portable_typeface(&paint);
+        paint.setTextSize(256);
+        paint.setAntiAlias(true);
 
         // setup up maskfilter
         const SkScalar kSigma = SkBlurMask::ConvertRadiusToSigma(SkIntToScalar(50));
 
         SkPaint blurPaint(paint);
-        blurPaint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, kSigma));
+        blurPaint.setMaskFilter(SkBlurMaskFilter::Make(kNormal_SkBlurStyle, kSigma));
 
-        const char text[] = "hambur";
-        auto blob = SkTextBlob::MakeFromText(text, strlen(text), font);
+        SkTextBlobBuilder builder;
+
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, 0);
+
+        sk_sp<SkTextBlob> blob(builder.make());
 
         SkPaint clearPaint(paint);
         clearPaint.setColor(SK_ColorWHITE);
@@ -82,7 +77,7 @@ protected:
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM(return new ClipErrorGM;)

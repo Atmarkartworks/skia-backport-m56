@@ -5,17 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkColor.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathTypes.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "src/core/SkBlitter.h"
-#include "src/core/SkScan.h"
-#include "tests/Test.h"
-
-#include <cstdint>
+#include "SkBlitter.h"
+#include "SkPath.h"
+#include "SkRegion.h"
+#include "SkScan.h"
+#include "Test.h"
 
 struct FakeBlitter : public SkBlitter {
     FakeBlitter()
@@ -42,12 +36,12 @@ DEF_TEST(FillPathInverse, reporter) {
     int height = 100;
     int width  = 200;
     int expected_lines = 5;
-    clip.setLTRB(0, height - expected_lines, width, height);
-    path.moveTo(0.0f, 0.0f)
-        .quadTo(SkIntToScalar(width/2), SkIntToScalar(height),
-              SkIntToScalar(width), 0.0f)
-        .close()
-        .setFillType(SkPathFillType::kInverseWinding);
+    clip.set(0, height - expected_lines, width, height);
+    path.moveTo(0.0f, 0.0f);
+    path.quadTo(SkIntToScalar(width/2), SkIntToScalar(height),
+              SkIntToScalar(width), 0.0f);
+    path.close();
+    path.setFillType(SkPath::kInverseWinding_FillType);
     SkScan::FillPath(path, clip, &blitter);
 
     REPORTER_ASSERT(reporter, blitter.m_blitCount == expected_lines);

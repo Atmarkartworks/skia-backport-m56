@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "tests/Test.h"
+#include "SkSize.h"
+
+#include "Test.h"
 
 DEF_TEST(ISize, reporter) {
     SkISize  a, b;
@@ -16,7 +16,7 @@ DEF_TEST(ISize, reporter) {
     REPORTER_ASSERT(reporter, a.isEmpty());
     a.set(5, -5);
     REPORTER_ASSERT(reporter, a.isEmpty());
-    a = SkISize{5, 0};
+    a.clampNegToZero();
     REPORTER_ASSERT(reporter, a.isEmpty());
     b.set(5, 0);
     REPORTER_ASSERT(reporter, a == b);
@@ -42,7 +42,7 @@ DEF_TEST(Size, reporter) {
     REPORTER_ASSERT(reporter, a.isEmpty());
     a.set(x, -x);
     REPORTER_ASSERT(reporter, a.isEmpty());
-    a = SkSize{x, 0};
+    a.clampNegToZero();
     REPORTER_ASSERT(reporter, a.isEmpty());
     b.set(x, 0);
     REPORTER_ASSERT(reporter, a == b);

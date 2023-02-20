@@ -8,92 +8,43 @@
 #ifndef skiagm_DEFINED
 #define skiagm_DEFINED
 
-#include "gm/verifiers/gmverifier.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkMacros.h"
-#include "tools/Registry.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkSize.h"
+#include "SkString.h"
+#include "SkTRegistry.h"
+#include "sk_tool_utils.h"
 
-#include <memory>
-
-class GrDirectContext;
-class GrRecordingContext;
-class SkCanvas;
-class SkMetaData;
+class SkAnimTimer;
 struct GrContextOptions;
 
-#define DEF_GM(CODE)                                         \
-    static skiagm::GMRegistry SK_MACRO_APPEND_COUNTER(REG_)( \
-            []() { return std::unique_ptr<skiagm::GM>([]() { CODE; }()); });
+#define DEF_GM(code) \
+    static skiagm::GM*          SK_MACRO_APPEND_LINE(F_)(void*) { code; } \
+    static skiagm::GMRegistry   SK_MACRO_APPEND_LINE(R_)(SK_MACRO_APPEND_LINE(F_));
 
-// A Simple GM is a rendering test that does not store state between rendering calls or make use of
-// the onOnceBeforeDraw() virtual; it consists of:
+// a Simple GM is a rendering test that does not store state between
+// rendering calls or make use of the onOnceBeforeDraw() virtual; it
+// consists of:
+//   *   A single void(*)(SkCanvas*) function.
 //   *   A name.
 //   *   Prefered width and height.
 //   *   Optionally, a background color (default is white).
-//   *   A standalone function pointer that implements its onDraw method.
 #define DEF_SIMPLE_GM(NAME, CANVAS, W, H) \
     DEF_SIMPLE_GM_BG_NAME(NAME, CANVAS, W, H, SK_ColorWHITE, SkString(#NAME))
-#define DEF_SIMPLE_GM_BG(NAME, CANVAS, W, H, BGCOLOR) \
+#define DEF_SIMPLE_GM_BG(NAME, CANVAS, W, H, BGCOLOR)\
     DEF_SIMPLE_GM_BG_NAME(NAME, CANVAS, W, H, BGCOLOR, SkString(#NAME))
-#define DEF_SIMPLE_GM_BG_NAME(NAME, CANVAS, W, H, BGCOLOR, NAME_STR) \
-    static void SK_MACRO_CONCAT(NAME,_GM_inner)(SkCanvas*); \
-    DEF_SIMPLE_GM_BG_NAME_CAN_FAIL(NAME, CANVAS,, W, H, BGCOLOR, NAME_STR) { \
-        SK_MACRO_CONCAT(NAME,_GM_inner)(CANVAS); \
-        return skiagm::DrawResult::kOk; \
-    } \
-    void SK_MACRO_CONCAT(NAME,_GM_inner)(SkCanvas* CANVAS)
-
-#define DEF_SIMPLE_GM_CAN_FAIL(NAME, CANVAS, ERR_MSG, W, H) \
-    DEF_SIMPLE_GM_BG_NAME_CAN_FAIL(NAME, CANVAS, ERR_MSG, W, H, SK_ColorWHITE, SkString(#NAME))
-#define DEF_SIMPLE_GM_BG_CAN_FAIL(NAME, CANVAS, ERR_MSG, W, H, BGCOLOR) \
-    DEF_SIMPLE_GM_BG_NAME_CAN_FAIL(NAME, CANVAS, ERR_MSG, W, H, BGCOLOR, SkString(#NAME))
-#define DEF_SIMPLE_GM_BG_NAME_CAN_FAIL(NAME, CANVAS, ERR_MSG, W, H, BGCOLOR, NAME_STR) \
-    static skiagm::DrawResult SK_MACRO_CONCAT(NAME,_GM)(SkCanvas*, SkString*); \
-    DEF_GM(return new skiagm::SimpleGM(BGCOLOR, NAME_STR, {W,H}, SK_MACRO_CONCAT(NAME,_GM));) \
-    skiagm::DrawResult SK_MACRO_CONCAT(NAME,_GM)(SkCanvas* CANVAS, SkString* ERR_MSG)
-
-
-// A Simple GpuGM makes direct GPU calls. Its onDraw hook that includes GPU objects as params, and
-// is only invoked on GPU configs. Non-GPU configs automatically draw a GPU-only message and abort.
-#define DEF_SIMPLE_GPU_GM(NAME, GR_CONTEXT, CANVAS, W, H)                                         \
-    DEF_SIMPLE_GPU_GM_BG(NAME, GR_CONTEXT, CANVAS, W, H, SK_ColorWHITE)
-
-#define DEF_SIMPLE_GPU_GM_BG(NAME, GR_CONTEXT, CANVAS, W, H, BGCOLOR)                             \
-    static void SK_MACRO_CONCAT(NAME,_GM_inner)(GrRecordingContext*, SkCanvas*);                  \
-    DEF_SIMPLE_GPU_GM_BG_CAN_FAIL(NAME, GR_CONTEXT, CANVAS, /* ERR_MSG */, W, H, BGCOLOR) {       \
-        SK_MACRO_CONCAT(NAME,_GM_inner)(GR_CONTEXT, CANVAS);                                      \
-        return skiagm::DrawResult::kOk;                                                           \
-    }                                                                                             \
-    void SK_MACRO_CONCAT(NAME,_GM_inner)(GrRecordingContext* GR_CONTEXT, SkCanvas* CANVAS)
-
-#define DEF_SIMPLE_GPU_GM_CAN_FAIL(NAME, GR_CONTEXT, CANVAS, ERR_MSG, W, H)                       \
-    DEF_SIMPLE_GPU_GM_BG_CAN_FAIL(NAME, GR_CONTEXT, CANVAS, ERR_MSG, W, H, SK_ColorWHITE)
-
-#define DEF_SIMPLE_GPU_GM_BG_CAN_FAIL(NAME, GR_CONTEXT, CANVAS, ERR_MSG, W, H, BGCOLOR)           \
-    static skiagm::DrawResult SK_MACRO_CONCAT(NAME,_GM)(                                          \
-        GrRecordingContext*, SkCanvas*, SkString*);                                               \
-    DEF_GM(return new skiagm::SimpleGpuGM(BGCOLOR, SkString(#NAME), {W,H},                        \
-                                          SK_MACRO_CONCAT(NAME,_GM));)                            \
-    skiagm::DrawResult SK_MACRO_CONCAT(NAME,_GM)(                                                 \
-            GrRecordingContext* GR_CONTEXT, SkCanvas* CANVAS, SkString* ERR_MSG)
+#define DEF_SIMPLE_GM_BG_NAME(NAME, CANVAS, W, H, BGCOLOR, NAME_STR)         \
+    static void SK_MACRO_CONCAT(NAME, _GM)(SkCanvas * CANVAS);               \
+    DEF_GM(return new skiagm::SimpleGM(NAME_STR, SK_MACRO_CONCAT(NAME, _GM), \
+                                       SkISize::Make(W, H), BGCOLOR);)       \
+    void SK_MACRO_CONCAT(NAME, _GM)(SkCanvas * CANVAS)
 
 namespace skiagm {
 
-    enum class DrawResult {
-        kOk,   // Test drew successfully.
-        kFail, // Test failed to draw.
-        kSkip  // Test is not applicable in this context and should be skipped.
-    };
-
     class GM {
     public:
-        using DrawResult = skiagm::DrawResult;
-
-        GM(SkColor backgroundColor = SK_ColorWHITE);
+        GM();
         virtual ~GM();
 
         enum Mode {
@@ -105,40 +56,14 @@ namespace skiagm {
         void setMode(Mode mode) { fMode = mode; }
         Mode getMode() const { return fMode; }
 
-        inline static constexpr char kErrorMsg_DrawSkippedGpuOnly[] =
-                "This test is for GPU configs only.";
-
-        DrawResult gpuSetup(SkCanvas* canvas) {
-            SkString errorMsg;
-            return this->gpuSetup(canvas, &errorMsg);
-        }
-        DrawResult gpuSetup(SkCanvas*, SkString* errorMsg);
-        void gpuTeardown();
-
-        void onceBeforeDraw() {
-            if (!fHaveCalledOnceBeforeDraw) {
-                fHaveCalledOnceBeforeDraw = true;
-                this->onOnceBeforeDraw();
-            }
-        }
-
-        DrawResult draw(SkCanvas* canvas) {
-            SkString errorMsg;
-            return this->draw(canvas, &errorMsg);
-        }
-        DrawResult draw(SkCanvas*, SkString* errorMsg);
-
+        void draw(SkCanvas*);
         void drawBackground(SkCanvas*);
-        DrawResult drawContent(SkCanvas* canvas) {
-            SkString errorMsg;
-            return this->drawContent(canvas, &errorMsg);
-        }
-        DrawResult drawContent(SkCanvas*, SkString* errorMsg);
+        void drawContent(SkCanvas*);
 
         SkISize getISize() { return this->onISize(); }
         const char* getName();
 
-        virtual bool runAsBench() const;
+        virtual bool runAsBench() const { return false; }
 
         SkScalar width() {
             return SkIntToScalar(this->getISize().width());
@@ -147,107 +72,85 @@ namespace skiagm {
             return SkIntToScalar(this->getISize().height());
         }
 
+        // TODO(vandebo) Instead of exposing this, we should run all the GMs
+        // with and without an initial transform.
+        // Most GMs will return the identity matrix, but some PDFs tests
+        // require setting the initial transform.
+        SkMatrix getInitialTransform() const {
+            SkMatrix matrix = fStarterMatrix;
+            matrix.preConcat(this->onGetInitialTransform());
+            return matrix;
+        }
+
         SkColor getBGColor() const { return fBGColor; }
         void setBGColor(SkColor);
 
-        // helper: fill a rect in the specified color based on the GM's getISize bounds.
+        // helper: fill a rect in the specified color based on the
+        // GM's getISize bounds.
         void drawSizeBounds(SkCanvas*, SkColor);
 
-        bool animate(double /*nanos*/);
-        virtual bool onChar(SkUnichar);
+        bool isCanvasDeferred() const { return fCanvasIsDeferred; }
+        void setCanvasIsDeferred(bool isDeferred) {
+            fCanvasIsDeferred = isDeferred;
+        }
 
-        bool getControls(SkMetaData* controls) { return this->onGetControls(controls); }
-        void setControls(const SkMetaData& controls) { this->onSetControls(controls); }
+        const SkMatrix& getStarterMatrix() { return fStarterMatrix; }
+        void setStarterMatrix(const SkMatrix& matrix) {
+            fStarterMatrix = matrix;
+        }
 
-        virtual void modifyGrContextOptions(GrContextOptions*);
+        bool animate(const SkAnimTimer&);
+        bool handleKey(SkUnichar uni) {
+            return this->onHandleKey(uni);
+        }
 
-        virtual std::unique_ptr<verifiers::VerifierList> getVerifiers() const;
+        virtual void modifyGrContextOptions(GrContextOptions* options) {}
+
+        /** draws a standard message that the GM is only intended to be used with the GPU.*/
+        static void DrawGpuOnlyMessage(SkCanvas*);
 
     protected:
-        // onGpuSetup is called once before any other processing with a direct context.
-        virtual DrawResult onGpuSetup(SkCanvas*, SkString*) { return DrawResult::kOk; }
-        virtual void onGpuTeardown() {}
-        virtual void onOnceBeforeDraw();
-        virtual DrawResult onDraw(SkCanvas*, SkString* errorMsg);
-        virtual void onDraw(SkCanvas*);
-
+        virtual void onOnceBeforeDraw() {}
+        virtual void onDraw(SkCanvas*) = 0;
+        virtual void onDrawBackground(SkCanvas*);
         virtual SkISize onISize() = 0;
         virtual SkString onShortName() = 0;
 
-        virtual bool onAnimate(double /*nanos*/);
-        virtual bool onGetControls(SkMetaData*);
-        virtual void onSetControls(const SkMetaData&);
+        virtual bool onAnimate(const SkAnimTimer&) { return false; }
+        virtual bool onHandleKey(SkUnichar uni) { return false; }
+        virtual SkMatrix onGetInitialTransform() const { return SkMatrix::I(); }
 
     private:
-        Mode       fMode;
-        SkString   fShortName;
-        SkColor    fBGColor;
-        bool       fHaveCalledOnceBeforeDraw = false;
-        bool       fGpuSetup = false;
-        DrawResult fGpuSetupResult = DrawResult::kOk;
+        Mode     fMode;
+        SkString fShortName;
+        SkColor  fBGColor;
+        bool     fCanvasIsDeferred; // work-around problem in srcmode.cpp
+        bool     fHaveCalledOnceBeforeDraw;
+        SkMatrix fStarterMatrix;
     };
 
-    using GMFactory = std::unique_ptr<skiagm::GM> (*)();
-    using GMRegistry = sk_tools::Registry<GMFactory>;
+    typedef SkTRegistry<GM*(*)(void*)> GMRegistry;
 
-    // A GpuGM replaces the onDraw method with one that also accepts GPU objects alongside the
-    // SkCanvas. Its onDraw is only invoked on GPU configs; on non-GPU configs it will automatically
-    // draw a GPU-only message and abort.
-    class GpuGM : public GM {
+    class SimpleGM : public skiagm::GM {
     public:
-        GpuGM(SkColor backgroundColor = SK_ColorWHITE) : GM(backgroundColor) {}
-
-        // TODO(tdenniston): Currently GpuGMs don't have verifiers (because they do not render on
-        //   CPU), but we may want to be able to verify the output images standalone, without
-        //   requiring a gold image for comparison.
-        std::unique_ptr<verifiers::VerifierList> getVerifiers() const override { return nullptr; }
-
-    private:
-        using GM::onDraw;
-        DrawResult onDraw(SkCanvas*, SkString* errorMsg) final;
-
-        virtual DrawResult onDraw(GrRecordingContext*, SkCanvas*, SkString* errorMsg);
-        virtual void onDraw(GrRecordingContext*, SkCanvas*);
-    };
-
-    // SimpleGM is intended for basic GMs that can define their entire implementation inside a
-    // single "draw" function pointer.
-    class SimpleGM : public GM {
-    public:
-        using DrawProc = DrawResult(*)(SkCanvas*, SkString*);
-
-        SimpleGM(SkColor bgColor, const SkString& name, const SkISize& size, DrawProc drawProc)
-                : GM(bgColor), fName(name), fSize(size), fDrawProc(drawProc) {}
-
-    private:
+        SimpleGM(const SkString& name,
+                 void (*drawProc)(SkCanvas*),
+                 const SkISize& size,
+                 SkColor backgroundColor)
+            : fName(name), fDrawProc(drawProc), fSize(size) {
+            if (backgroundColor != SK_ColorWHITE) {
+                this->setBGColor(backgroundColor);
+            }
+        }
+    protected:
+        void onDraw(SkCanvas* canvas) override;
         SkISize onISize() override;
         SkString onShortName() override;
-        DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override;
-
-        const SkString fName;
-        const SkISize fSize;
-        const DrawProc fDrawProc;
-    };
-
-    class SimpleGpuGM : public GpuGM {
-    public:
-        using DrawProc = DrawResult (*)(GrRecordingContext*, SkCanvas*, SkString* errorMsg);
-
-        SimpleGpuGM(SkColor bgColor, const SkString& name, const SkISize& size, DrawProc drawProc)
-                : GpuGM(bgColor), fName(name), fSize(size), fDrawProc(drawProc) {}
-
     private:
-        SkISize onISize() override;
-        SkString onShortName() override;
-        DrawResult onDraw(GrRecordingContext*, SkCanvas*, SkString* errorMsg) override;
-
-        const SkString fName;
-        const SkISize fSize;
-        const DrawProc fDrawProc;
+        SkString fName;
+        void (*fDrawProc)(SkCanvas*);
+        SkISize fSize;
     };
-}  // namespace skiagm
-
-void MarkGMGood(SkCanvas*, SkScalar x, SkScalar y);
-void MarkGMBad (SkCanvas*, SkScalar x, SkScalar y);
+}
 
 #endif

@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "tools/skiaserve/urlhandlers/UrlHandler.h"
+#include "UrlHandler.h"
 
 #include "microhttpd.h"
-#include "tools/skiaserve/Request.h"
-#include "tools/skiaserve/Response.h"
+#include "../Request.h"
+#include "../Response.h"
 
 using namespace Response;
 
@@ -25,15 +25,15 @@ int ImgHandler::handle(Request* request, MHD_Connection* connection,
     SkTArray<SkString> commands;
     SkStrSplit(url, "/", &commands);
 
-    if (!request->hasPicture() || commands.size() > 3) {
+    if (!request->hasPicture() || commands.count() > 3) {
         return MHD_NO;
     }
 
     int n, m = -1;
     // /img or /img/N
-    if (commands.size() == 1) {
+    if (commands.count() == 1) {
         n = request->fDebugCanvas->getSize() - 1;
-    } else if (commands.size() == 2) {
+    } else if (commands.count() == 2) {
         sscanf(commands[1].c_str(), "%d", &n);
     } else {
         sscanf(commands[1].c_str(), "%d", &n);

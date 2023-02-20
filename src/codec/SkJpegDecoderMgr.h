@@ -8,20 +8,14 @@
 #ifndef SkJpegDecoderMgr_DEFINED
 #define SkJpegDecoderMgr_DEFINED
 
-#include "include/codec/SkCodec.h"
-#include "include/private/SkEncodedInfo.h"
-#include "include/private/base/SkNoncopyable.h"
-#include "src/codec/SkJpegPriv.h"
-#include "src/codec/SkJpegSourceMgr.h"
+#include "SkCodec.h"
+#include "SkCodecPriv.h"
+#include <stdio.h>
+#include "SkJpegUtility.h"
 
 extern "C" {
     #include "jpeglib.h"
-    #include "jmorecfg.h"
 }
-
-#include <memory>
-
-class SkStream;
 
 class JpegDecoderMgr : SkNoncopyable {
 public:
@@ -60,32 +54,19 @@ public:
     ~JpegDecoderMgr();
 
     /*
-     * Get the skjpeg_error_mgr in order to set an error return jmp_buf
+     * Get the jump buffer in order to set an error return point
      */
-    skjpeg_error_mgr* errorMgr() { return &fErrorMgr; }
+    jmp_buf& getJmpBuf();
 
     /*
      * Get function for the decompress info struct
      */
-    jpeg_decompress_struct* dinfo() { return &fDInfo; }
-
-    // Get the source manager.
-    SkJpegSourceMgr* getSourceMgr();
+    jpeg_decompress_struct* dinfo();
 
 private:
-    // Wrapper that calls into the full SkJpegSourceMgr interface.
-    struct SourceMgr : jpeg_source_mgr {
-        static void InitSource(j_decompress_ptr dinfo);
-        static void SkipInputData(j_decompress_ptr dinfo, long num_bytes_long);
-        static boolean FillInputBuffer(j_decompress_ptr dinfo);
-        static void TermSource(j_decompress_ptr dinfo);
-
-        SourceMgr(std::unique_ptr<SkJpegSourceMgr> mgr);
-        std::unique_ptr<SkJpegSourceMgr> fSourceMgr;
-    };
 
     jpeg_decompress_struct fDInfo;
-    SourceMgr              fSrcMgr;
+    skjpeg_source_mgr      fSrcMgr;
     skjpeg_error_mgr       fErrorMgr;
     jpeg_progress_mgr      fProgressMgr;
     bool                   fInit;

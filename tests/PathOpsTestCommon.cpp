@@ -4,27 +4,14 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-#include "include/core/SkPath.h"
-#include "include/core/SkPathTypes.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkTypes.h"
-#include "src/base/SkTSort.h"
-#include "src/core/SkPathPriv.h"
-#include "src/pathops/SkPathOpsBounds.h"
-#include "src/pathops/SkPathOpsConic.h"
-#include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsQuad.h"
-#include "src/pathops/SkPathOpsRect.h"
-#include "src/pathops/SkPathOpsTSect.h"
-#include "src/pathops/SkPathOpsTypes.h"
-#include "src/pathops/SkReduceOrder.h"
-#include "tests/PathOpsTestCommon.h"
-
-#include <cmath>
-#include <string>
-#include <utility>
+#include "PathOpsTestCommon.h"
+#include "SkPathOpsBounds.h"
+#include "SkPathOpsConic.h"
+#include "SkPathOpsCubic.h"
+#include "SkPathOpsLine.h"
+#include "SkPathOpsQuad.h"
+#include "SkReduceOrder.h"
+#include "SkTSort.h"
 
 static double calc_t_div(const SkDCubic& cubic, double precision, double start) {
     const double adjust = sqrt(3.) / 36;
@@ -42,7 +29,7 @@ static double calc_t_div(const SkDCubic& cubic, double precision, double start) 
     double dy = c[3].fY - 3 * (c[2].fY - c[1].fY) - c[0].fY;
     double dist = sqrt(dx * dx + dy * dy);
     double tDiv3 = precision / (adjust * dist);
-    double t = std::cbrt(tDiv3);
+    double t = SkDCubeRoot(tDiv3);
     if (start > 0) {
         t = start + (1 - start) * t;
     }
@@ -86,7 +73,7 @@ static void toQuadraticTs(const SkDCubic* cubic, double precision, SkTArray<doub
         inflections += cubic->findMaxCurvature(&inflectT[inflections]);
         SkASSERT(inflections <= 5);
     }
-    SkTQSort<double>(inflectT, inflectT + inflections);
+    SkTQSort<double>(inflectT, &inflectT[inflections - 1]);
     // OPTIMIZATION: is this filtering common enough that it needs to be pulled out into its
     // own subroutine?
     while (inflections && approximately_less_than_zero(inflectT[0])) {
@@ -146,14 +133,14 @@ static void toQuadraticTs(const SkDCubic* cubic, double precision, SkTArray<doub
 void CubicToQuads(const SkDCubic& cubic, double precision, SkTArray<SkDQuad, true>& quads) {
     SkTArray<double, true> ts;
     toQuadraticTs(&cubic, precision, &ts);
-    if (ts.empty()) {
+    if (ts.count() <= 0) {
         SkDQuad quad = cubic.toQuad();
         quads.push_back(quad);
         return;
     }
     double tStart = 0;
-    for (int i1 = 0; i1 <= ts.size(); ++i1) {
-        const double tEnd = i1 < ts.size() ? ts[i1] : 1;
+    for (int i1 = 0; i1 <= ts.count(); ++i1) {
+        const double tEnd = i1 < ts.count() ? ts[i1] : 1;
         SkDRect bounds;
         bounds.setBounds(cubic);
         SkDCubic part = cubic.subDivide(tStart, tEnd);
@@ -177,22 +164,25 @@ void CubicPathToQuads(const SkPath& cubicPath, SkPath* quadPath) {
     quadPath->reset();
     SkDCubic cubic;
     SkTArray<SkDQuad, true> quads;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(cubicPath)) {
+    SkPath::RawIter iter(cubicPath);
+    uint8_t verb;
+    SkPoint pts[4];
+    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
         switch (verb) {
-            case SkPathVerb::kMove:
+            case SkPath::kMove_Verb:
                 quadPath->moveTo(pts[0].fX, pts[0].fY);
                 continue;
-            case SkPathVerb::kLine:
+            case SkPath::kLine_Verb:
                 quadPath->lineTo(pts[1].fX, pts[1].fY);
                 break;
-            case SkPathVerb::kQuad:
+            case SkPath::kQuad_Verb:
                 quadPath->quadTo(pts[1].fX, pts[1].fY, pts[2].fX, pts[2].fY);
                 break;
-            case SkPathVerb::kCubic:
-                quads.clear();
+            case SkPath::kCubic_Verb:
+                quads.reset();
                 cubic.set(pts);
                 CubicToQuads(cubic, cubic.calcPrecision(), quads);
-                for (int index = 0; index < quads.size(); ++index) {
+                for (int index = 0; index < quads.count(); ++index) {
                     SkPoint qPts[2] = {
                         quads[index][1].asSkPoint(),
                         quads[index][2].asSkPoint()
@@ -200,7 +190,7 @@ void CubicPathToQuads(const SkPath& cubicPath, SkPath* quadPath) {
                     quadPath->quadTo(qPts[0].fX, qPts[0].fY, qPts[1].fX, qPts[1].fY);
                 }
                 break;
-            case SkPathVerb::kClose:
+            case SkPath::kClose_Verb:
                  quadPath->close();
                 break;
             default:
@@ -213,24 +203,26 @@ void CubicPathToQuads(const SkPath& cubicPath, SkPath* quadPath) {
 void CubicPathToSimple(const SkPath& cubicPath, SkPath* simplePath) {
     simplePath->reset();
     SkDCubic cubic;
-    for (auto [verb, pts, w] : SkPathPriv::Iterate(cubicPath)) {
+    SkPath::RawIter iter(cubicPath);
+    uint8_t verb;
+    SkPoint pts[4];
+    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
         switch (verb) {
-            case SkPathVerb::kMove:
+            case SkPath::kMove_Verb:
                 simplePath->moveTo(pts[0].fX, pts[0].fY);
                 continue;
-            case SkPathVerb::kLine:
+            case SkPath::kLine_Verb:
                 simplePath->lineTo(pts[1].fX, pts[1].fY);
                 break;
-            case SkPathVerb::kQuad:
+            case SkPath::kQuad_Verb:
                 simplePath->quadTo(pts[1].fX, pts[1].fY, pts[2].fX, pts[2].fY);
                 break;
-            case SkPathVerb::kCubic: {
+            case SkPath::kCubic_Verb: {
                 cubic.set(pts);
                 double tInflects[2];
                 int inflections = cubic.findInflections(tInflects);
                 if (inflections > 1 && tInflects[0] > tInflects[1]) {
-                    using std::swap;
-                    swap(tInflects[0], tInflects[1]);
+                    SkTSwap(tInflects[0], tInflects[1]);
                 }
                 double lo = 0;
                 for (int index = 0; index <= inflections; ++index) {
@@ -246,7 +238,7 @@ void CubicPathToSimple(const SkPath& cubicPath, SkPath* simplePath) {
                 }
                 break;
             }
-            case SkPathVerb::kClose:
+            case SkPath::kClose_Verb:
                  simplePath->close();
                 break;
             default:
@@ -254,6 +246,10 @@ void CubicPathToSimple(const SkPath& cubicPath, SkPath* simplePath) {
                 return;
         }
     }
+}
+
+static bool SkDoubleIsNaN(double x) {
+    return x != x;
 }
 
 bool ValidBounds(const SkPathOpsBounds& bounds) {

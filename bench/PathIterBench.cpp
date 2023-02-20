@@ -4,25 +4,15 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "bench/Benchmark.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColorPriv.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkPathPriv.h"
-
-enum class PathIterType {
-    kIter,
-    kRaw,
-    kEdge,
-};
-const char* gPathIterNames[] = {
-    "iter", "raw", "edge"
-};
+#include "Benchmark.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkColorPriv.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRandom.h"
+#include "SkShader.h"
+#include "SkString.h"
 
 static int rand_pts(SkRandom& rand, SkPoint pts[4]) {
     int n = rand.nextU() & 3;
@@ -36,16 +26,14 @@ static int rand_pts(SkRandom& rand, SkPoint pts[4]) {
 }
 
 class PathIterBench : public Benchmark {
-    SkString        fName;
-    SkPath          fPath;
-    PathIterType    fType;
-
-    int fVerbInc = 0;
-    SkScalar fXInc = 0, fYInc = 0;
+    SkString    fName;
+    SkPath      fPath;
+    bool        fRaw;
 
 public:
-    PathIterBench(PathIterType t) : fType(t) {
-        fName.printf("pathiter_%s", gPathIterNames[static_cast<unsigned>(t)]);
+    PathIterBench(bool raw)  {
+        fName.printf("pathiter_%s", raw ? "raw" : "consume");
+        fRaw = raw;
 
         SkRandom rand;
         for (int i = 0; i < 1000; ++i) {
@@ -78,49 +66,30 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas*) override {
-        // Need to do *something* with the results, so the compile doesn't elide
-        // away the code we want to time.
-        auto handle = [this](int verb, const SkPoint pts[]) {
-            fVerbInc += verb;
-            fXInc += pts[0].fX;
-            fYInc += pts[0].fY;
-        };
+        if (fRaw) {
+            for (int i = 0; i < loops; ++i) {
+                SkPath::RawIter iter(fPath);
+                SkPath::Verb verb;
+                SkPoint      pts[4];
 
-        switch (fType) {
-            case PathIterType::kIter:
-                for (int i = 0; i < loops; ++i) {
-                    SkPath::Iter iter(fPath, true);
-                    SkPath::Verb verb;
-                    SkPoint      pts[4];
-                    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
-                        handle(verb, pts);
-                    }
-                }
-                break;
-            case PathIterType::kRaw:
-                for (int i = 0; i < loops; ++i) {
-                    for (auto [verb, pts, w] : SkPathPriv::Iterate(fPath)) {
-                        handle((SkPath::Verb)verb, pts);
-                    }
-                }
-                break;
-            case PathIterType::kEdge:
-                for (int i = 0; i < loops; ++i) {
-                    SkPathEdgeIter iter(fPath);
-                    while (auto r = iter.next()) {
-                        handle((int)r.fEdge, r.fPts);
-                    }
-                }
-                break;
+                while ((verb = iter.next(pts)) != SkPath::kDone_Verb) { }
+            }
+        } else {
+            for (int i = 0; i < loops; ++i) {
+                SkPath::Iter iter(fPath, false);
+                SkPath::Verb verb;
+                SkPoint      pts[4];
+
+                while ((verb = iter.next(pts)) != SkPath::kDone_Verb) { }
+            }
         }
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-DEF_BENCH( return new PathIterBench(PathIterType::kIter); )
-DEF_BENCH( return new PathIterBench(PathIterType::kRaw); )
-DEF_BENCH( return new PathIterBench(PathIterType::kEdge); )
+DEF_BENCH( return new PathIterBench(false); )
+DEF_BENCH( return new PathIterBench(true); )

@@ -4,67 +4,33 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
+ 
 #ifndef SKSL_TYPEREFERENCE
 #define SKSL_TYPEREFERENCE
 
-#include "include/private/SkSLIRNode.h"
-#include "include/sksl/SkSLPosition.h"
-#include "src/sksl/SkSLBuiltinTypes.h"
-#include "src/sksl/SkSLContext.h"
-#include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLType.h"
-
-#include <cstdint>
-#include <memory>
-#include <string>
+#include "SkSLContext.h"
+#include "SkSLExpression.h"
 
 namespace SkSL {
 
-enum class OperatorPrecedence : uint8_t;
-
 /**
- * Represents an identifier referring to a type. This is an intermediate value: TypeReferences are
+ * Represents an identifier referring to a type. This is an intermediate value: TypeReferences are 
  * always eventually replaced by Constructors in valid programs.
  */
-class TypeReference final : public Expression {
-public:
-    inline static constexpr Kind kIRNodeKind = Kind::kTypeReference;
+struct TypeReference : public Expression {
+    TypeReference(const Context& context, Position position, const Type& type)
+    : INHERITED(position, kTypeReference_Kind, *context.fInvalid_Type)
+    , fValue(type) {}
 
-    TypeReference(const Context& context, Position pos, const Type* value)
-        : TypeReference(pos, value, context.fTypes.fInvalid.get()) {}
-
-    // Creates a reference to an SkSL type; uses the ErrorReporter to report errors.
-    static std::unique_ptr<TypeReference> Convert(const Context& context,
-                                                  Position pos,
-                                                  const Type* type);
-
-    // Creates a reference to an SkSL type; reports errors via ASSERT.
-    static std::unique_ptr<TypeReference> Make(const Context& context, Position pos,
-            const Type* type);
-
-    const Type& value() const {
-        return fValue;
+    std::string description() const override {
+        return fValue.name();
     }
-
-    std::string description(OperatorPrecedence) const override {
-        return std::string(this->value().name());
-    }
-
-    std::unique_ptr<Expression> clone(Position pos) const override {
-        return std::unique_ptr<Expression>(new TypeReference(pos, &this->value(), &this->type()));
-    }
-
-private:
-    TypeReference(Position pos, const Type* value, const Type* type)
-        : INHERITED(pos, kIRNodeKind, type)
-        , fValue(*value) {}
 
     const Type& fValue;
 
-    using INHERITED = Expression;
+    typedef Expression INHERITED;
 };
 
-}  // namespace SkSL
+} // namespace
 
 #endif

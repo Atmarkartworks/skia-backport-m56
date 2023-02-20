@@ -8,10 +8,8 @@
 #ifndef SkCGUtils_DEFINED
 #define SkCGUtils_DEFINED
 
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPixmap.h"
-#include "include/core/SkSize.h"
+#include "SkSize.h"
+#include "SkImageInfo.h"
 
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 
@@ -25,10 +23,7 @@
 
 class SkBitmap;
 class SkData;
-class SkPixmap;
 class SkStreamRewindable;
-
-SK_API CGContextRef SkCreateCGContext(const SkPixmap&);
 
 /**
  *  Given a CGImage, allocate an SkBitmap and copy the image's pixels into it. If scaleToFit is not
@@ -37,9 +32,7 @@ SK_API CGContextRef SkCreateCGContext(const SkPixmap&);
  *
  *  On failure, return false, and leave bitmap unchanged.
  */
-SK_API bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef src);
-
-SK_API sk_sp<SkImage> SkMakeImageFromCGImage(CGImageRef);
+SK_API bool SkCreateBitmapFromCGImage(SkBitmap* dst, CGImageRef src, SkISize* scaleToFit = NULL);
 
 /**
  *  Copy the pixels from src into the memory specified by info/rowBytes/dstPixels. On failure,
@@ -47,9 +40,6 @@ SK_API sk_sp<SkImage> SkMakeImageFromCGImage(CGImageRef);
  */
 SK_API bool SkCopyPixelsFromCGImage(const SkImageInfo& info, size_t rowBytes, void* dstPixels,
                                     CGImageRef src);
-static inline bool SkCopyPixelsFromCGImage(const SkPixmap& dst, CGImageRef src) {
-    return SkCopyPixelsFromCGImage(dst.info(), dst.rowBytes(), dst.writable_addr(), src);
-}
 
 /**
  *  Create an imageref from the specified bitmap using the specified colorspace.
@@ -63,7 +53,7 @@ SK_API CGImageRef SkCreateCGImageRefWithColorspace(const SkBitmap& bm,
  *  by CGColorSpaceCreateDeviceRGB()
  */
 static inline CGImageRef SkCreateCGImageRef(const SkBitmap& bm) {
-    return SkCreateCGImageRefWithColorspace(bm, nil);
+    return SkCreateCGImageRefWithColorspace(bm, NULL);
 }
 
 /**
@@ -73,6 +63,14 @@ static inline CGImageRef SkCreateCGImageRef(const SkBitmap& bm) {
  *  colorspace returned by CGColorSpaceCreateDeviceRGB()
  */
 void SkCGDrawBitmap(CGContextRef, const SkBitmap&, float x, float y);
+
+/**
+ *  Return a provider that wraps the specified stream.
+ *  When the provider is finally deleted, it will delete the stream.
+ */
+CGDataProviderRef SkCreateDataProviderFromStream(std::unique_ptr<SkStreamRewindable>);
+
+CGDataProviderRef SkCreateDataProviderFromData(sk_sp<SkData>);
 
 #endif  // defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 #endif  // SkCGUtils_DEFINED

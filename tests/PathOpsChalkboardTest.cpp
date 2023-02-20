@@ -4,27 +4,15 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPath.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkFloatBits.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkRandom.h"
-#include "tests/PathOpsExtendedTest.h"
-#include "tests/PathOpsThreadedCommon.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
+#include "PathOpsExtendedTest.h"
+#include "PathOpsThreadedCommon.h"
+#include "SkRandom.h"
 
 #define TEST(name) { name, #name }
 
-static std::atomic<int> gTestNo{0};
-
 static void chalkboard(skiatest::Reporter* reporter, uint64_t testlines) {
     SkPath path;
+    path.setFillType((SkPath::FillType) 0);
 uint64_t i = 0;
 path.moveTo(SkBits2Float(0x4470eed9), SkBits2Float(0x439c1ac1));  // 963.732f, 312.209f
 if (testlines & (1LL << i++)) path.lineTo(SkBits2Float(0x4470dde3), SkBits2Float(0x439c63d8));  // 963.467f, 312.78f
@@ -93,9 +81,8 @@ if (testlines & (1LL << i++)) path.cubicTo(SkBits2Float(0x4470f5e4), SkBits2Floa
 if (testlines & (1LL << i++)) path.cubicTo(SkBits2Float(0x4470e8f6), SkBits2Float(0x439c4e35), SkBits2Float(0x4470ee98), SkBits2Float(0x439c5333), SkBits2Float(0x4470eed9), SkBits2Float(0x439c1ac1));  // 963.64f, 312.611f, 963.728f, 312.65f, 963.732f, 312.209f
 SkASSERT(64 == i);
 path.close();
-SkString testName;
-testName.printf("chalkboard%d", ++gTestNo);
-testSimplify(reporter, path, testName.c_str());
+
+testSimplify(reporter, path, "chalkboard");
 }
 
 static void testChalkboard(PathOpsThreadState* data) {
@@ -150,7 +137,6 @@ static void chalkboard_threaded(skiatest::Reporter* reporter, const char* filena
                         }
                         break;
                     }
-                    [[fallthrough]];
                 default:
                     testlines = 0;
                     for (int i = 0; i < bitCount; ++i) {
@@ -179,16 +165,16 @@ static void chalkboard_1(skiatest::Reporter* reporter, const char* filename) {
     chalkboard(reporter, testlines);
 }
 
-static void (*skipTest)(skiatest::Reporter* , const char* filename) = nullptr;
-static void (*firstTest)(skiatest::Reporter* , const char* filename) = nullptr;
-static void (*stopTest)(skiatest::Reporter* , const char* filename) = nullptr;
+static void (*skipTest)(skiatest::Reporter* , const char* filename) = 0;
+static void (*firstTest)(skiatest::Reporter* , const char* filename) = 0;
+static void (*stopTest)(skiatest::Reporter* , const char* filename) = 0;
 
 static TestDesc tests[] = {
     TEST(chalkboard_1),
     TEST(chalkboard_threaded),
 };
 
-static const size_t testCount = std::size(tests);
+static const size_t testCount = SK_ARRAY_COUNT(tests);
 static bool runReverse = false;
 
 DEF_TEST(PathOpsChalkboard, reporter) {

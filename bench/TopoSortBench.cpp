@@ -5,18 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
-#include "src/gpu/ganesh/GrTTopoSort.h"
+#include "Benchmark.h"
+#include "SkRandom.h"
+#include "SkString.h"
+#include "SkTTopoSort.h"
 
-#include "tools/ToolUtils.h"
+#include "sk_tool_utils.h"
 
 class TopoSortBench : public Benchmark {
 public:
     TopoSortBench() { }
 
     ~TopoSortBench() override {
+        sk_tool_utils::TopoTestNode::DeallocNodes(&fGraph);
     }
 
     bool isSuitableFor(Backend backend) override {
@@ -30,7 +31,7 @@ protected:
 
     // Delayed initialization only done if onDraw will be called.
     void onDelayedSetup() override {
-        ToolUtils::TopoTestNode::AllocNodes(&fGraph, kNumElements);
+        sk_tool_utils::TopoTestNode::AllocNodes(&fGraph, kNumElements);
 
         for (int i = kNumElements-1; i > 0; --i) {
             int numEdges = fRand.nextU() % (kMaxEdges+1);
@@ -38,24 +39,24 @@ protected:
             for (int j = 0; j < numEdges; ++j) {
                 int dep = fRand.nextU() % i;
 
-                fGraph[i]->dependsOn(fGraph[dep].get());
+                fGraph[i]->dependsOn(fGraph[dep]);
             }
         }
     }
 
     void onDraw(int loops, SkCanvas*) override {
         for (int i = 0; i < loops; ++i) {
-            for (int j = 0; j < fGraph.size(); ++j) {
+            for (int j = 0; j < fGraph.count(); ++j) {
                 fGraph[j]->reset();
             }
 
-            ToolUtils::TopoTestNode::Shuffle(fGraph, &fRand);
+            sk_tool_utils::TopoTestNode::Shuffle(&fGraph, &fRand);
 
-            SkDEBUGCODE(bool actualResult =) GrTTopoSort<ToolUtils::TopoTestNode>(fGraph);
+            SkDEBUGCODE(bool actualResult =) SkTTopoSort<sk_tool_utils::TopoTestNode>(&fGraph);
             SkASSERT(actualResult);
 
 #ifdef SK_DEBUG
-            for (int j = 0; j < fGraph.size(); ++j) {
+            for (int j = 0; j < fGraph.count(); ++j) {
                 SkASSERT(fGraph[j]->check());
             }
 #endif
@@ -66,10 +67,10 @@ private:
     static const int kNumElements = 1000;
     static const int kMaxEdges = 5;
 
-    SkTArray<sk_sp<ToolUtils::TopoTestNode>> fGraph;
+    SkTDArray<sk_tool_utils::TopoTestNode*> fGraph;
     SkRandom fRand;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

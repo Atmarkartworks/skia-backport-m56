@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
+
 #ifndef SkAntiRun_DEFINED
 #define SkAntiRun_DEFINED
 
-#include "include/private/base/SkTo.h"
-#include "src/core/SkBlitter.h"
+#include "SkBlitter.h"
 
 /** Sparse array of run-length-encoded alpha (supersampling coverage) values.
     Sparseness allows us to independently compose several paths into the

@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkFontMgr.h"
-#include "include/ports/SkFontMgr_empty.h"
+#include "SkFontMgr.h"
+#include "SkFontMgr_custom.h"
 
-sk_sp<SkFontMgr> SkFontMgr::Factory() {
+SkFontMgr* SkFontMgr::Factory() {
     return SkFontMgr_New_Custom_Empty();
 }

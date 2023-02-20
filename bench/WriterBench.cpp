@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "src/core/SkWriter32.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkWriter32.h"
 
 class WriterBench : public Benchmark {
 public:
@@ -32,7 +32,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

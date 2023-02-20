@@ -5,16 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/base/SkTArray.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkRandom.h"
-#include "src/gpu/ganesh/GrMemoryPool.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
+#include "Test.h"
+// This is a GPU-backend specific test
+#if SK_SUPPORT_GPU
+#include "GrMemoryPool.h"
+#include "SkRandom.h"
+#include "SkTDArray.h"
+#include "SkTemplates.h"
 
 // A is the top of an inheritance tree of classes that overload op new and
 // and delete to use a GrMemoryPool. The objects have values of different types
@@ -23,15 +20,15 @@ class A {
 public:
     A() {}
     virtual void setValues(int v) {
-        fChar = static_cast<char>(v & 0xFF);
+        fChar = static_cast<char>(v);
     }
     virtual bool checkValues(int v) {
-        return fChar == static_cast<char>(v & 0xFF);
+        return fChar == static_cast<char>(v);
     }
     virtual ~A() {}
 
     void* operator new(size_t size) {
-        if (!gPool) {
+        if (!gPool.get()) {
             return ::operator new(size);
         } else {
             return gPool->allocate(size);
@@ -39,7 +36,7 @@ public:
     }
 
     void operator delete(void* p) {
-        if (!gPool) {
+        if (!gPool.get()) {
             ::operator delete(p);
         } else {
             return gPool->release(p);
@@ -49,15 +46,12 @@ public:
     static A* Create(SkRandom* r);
 
     static void SetAllocator(size_t preallocSize, size_t minAllocSize) {
-        gPool = GrMemoryPool::Make(preallocSize, minAllocSize);
+        GrMemoryPool* pool = new GrMemoryPool(preallocSize, minAllocSize);
+        gPool.reset(pool);
     }
 
-    static void ResetAllocator() { gPool.reset(); }
-
-    static void ValidatePool() {
-#ifdef SK_DEBUG
-        gPool->validate();
-#endif
+    static void ResetAllocator() {
+        gPool.reset(nullptr);
     }
 
 private:
@@ -70,37 +64,39 @@ std::unique_ptr<GrMemoryPool> A::gPool;
 class B : public A {
 public:
     B() {}
-    void setValues(int v) override {
+    virtual void setValues(int v) {
         fDouble = static_cast<double>(v);
         this->INHERITED::setValues(v);
     }
-    bool checkValues(int v) override {
+    virtual bool checkValues(int v) {
         return fDouble == static_cast<double>(v) &&
                this->INHERITED::checkValues(v);
     }
+    virtual ~B() {}
 
 private:
     double fDouble;
 
-    using INHERITED = A;
+    typedef A INHERITED;
 };
 
 class C : public A {
 public:
     C() {}
-    void setValues(int v) override {
+    virtual void setValues(int v) {
         fInt64 = static_cast<int64_t>(v);
         this->INHERITED::setValues(v);
     }
-    bool checkValues(int v) override {
+    virtual bool checkValues(int v) {
         return fInt64 == static_cast<int64_t>(v) &&
                this->INHERITED::checkValues(v);
     }
+    virtual ~C() {}
 
 private:
     int64_t fInt64;
 
-    using INHERITED = A;
+    typedef A INHERITED;
 };
 
 // D derives from C and owns a dynamically created B
@@ -109,48 +105,49 @@ public:
     D() {
         fB = new B();
     }
-    void setValues(int v) override {
+    virtual void setValues(int v) {
         fVoidStar = reinterpret_cast<void*>(static_cast<intptr_t>(v));
         this->INHERITED::setValues(v);
         fB->setValues(v);
     }
-    bool checkValues(int v) override {
+    virtual bool checkValues(int v) {
         return fVoidStar == reinterpret_cast<void*>(static_cast<intptr_t>(v)) &&
                fB->checkValues(v) &&
                this->INHERITED::checkValues(v);
     }
-    ~D() override {
+    virtual ~D() {
         delete fB;
     }
 private:
     void*   fVoidStar;
     B*      fB;
 
-    using INHERITED = C;
+    typedef C INHERITED;
 };
 
 class E : public A {
 public:
     E() {}
-    void setValues(int v) override {
-        for (size_t i = 0; i < std::size(fIntArray); ++i) {
+    virtual void setValues(int v) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fIntArray); ++i) {
             fIntArray[i] = v;
         }
         this->INHERITED::setValues(v);
     }
-    bool checkValues(int v) override {
+    virtual bool checkValues(int v) {
         bool ok = true;
-        for (size_t i = 0; ok && i < std::size(fIntArray); ++i) {
+        for (size_t i = 0; ok && i < SK_ARRAY_COUNT(fIntArray); ++i) {
             if (fIntArray[i] != v) {
                 ok = false;
             }
         }
         return ok && this->INHERITED::checkValues(v);
     }
+    virtual ~E() {}
 private:
     int   fIntArray[20];
 
-    using INHERITED = A;
+    typedef A INHERITED;
 };
 
 A* A::Create(SkRandom* r) {
@@ -186,7 +183,6 @@ DEF_TEST(GrMemoryPool, reporter) {
         {10000 * sizeof(A), 0},
         {1, 100 * sizeof(A)},
     };
-
     // different percentages of creation vs deletion
     static const float gCreateFraction[] = {1.f, .95f, 0.75f, .5f};
     // number of create/destroys per test
@@ -196,34 +192,34 @@ DEF_TEST(GrMemoryPool, reporter) {
     static const int kCheckPeriod = 500;
 
     SkRandom r;
-    for (size_t s = 0; s < std::size(gSizes); ++s) {
+    for (size_t s = 0; s < SK_ARRAY_COUNT(gSizes); ++s) {
         A::SetAllocator(gSizes[s][0], gSizes[s][1]);
-        A::ValidatePool();
-        for (size_t c = 0; c < std::size(gCreateFraction); ++c) {
+        for (size_t c = 0; c < SK_ARRAY_COUNT(gCreateFraction); ++c) {
             SkTDArray<Rec> instanceRecs;
             for (int i = 0; i < kNumIters; ++i) {
                 float createOrDestroy = r.nextUScalar1();
                 if (createOrDestroy < gCreateFraction[c] ||
-                    0 == instanceRecs.size()) {
+                    0 == instanceRecs.count()) {
                     Rec* rec = instanceRecs.append();
                     rec->fInstance = A::Create(&r);
                     rec->fValue = static_cast<int>(r.nextU());
                     rec->fInstance->setValues(rec->fValue);
                 } else {
-                    int d = r.nextRangeU(0, instanceRecs.size() - 1);
+                    int d = r.nextRangeU(0, instanceRecs.count() - 1);
                     Rec& rec = instanceRecs[d];
                     REPORTER_ASSERT(reporter, rec.fInstance->checkValues(rec.fValue));
                     delete rec.fInstance;
                     instanceRecs.removeShuffle(d);
                 }
                 if (0 == i % kCheckPeriod) {
-                    A::ValidatePool();
-                    for (Rec& rec : instanceRecs) {
+                    for (int r = 0; r < instanceRecs.count(); ++r) {
+                        Rec& rec = instanceRecs[r];
                         REPORTER_ASSERT(reporter, rec.fInstance->checkValues(rec.fValue));
                     }
                 }
             }
-            for (Rec& rec : instanceRecs) {
+            for (int i = 0; i < instanceRecs.count(); ++i) {
+                Rec& rec = instanceRecs[i];
                 REPORTER_ASSERT(reporter, rec.fInstance->checkValues(rec.fValue));
                 delete rec.fInstance;
             }
@@ -231,89 +227,4 @@ DEF_TEST(GrMemoryPool, reporter) {
     }
 }
 
-// GrMemoryPool requires that it's empty at the point of destruction. This helps
-// achieving that by releasing all added memory in the destructor.
-class AutoPoolReleaser {
-public:
-    AutoPoolReleaser(GrMemoryPool& pool): fPool(pool) {
-    }
-    ~AutoPoolReleaser() {
-        for (void* ptr: fAllocated) {
-            fPool.release(ptr);
-        }
-    }
-    void add(void* ptr) {
-        fAllocated.push_back(ptr);
-    }
-private:
-    GrMemoryPool& fPool;
-    SkTArray<void*> fAllocated;
-};
-
-DEF_TEST(GrMemoryPoolAPI, reporter) {
-    constexpr size_t kSmallestMinAllocSize = GrMemoryPool::kMinAllocationSize;
-
-    // Allocates memory until pool adds a new block (pool->size() changes).
-    auto allocateMemory = [](GrMemoryPool& pool, AutoPoolReleaser& r) {
-        size_t origPoolSize = pool.size();
-        while (pool.size() == origPoolSize) {
-            r.add(pool.allocate(31));
-        }
-    };
-
-    // Effective prealloc space capacity is >= kMinAllocationSize.
-    {
-        auto pool = GrMemoryPool::Make(0, 0);
-        REPORTER_ASSERT(reporter, pool->preallocSize() == kSmallestMinAllocSize);
-    }
-
-    // Effective block size capacity >= kMinAllocationSize.
-    {
-        auto pool = GrMemoryPool::Make(kSmallestMinAllocSize, kSmallestMinAllocSize / 2);
-        AutoPoolReleaser r(*pool);
-
-        allocateMemory(*pool, r);
-        REPORTER_ASSERT(reporter, pool->size() == kSmallestMinAllocSize);
-    }
-
-    // Pool allocates exactly preallocSize on creation.
-    {
-        constexpr size_t kPreallocSize = kSmallestMinAllocSize * 5;
-        auto pool = GrMemoryPool::Make(kPreallocSize, 0);
-        REPORTER_ASSERT(reporter, pool->preallocSize() == kPreallocSize);
-    }
-
-    // Pool allocates exactly minAllocSize when it expands.
-    {
-        constexpr size_t kMinAllocSize = kSmallestMinAllocSize * 7;
-        auto pool = GrMemoryPool::Make(0, kMinAllocSize);
-        AutoPoolReleaser r(*pool);
-        REPORTER_ASSERT(reporter, pool->size() == 0);
-
-        allocateMemory(*pool, r);
-        REPORTER_ASSERT(reporter, pool->size() == kMinAllocSize);
-
-        allocateMemory(*pool, r);
-        REPORTER_ASSERT(reporter, pool->size() == 2 * kMinAllocSize);
-    }
-
-    // When asked to allocate amount > minAllocSize, pool allocates larger block
-    // to accommodate all internal structures.
-    {
-        constexpr size_t kMinAllocSize = kSmallestMinAllocSize * 2;
-        auto pool = GrMemoryPool::Make(kSmallestMinAllocSize, kMinAllocSize);
-        AutoPoolReleaser r(*pool);
-
-        REPORTER_ASSERT(reporter, pool->size() == 0);
-
-        constexpr size_t hugeSize = 10 * kMinAllocSize;
-        r.add(pool->allocate(hugeSize));
-        REPORTER_ASSERT(reporter, pool->size() > hugeSize);
-
-        // Block size allocated to accommodate huge request doesn't include any extra
-        // space, so next allocation request allocates a new block.
-        size_t hugeBlockSize = pool->size();
-        r.add(pool->allocate(0));
-        REPORTER_ASSERT(reporter, pool->size() == hugeBlockSize + kMinAllocSize);
-    }
-}
+#endif

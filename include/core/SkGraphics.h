@@ -8,13 +8,10 @@
 #ifndef SkGraphics_DEFINED
 #define SkGraphics_DEFINED
 
-#include "include/core/SkRefCnt.h"
-
-#include <memory>
+#include "SkTypes.h"
 
 class SkData;
 class SkImageGenerator;
-class SkOpenTypeSVGDecoder;
 class SkTraceMemoryDump;
 
 class SK_API SkGraphics {
@@ -25,6 +22,15 @@ public:
      *  Init() is thread-safe and idempotent.
      */
     static void Init();
+
+    // We're in the middle of cleaning this up.
+    static void Term() {}
+
+    /**
+     *  Return the version numbers for the library. If the parameter is not
+     *  null, it is set to the version number.
+     */
+    static void GetVersion(int32_t* major, int32_t* minor, int32_t* patch);
 
     /**
      *  Return the max number of bytes that should be used by the font cache.
@@ -74,7 +80,11 @@ public:
     static void PurgeFontCache();
 
     /**
-     *  This function returns the memory used for temporary images and other resources.
+     *  Scaling bitmaps with the kHigh_SkFilterQuality setting is
+     *  expensive, so the result is saved in the global Scaled Image
+     *  Cache.
+     *
+     *  This function returns the memory usage of the Scaled Image Cache.
      */
     static size_t GetResourceCacheTotalBytesUsed();
 
@@ -127,8 +137,27 @@ public:
      */
     static void SetFlags(const char* flags);
 
-    typedef std::unique_ptr<SkImageGenerator>
-                                            (*ImageGeneratorFromEncodedDataFactory)(sk_sp<SkData>);
+    /**
+     *  Return the max number of bytes that should be used by the thread-local
+     *  font cache.
+     *  If the cache needs to allocate more, it will purge previous entries.
+     *  This max can be changed by calling SetFontCacheLimit().
+     *
+     *  If this thread has never called SetTLSFontCacheLimit, or has called it
+     *  with 0, then this thread is using the shared font cache. In that case,
+     *  this function will always return 0, and the caller may want to call
+     *  GetFontCacheLimit.
+     */
+    static size_t GetTLSFontCacheLimit();
+
+    /**
+     *  Specify the max number of bytes that should be used by the thread-local
+     *  font cache. If this value is 0, then this thread will use the shared
+     *  global font cache.
+     */
+    static void SetTLSFontCacheLimit(size_t bytes);
+
+    typedef SkImageGenerator* (*ImageGeneratorFromEncodedFactory)(SkData*);
 
     /**
      *  To instantiate images from encoded data, first looks at this runtime function-ptr. If it
@@ -137,25 +166,8 @@ public:
      *
      *  Returns the previous factory (which could be NULL).
      */
-    static ImageGeneratorFromEncodedDataFactory
-                    SetImageGeneratorFromEncodedDataFactory(ImageGeneratorFromEncodedDataFactory);
-
-    /**
-     *  To draw OpenType SVG data, Skia will look at this runtime function pointer. If this function
-     *  pointer is set, the SkTypeface implementations which support OpenType SVG will call this
-     *  function to create an SkOpenTypeSVGDecoder to decode the OpenType SVG and draw it as needed.
-     *  If this function is not set, the SkTypeface implementations will generally not support
-     *  OpenType SVG and attempt to use other glyph representations if available.
-     */
-    using OpenTypeSVGDecoderFactory =
-            std::unique_ptr<SkOpenTypeSVGDecoder> (*)(const uint8_t* svg, size_t length);
-    static OpenTypeSVGDecoderFactory SetOpenTypeSVGDecoderFactory(OpenTypeSVGDecoderFactory);
-    static OpenTypeSVGDecoderFactory GetOpenTypeSVGDecoderFactory();
-
-    /**
-     *  Call early in main() to allow Skia to use a JIT to accelerate CPU-bound operations.
-     */
-    static void AllowJIT();
+    static ImageGeneratorFromEncodedFactory
+           SetImageGeneratorFromEncodedFactory(ImageGeneratorFromEncodedFactory);
 };
 
 class SkAutoGraphics {

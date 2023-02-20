@@ -5,12 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathUtils.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRandom.h"
+#include "SkString.h"
 
 class StrokeBench : public Benchmark {
 public:
@@ -35,7 +34,7 @@ protected:
         for (int outer = 0; outer < 10; ++outer) {
             for (int i = 0; i < loops; ++i) {
                 SkPath result;
-                skpathutils::FillPathWithPaint(fPath, paint, &result, nullptr, fRes);
+                paint.getFillPath(fPath, &result, nullptr, fRes);
             }
         }
     }
@@ -45,7 +44,7 @@ private:
     SkPaint     fPaint;
     SkString    fName;
     SkScalar    fRes;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

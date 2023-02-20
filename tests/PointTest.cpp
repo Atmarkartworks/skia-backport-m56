@@ -4,28 +4,20 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+// Unit tests for src/core/SkPoint.cpp and its header
 
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/core/SkPointPriv.h"
-#include "tests/Test.h"
-
-#include <cfloat>
-#include <cstdint>
-#include <cstring>
-#include <string>
+#include "SkPoint.h"
+#include "SkRect.h"
+#include "Test.h"
 
 static void test_casts(skiatest::Reporter* reporter) {
     SkPoint p = { 0, 0 };
     SkRect  r = { 0, 0, 0, 0 };
 
-    const SkScalar* pPtr = reinterpret_cast<const SkScalar*>(&p);
-    const SkScalar* rPtr = reinterpret_cast<const SkScalar*>(&r);
+    const SkScalar* pPtr = SkTCast<const SkScalar*>(&p);
+    const SkScalar* rPtr = SkTCast<const SkScalar*>(&r);
 
-    REPORTER_ASSERT(reporter, SkPointPriv::AsScalars(p) == pPtr);
+    REPORTER_ASSERT(reporter, p.asScalars() == pPtr);
     REPORTER_ASSERT(reporter, r.asScalars() == rPtr);
 }
 
@@ -39,24 +31,6 @@ static void test_Normalize(skiatest::Reporter* reporter,
     SkScalar newLength = point.length();
     REPORTER_ASSERT(reporter, SkScalarNearlyEqual(returned, oldLength));
     REPORTER_ASSERT(reporter, SkScalarNearlyEqual(newLength, SK_Scalar1));
-}
-
-static void test_normalize_cannormalize_consistent(skiatest::Reporter* reporter) {
-    const SkScalar values[] = { 1, 1e18f, 1e20f, 1e38f, SK_ScalarInfinity, SK_ScalarNaN };
-
-    for (SkScalar val : values) {
-        const SkScalar variants[] = { val, -val, SkScalarInvert(val), -SkScalarInvert(val) };
-
-        for (SkScalar v : variants) {
-            const SkPoint pts[] = { { 0, v }, { v, 0 }, { 1, v }, { v, 1 }, { v, v } };
-
-            for (SkPoint p : pts) {
-                bool can = SkPointPriv::CanNormalize(p.fX, p.fY);
-                bool nor = p.normalize();
-                REPORTER_ASSERT(reporter, can == nor);
-            }
-        }
-    }
 }
 
 // Tests that SkPoint::length() and SkPoint::Length() both return
@@ -129,6 +103,19 @@ static void test_overflow(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, SkScalarNearlyEqual(length, SK_Scalar1));
 }
 
+// test that we handle very small values correctly. i.e. that we can
+// report failure if we try to normalize them.
+static void test_underflow(skiatest::Reporter* reporter) {
+    SkPoint pt = { 1.0e-37f, 1.0e-37f };
+    const SkPoint empty = { 0, 0 };
+
+    REPORTER_ASSERT(reporter, 0 == SkPoint::Normalize(&pt));
+    REPORTER_ASSERT(reporter, pt == empty);
+
+    REPORTER_ASSERT(reporter, !pt.setLength(SK_Scalar1));
+    REPORTER_ASSERT(reporter, pt == empty);
+}
+
 DEF_TEST(Point, reporter) {
     test_casts(reporter);
 
@@ -141,12 +128,12 @@ DEF_TEST(Point, reporter) {
         { 0.6f, 0.8f, SK_Scalar1 },
     };
 
-    for (size_t i = 0; i < std::size(gRec); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); ++i) {
         test_length(reporter, gRec[i].fX, gRec[i].fY, gRec[i].fLength);
     }
 
+    test_underflow(reporter);
     test_overflow(reporter);
-    test_normalize_cannormalize_consistent(reporter);
 }
 
 DEF_TEST(Point_setLengthFast, reporter) {
@@ -155,11 +142,11 @@ DEF_TEST(Point_setLengthFast, reporter) {
     const float tests[] = { 1.0f, 0.0f, 1.0e-37f, 3.4e38f, 42.0f, 0.00012f };
 
     const SkPoint kOne = {1.0f, 1.0f};
-    for (unsigned i = 0; i < std::size(tests); i++) {
+    for (unsigned i = 0; i < SK_ARRAY_COUNT(tests); i++) {
         SkPoint slow = kOne, fast = kOne;
 
         slow.setLength(tests[i]);
-        SkPointPriv::SetLengthFast(&fast, tests[i]);
+        fast.setLengthFast(tests[i]);
 
         if (slow.length() < FLT_MIN && fast.length() < FLT_MIN) continue;
 

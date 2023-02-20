@@ -5,24 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathEffect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "include/effects/SkTrimPathEffect.h"
-#include "include/private/base/SkTArray.h"
-#include "include/utils/SkParsePath.h"
-#include "tools/timer/TimeUtils.h"
-
-#include <math.h>
-#include <utility>
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
+#include "SkParsePath.h"
+#include "SkDashPathEffect.h"
 
 /*
  *  Inspired by http://code.google.com/p/chromium/issues/detail?id=112145
@@ -31,7 +18,7 @@ static void flower(SkCanvas* canvas, const SkPath& path, SkScalar intervals[2],
                    SkPaint::Join join) {
     SkPaint paint;
     paint.setAntiAlias(true);
-    paint.setStroke(true);
+    paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeJoin(join);
     paint.setStrokeWidth(42);
     canvas->drawPath(path, paint);
@@ -71,109 +58,3 @@ DEF_SIMPLE_GM(dashcubics, canvas, 865, 750) {
             }
         }
 }
-
-class TrimGM : public skiagm::GM {
-public:
-    TrimGM() {}
-
-    void onOnceBeforeDraw() override {
-        SkAssertResult(SkParsePath::FromSVGString(
-            "M   0,100 C  10, 50 190, 50 200,100"
-            "M 200,100 C 210,150 390,150 400,100"
-            "M 400,100 C 390, 50 210, 50 200,100"
-            "M 200,100 C 190,150  10,150   0,100",
-            &fPaths.push_back()));
-
-        SkAssertResult(SkParsePath::FromSVGString(
-            "M   0, 75 L 200, 75"
-            "M 200, 91 L 200, 91"
-            "M 200,108 L 200,108"
-            "M 200,125 L 400,125",
-            &fPaths.push_back()));
-
-        SkAssertResult(SkParsePath::FromSVGString(
-            "M   0,100 L  50, 50"
-            "M  50, 50 L 150,150"
-            "M 150,150 L 250, 50"
-            "M 250, 50 L 350,150"
-            "M 350,150 L 400,100",
-            &fPaths.push_back()));
-
-    }
-
-protected:
-    SkString onShortName() override { return SkString("trimpatheffect"); }
-
-    SkISize onISize() override {
-        return SkISize::Make(1400, 1000);
-    }
-
-    void onDraw(SkCanvas* canvas) override {
-        static constexpr SkSize kCellSize = { 440, 150 };
-        static constexpr SkScalar kOffsets[][2] = {
-            { -0.33f, -0.66f },
-            {  0    ,  1    },
-            {  0    ,  0.25f},
-            {  0.25f,  0.75f},
-            {  0.75f,  1    },
-            {  1    ,  0.75f},
-        };
-
-        SkPaint hairlinePaint;
-        hairlinePaint.setAntiAlias(true);
-        hairlinePaint.setStroke(true);
-        hairlinePaint.setStrokeCap(SkPaint::kRound_Cap);
-        hairlinePaint.setStrokeWidth(2);
-        SkPaint normalPaint = hairlinePaint;
-        normalPaint.setStrokeWidth(10);
-        normalPaint.setColor(0x8000ff00);
-        SkPaint invertedPaint = normalPaint;
-        invertedPaint.setColor(0x80ff0000);
-
-        for (const auto& offset : kOffsets) {
-            auto start = offset[0] + fOffset,
-                 stop  = offset[1] + fOffset;
-
-            auto normalMode   = SkTrimPathEffect::Mode::kNormal,
-                 invertedMode = SkTrimPathEffect::Mode::kInverted;
-            if (fOffset) {
-                start -= SkScalarFloorToScalar(start);
-                stop  -= SkScalarFloorToScalar(stop);
-                if (start > stop) {
-                    using std::swap;
-                    swap(start, stop);
-                    swap(normalMode, invertedMode);
-                }
-            }
-
-            normalPaint.setPathEffect(SkTrimPathEffect::Make(start, stop, normalMode));
-            invertedPaint.setPathEffect(SkTrimPathEffect::Make(start, stop, invertedMode));
-
-            {
-                SkAutoCanvasRestore acr(canvas, true);
-                for (const auto& path : fPaths) {
-                    canvas->drawPath(path, normalPaint);
-                    canvas->drawPath(path, invertedPaint);
-                    canvas->drawPath(path, hairlinePaint);
-                    canvas->translate(kCellSize.width(), 0);
-                }
-            }
-
-            canvas->translate(0, kCellSize.height());
-        }
-    }
-
-    bool onAnimate(double nanos) override {
-        fOffset = TimeUtils::NanosToMSec(nanos) / 2000.0f;
-        fOffset -= floorf(fOffset);
-        return true;
-    }
-
-private:
-    SkTArray<SkPath> fPaths;
-    SkScalar         fOffset = 0;
-
-    using INHERITED = skiagm::GM;
-};
-DEF_GM(return new TrimGM;)
-

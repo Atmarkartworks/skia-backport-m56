@@ -8,9 +8,11 @@
 #ifndef ImageSlide_DEFINED
 #define ImageSlide_DEFINED
 
-#include "include/core/SkImage.h"
-#include "include/core/SkPicture.h"
-#include "tools/viewer/Slide.h"
+#include "Slide.h"
+#include "SkPicture.h"
+#include "SkImage.h"
+
+static const char* kImageColorXformMetaData = "ImageColorSpaceXform";
 
 class ImageSlide : public Slide {
 public:
@@ -23,8 +25,10 @@ public:
     void unload() override;
 
 private:
-    SkString         fPath;
-    sk_sp<SkImage>   fImage;
+    SkString               fPath;
+    sk_sp<const SkImage>   fImage;
+    SkBitmap               fOriginalBitmap;
+    SkBitmap               fXformedBitmap;
 };
 
 #endif

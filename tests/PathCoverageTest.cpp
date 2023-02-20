@@ -5,17 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPoint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkSafe32.h"
-#include "src/base/SkMathPriv.h"
-#include "src/core/SkPointPriv.h"
-#include "tests/Test.h"
-
-#include <algorithm>
-#include <array>
-#include <cstdint>
+#include "SkMathPriv.h"
+#include "SkPoint.h"
+#include "SkScalar.h"
+#include "Test.h"
 
 /*
    Duplicates lots of code from gpu/src/GrPathUtils.cpp
@@ -49,7 +42,7 @@ static inline int estimate_distance(const SkPoint points[]) {
 }
 
 static inline SkScalar compute_distance(const SkPoint points[]) {
-    return SkPointPriv::DistanceToLineSegmentBetween(points[1], points[0], points[2]);
+    return points[1].distanceToLineSegmentBetween(points[0], points[2]);
 }
 
 static inline uint32_t estimate_pointCount(int distance) {
@@ -68,7 +61,7 @@ static inline uint32_t compute_pointCount(SkScalar d, SkScalar tol) {
        return 1;
     } else {
        int temp = SkScalarCeilToInt(SkScalarSqrt(d / tol));
-       uint32_t count = std::min<uint32_t>(SkNextPow2(temp), MAX_POINTS_PER_CURVE);
+       uint32_t count = SkMin32(SkNextPow2(temp), MAX_POINTS_PER_CURVE);
        return count;
     }
 }
@@ -131,9 +124,11 @@ static bool one_d_pe(const int* array, const unsigned int count,
         uint32_t estimatedCount =
             quadraticPointCount_EE(path);
 
-        if ((false)) { // avoid bit rot, suppress warning
-            computedCount = quadraticPointCount_EC(path, SkIntToScalar(1));
-            estimatedCount = quadraticPointCount_CE(path);
+        if (false) { // avoid bit rot, suppress warning
+            computedCount =
+                    quadraticPointCount_EC(path, SkIntToScalar(1));
+            estimatedCount =
+                    quadraticPointCount_CE(path);
         }
         // Allow estimated to be high by a factor of two, but no less than
         // the computed value.
@@ -155,11 +150,11 @@ static bool one_d_pe(const int* array, const unsigned int count,
 
 
 static void TestQuadPointCount(skiatest::Reporter* reporter) {
-    one_d_pe(gXY, std::size(gXY), reporter);
-    one_d_pe(gSawtooth, std::size(gSawtooth), reporter);
-    one_d_pe(gOvalish, std::size(gOvalish), reporter);
-    one_d_pe(gSharpSawtooth, std::size(gSharpSawtooth), reporter);
-    one_d_pe(gRibbon, std::size(gRibbon), reporter);
+    one_d_pe(gXY, SK_ARRAY_COUNT(gXY), reporter);
+    one_d_pe(gSawtooth, SK_ARRAY_COUNT(gSawtooth), reporter);
+    one_d_pe(gOvalish, SK_ARRAY_COUNT(gOvalish), reporter);
+    one_d_pe(gSharpSawtooth, SK_ARRAY_COUNT(gSharpSawtooth), reporter);
+    one_d_pe(gRibbon, SK_ARRAY_COUNT(gRibbon), reporter);
 }
 
 DEF_TEST(PathCoverage, reporter) {

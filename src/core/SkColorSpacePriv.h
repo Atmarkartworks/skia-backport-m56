@@ -4,83 +4,83 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#ifndef SkColorSpacePriv_DEFINED
-#define SkColorSpacePriv_DEFINED
 
-#include "include/core/SkColorSpace.h"
-#include "include/private/base/SkTemplates.h"
-#include "modules/skcms/skcms.h"
-
-namespace skvm {
-class Builder;
-struct Color;
-struct F32;
-struct Uniforms;
-}
-
-// A gamut narrower than sRGB, useful for testing.
-static constexpr skcms_Matrix3x3 gNarrow_toXYZD50 = {{
-    { 0.190974f,  0.404865f,  0.368380f },
-    { 0.114746f,  0.582937f,  0.302318f },
-    { 0.032925f,  0.153615f,  0.638669f },
-}};
+#define SkColorSpacePrintf(...)
 
 static inline bool color_space_almost_equal(float a, float b) {
     return SkTAbs(a - b) < 0.01f;
 }
 
-// Let's use a stricter version for transfer functions.  Worst case, these are encoded
-// in ICC format, which offers 16-bits of fractional precision.
-static inline bool transfer_fn_almost_equal(float a, float b) {
-    return SkTAbs(a - b) < 0.001f;
+static inline bool is_zero_to_one(float v) {
+    return (0.0f <= v) && (v <= 1.0f);
 }
 
-static inline bool is_almost_srgb(const skcms_TransferFunction& coeffs) {
-    return transfer_fn_almost_equal(SkNamedTransferFn::kSRGB.a, coeffs.a) &&
-           transfer_fn_almost_equal(SkNamedTransferFn::kSRGB.b, coeffs.b) &&
-           transfer_fn_almost_equal(SkNamedTransferFn::kSRGB.c, coeffs.c) &&
-           transfer_fn_almost_equal(SkNamedTransferFn::kSRGB.d, coeffs.d) &&
-           transfer_fn_almost_equal(SkNamedTransferFn::kSRGB.e, coeffs.e) &&
-           transfer_fn_almost_equal(SkNamedTransferFn::kSRGB.f, coeffs.f) &&
-           transfer_fn_almost_equal(SkNamedTransferFn::kSRGB.g, coeffs.g);
+static inline bool is_valid_transfer_fn(const SkColorSpaceTransferFn& coeffs) {
+    if (SkScalarIsNaN(coeffs.fA) || SkScalarIsNaN(coeffs.fB) ||
+        SkScalarIsNaN(coeffs.fC) || SkScalarIsNaN(coeffs.fD) ||
+        SkScalarIsNaN(coeffs.fE) || SkScalarIsNaN(coeffs.fF) ||
+        SkScalarIsNaN(coeffs.fG))
+    {
+        return false;
+    }
+
+    if (!is_zero_to_one(coeffs.fD)) {
+        return false;
+    }
+
+    if (coeffs.fD == 0.0f) {
+        // Y = (aX + b)^g + c  for always
+        if (0.0f == coeffs.fA || 0.0f == coeffs.fG) {
+            SkColorSpacePrintf("A or G is zero, constant transfer function "
+                               "is nonsense");
+            return false;
+        }
+    }
+
+    if (coeffs.fD >= 1.0f) {
+        // Y = eX + f          for always
+        if (0.0f == coeffs.fE) {
+            SkColorSpacePrintf("E is zero, constant transfer function is "
+                               "nonsense");
+            return false;
+        }
+    }
+
+    if ((0.0f == coeffs.fA || 0.0f == coeffs.fG) && 0.0f == coeffs.fC) {
+        SkColorSpacePrintf("A or G, and E are zero, constant transfer function "
+                           "is nonsense");
+        return false;
+    }
+
+    if (coeffs.fC < 0.0f) {
+        SkColorSpacePrintf("Transfer function must be increasing");
+        return false;
+    }
+
+    if (coeffs.fA < 0.0f || coeffs.fG < 0.0f) {
+        SkColorSpacePrintf("Transfer function must be positive or increasing");
+        return false;
+    }
+
+    return true;
 }
 
-static inline bool is_almost_2dot2(const skcms_TransferFunction& coeffs) {
-    return transfer_fn_almost_equal(1.0f, coeffs.a) &&
-           transfer_fn_almost_equal(0.0f, coeffs.b) &&
-           transfer_fn_almost_equal(0.0f, coeffs.e) &&
-           transfer_fn_almost_equal(2.2f, coeffs.g) &&
-           coeffs.d <= 0.0f;
+static inline bool is_almost_srgb(const SkColorSpaceTransferFn& coeffs) {
+    return color_space_almost_equal(1.0f / 1.055f,   coeffs.fA) &&
+           color_space_almost_equal(0.055f / 1.055f, coeffs.fB) &&
+           color_space_almost_equal(1.0f / 12.92f,   coeffs.fC) &&
+           color_space_almost_equal(0.04045f,        coeffs.fD) &&
+           color_space_almost_equal(0.00000f,        coeffs.fE) &&
+           color_space_almost_equal(0.00000f,        coeffs.fF) &&
+           color_space_almost_equal(2.40000f,        coeffs.fG);
 }
 
-static inline bool is_almost_linear(const skcms_TransferFunction& coeffs) {
-    // OutputVal = InputVal ^ 1.0f
-    const bool linearExp =
-            transfer_fn_almost_equal(1.0f, coeffs.a) &&
-            transfer_fn_almost_equal(0.0f, coeffs.b) &&
-            transfer_fn_almost_equal(0.0f, coeffs.e) &&
-            transfer_fn_almost_equal(1.0f, coeffs.g) &&
-            coeffs.d <= 0.0f;
-
-    // OutputVal = 1.0f * InputVal
-    const bool linearFn =
-            transfer_fn_almost_equal(1.0f, coeffs.c) &&
-            transfer_fn_almost_equal(0.0f, coeffs.f) &&
-            coeffs.d >= 1.0f;
-
-    return linearExp || linearFn;
+static inline bool is_almost_2dot2(const SkColorSpaceTransferFn& coeffs) {
+    return color_space_almost_equal(1.0f, coeffs.fA) &&
+           color_space_almost_equal(0.0f, coeffs.fB) &&
+           color_space_almost_equal(0.0f, coeffs.fC) &&
+           color_space_almost_equal(0.0f, coeffs.fD) &&
+           color_space_almost_equal(0.0f, coeffs.fE) &&
+           color_space_almost_equal(0.0f, coeffs.fF) &&
+           color_space_almost_equal(2.2f, coeffs.fG);
 }
-
-skvm::F32 sk_program_transfer_fn(
-    skvm::F32 v, skcms_TFType,
-    skvm::F32 G, skvm::F32 A, skvm::F32 B, skvm::F32 C, skvm::F32 D, skvm::F32 E, skvm::F32 F);
-
-skvm::Color sk_program_transfer_fn(skvm::Builder*, skvm::Uniforms*,
-                                   const skcms_TransferFunction&, skvm::Color);
-
-// Return raw pointers to commonly used SkColorSpaces.
-// No need to ref/unref these, but if you do, do it in pairs.
-SkColorSpace* sk_srgb_singleton();
-SkColorSpace* sk_srgb_linear_singleton();
-
-#endif  // SkColorSpacePriv_DEFINED

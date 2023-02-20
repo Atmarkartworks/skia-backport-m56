@@ -1,96 +1,89 @@
 /*
-* Copyright 2017 Google Inc.
-*
-* Use of this source code is governed by a BSD-style license that can be
-* found in the LICENSE file.
-*/
+ * Copyright 2015 Google Inc.
+ *
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ *
+ */
 
-#include "example/HelloWorld.h"
+#include "HelloWorld.h"
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkGraphics.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTileMode.h"
-#include "include/effects/SkGradientShader.h"
-#include "tools/sk_app/DisplayParams.h"
+#include "gl/GrGLInterface.h"
+#include "GrContext.h"
+#include "SkApplication.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkGraphics.h"
+#include "SkGr.h"
 
-#include <string.h>
-
-using namespace sk_app;
-
-Application* Application::Create(int argc, char** argv, void* platformData) {
-    return new HelloWorld(argc, argv, platformData);
-}
-
-HelloWorld::HelloWorld(int argc, char** argv, void* platformData)
-#if defined(SK_GL)
-        : fBackendType(Window::kNativeGL_BackendType),
-#elif defined(SK_VULKAN)
-        : fBackendType(Window::kVulkan_BackendType),
-#elif defined(SK_DAWN)
-        : fBackendType(Window::kDawn_BackendType),
-#else
-        : fBackendType(Window::kRaster_BackendType),
-#endif
-        fRotationAngle(0) {
+void application_init() {
     SkGraphics::Init();
-
-    fWindow = Window::CreateNativeWindow(platformData);
-    fWindow->setRequestedDisplayParams(DisplayParams());
-
-    // register callbacks
-    fWindow->pushLayer(this);
-
-    fWindow->attach(fBackendType);
+    SkEvent::Init();
 }
 
-HelloWorld::~HelloWorld() {
-    fWindow->detach();
-    delete fWindow;
+void application_term() {
+    SkEvent::Term();
 }
 
-void HelloWorld::updateTitle() {
-    if (!fWindow) {
-        return;
-    }
+HelloWorldWindow::HelloWorldWindow(void* hwnd)
+    : INHERITED(hwnd) {
+    fType = kGPU_DeviceType;
+    fRotationAngle = 0;
+    this->setTitle();
+    this->setUpBackend();
+}
 
+HelloWorldWindow::~HelloWorldWindow() {
+    tearDownBackend();
+}
+
+void HelloWorldWindow::tearDownBackend() {
+    SkSafeUnref(fContext);
+    fContext = NULL;
+
+    SkSafeUnref(fInterface);
+    fInterface = NULL;
+
+    fGpuSurface = nullptr;
+
+    INHERITED::release();
+}
+
+void HelloWorldWindow::setTitle() {
     SkString title("Hello World ");
-    if (Window::kRaster_BackendType == fBackendType) {
-        title.append("Raster");
-    } else {
-#if defined(SK_GL)
-        title.append("GL");
-#elif defined(SK_VULKAN)
-        title.append("Vulkan");
-#elif defined(SK_DAWN)
-        title.append("Dawn");
-#else
-        title.append("Unknown GPU backend");
-#endif
+    title.appendf(fType == kRaster_DeviceType ? "raster" : "opengl");
+    INHERITED::setTitle(title.c_str());
+}
+
+bool HelloWorldWindow::setUpBackend() {
+    this->setVisibleP(true);
+    this->setClipToBounds(false);
+
+    bool result = attach(kNativeGL_BackEndType, 0 /*msaa*/, false, &fAttachmentInfo);
+    if (false == result) {
+        SkDebugf("Not possible to create backend.\n");
+        release();
+        return false;
     }
 
-    fWindow->setTitle(title.c_str());
+    fInterface = GrGLCreateNativeInterface();
+    SkASSERT(NULL != fInterface);
+
+    fContext = GrContext::Create(kOpenGL_GrBackend, (GrBackendContext)fInterface);
+    SkASSERT(NULL != fContext);
+
+    this->setUpGpuBackedSurface();
+    return true;
 }
 
-void HelloWorld::onBackendCreated() {
-    this->updateTitle();
-    fWindow->show();
-    fWindow->inval();
+void HelloWorldWindow::setUpGpuBackedSurface() {
+    fGpuSurface = this->makeGpuBackedSurface(fAttachmentInfo, fInterface, fContext);
 }
 
-void HelloWorld::onPaint(SkSurface* surface) {
-    auto canvas = surface->getCanvas();
-
+void HelloWorldWindow::drawContents(SkCanvas* canvas) {
     // Clear background
-    canvas->clear(SK_ColorWHITE);
+    canvas->drawColor(SK_ColorWHITE);
 
     SkPaint paint;
     paint.setColor(SK_ColorRED);
@@ -101,11 +94,16 @@ void HelloWorld::onPaint(SkSurface* surface) {
 
     // Set up a linear gradient and draw a circle
     {
-        SkPoint linearPoints[] = { { 0, 0 }, { 300, 300 } };
-        SkColor linearColors[] = { SK_ColorGREEN, SK_ColorBLACK };
-        paint.setShader(SkGradientShader::MakeLinear(linearPoints, linearColors, nullptr, 2,
-                                                     SkTileMode::kMirror));
-        paint.setAntiAlias(true);
+        SkPoint linearPoints[] = {
+                {0, 0},
+                {300, 300}
+        };
+        SkColor linearColors[] = {SK_ColorGREEN, SK_ColorBLACK};
+
+        paint.setShader(SkGradientShader::MakeLinear(
+                linearPoints, linearColors, nullptr, 2,
+                SkShader::kMirror_TileMode));
+        paint.setFlags(SkPaint::kAntiAlias_Flag);
 
         canvas->drawCircle(200, 200, 64, paint);
 
@@ -113,14 +111,17 @@ void HelloWorld::onPaint(SkSurface* surface) {
         paint.setShader(nullptr);
     }
 
-    // Draw a message with a nice black paint
-    SkFont font;
-    font.setSubpixel(true);
-    font.setSize(20);
+    // Draw a message with a nice black paint.
+    paint.setFlags(
+            SkPaint::kAntiAlias_Flag |
+            SkPaint::kSubpixelText_Flag |  // ... avoid waggly text when rotating.
+            SkPaint::kUnderlineText_Flag);
     paint.setColor(SK_ColorBLACK);
+    paint.setTextSize(20);
 
     canvas->save();
-    static const char message[] = "Hello World ";
+
+    static const char message[] = "Hello World";
 
     // Translate and rotate
     canvas->translate(300, 300);
@@ -130,35 +131,39 @@ void HelloWorld::onPaint(SkSurface* surface) {
     }
     canvas->rotate(fRotationAngle);
 
-    // Draw the text
-    canvas->drawSimpleText(message, strlen(message), SkTextEncoding::kUTF8, 0, 0, font, paint);
+    // Draw the text:
+    canvas->drawText(message, strlen(message), 0, 0, paint);
 
     canvas->restore();
 }
 
-void HelloWorld::onIdle() {
-    // Just re-paint continuously
-    fWindow->inval();
+void HelloWorldWindow::draw(SkCanvas* canvas) {
+    this->drawContents(canvas);
+    // Invalidate the window to force a redraw. Poor man's animation mechanism.
+    this->inval(NULL);
+
+    if (kRaster_DeviceType == fType) {
+        fRasterSurface->draw(fGpuSurface->getCanvas(), 0, 0, nullptr);
+    }
+    fGpuSurface->getCanvas()->flush();
+    INHERITED::present();
 }
 
-bool HelloWorld::onChar(SkUnichar c, skui::ModifierKey modifiers) {
-    if (' ' == c) {
-        if (Window::kRaster_BackendType == fBackendType) {
-#if defined(SK_GL)
-            fBackendType = Window::kNativeGL_BackendType;
-#elif defined(SK_VULKAN)
-            fBackendType = Window::kVulkan_BackendType;
-#elif defined(SK_DAWN)
-            fBackendType = Window::kDawn_BackendType;
-#else
-            SkDebugf("No GPU backend configured\n");
-            return true;
-#endif
-        } else {
-            fBackendType = Window::kRaster_BackendType;
-        }
-        fWindow->detach();
-        fWindow->attach(fBackendType);
+void HelloWorldWindow::onSizeChange() {
+    this->setUpGpuBackedSurface();
+}
+
+bool HelloWorldWindow::onHandleChar(SkUnichar unichar) {
+    if (' ' == unichar) {
+        fType = fType == kRaster_DeviceType ? kGPU_DeviceType: kRaster_DeviceType;
+        tearDownBackend();
+        setUpBackend();
+        this->setTitle();
+        this->inval(NULL);
     }
     return true;
+}
+
+SkOSWindow* create_sk_window(void* hwnd, int , char** ) {
+    return new HelloWorldWindow(hwnd);
 }

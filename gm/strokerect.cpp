@@ -5,23 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathUtils.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
-
-#include <float.h>
-
-using namespace skia_private;
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
 
 #define STROKE_WIDTH    SkIntToScalar(20)
 
@@ -31,7 +17,7 @@ static void draw_path(SkCanvas* canvas, const SkPath& path, const SkRect& rect,
     paint.setAntiAlias(true);
     paint.setStyle(doFill ? SkPaint::kStrokeAndFill_Style : SkPaint::kStroke_Style);
 
-    paint.setColor(SK_ColorGRAY);
+    paint.setColor(sk_tool_utils::color_to_565(SK_ColorGRAY));
     paint.setStrokeWidth(STROKE_WIDTH);
     paint.setStrokeJoin(join);
     canvas->drawRect(rect, paint);
@@ -44,7 +30,7 @@ static void draw_path(SkCanvas* canvas, const SkPath& path, const SkRect& rect,
     paint.setStrokeWidth(3);
     paint.setStrokeJoin(SkPaint::kMiter_Join);
     int n = path.countPoints();
-    AutoTArray<SkPoint> points(n);
+    SkAutoTArray<SkPoint> points(n);
     path.getPoints(points.get(), n);
     canvas->drawPoints(SkCanvas::kPoints_PointMode, n, points.get(), paint);
 }
@@ -99,17 +85,17 @@ protected:
         };
 
         for (int doFill = 0; doFill <= 1; ++doFill) {
-            for (size_t i = 0; i < std::size(gJoins); ++i) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(gJoins); ++i) {
                 SkPaint::Join join = gJoins[i];
                 paint.setStrokeJoin(join);
 
                 SkAutoCanvasRestore acr(canvas, true);
-                for (size_t j = 0; j < std::size(gRects); ++j) {
+                for (size_t j = 0; j < SK_ARRAY_COUNT(gRects); ++j) {
                     const SkRect& r = gRects[j];
 
                     SkPath path, fillPath;
                     path.addRect(r);
-                    skpathutils::FillPathWithPaint(path, paint, &fillPath);
+                    paint.getFillPath(path, &fillPath);
                     draw_path(canvas, fillPath, r, join, doFill);
 
                     canvas->translate(W + 2 * STROKE_WIDTH, 0);
@@ -122,7 +108,7 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 DEF_GM(return new StrokeRectGM;)
 

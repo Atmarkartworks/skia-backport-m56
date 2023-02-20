@@ -10,7 +10,7 @@
 
 class SkStream;
 
-#include "include/core/SkTypeface.h"
+#include "SkTypeface.h"
 
 class SkFontStream {
 public:

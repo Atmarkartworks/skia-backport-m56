@@ -4,38 +4,24 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#ifndef SkBmpStandardCodec_DEFINED
-#define SkBmpStandardCodec_DEFINED
 
-#include "include/codec/SkCodec.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkTypes.h"
-#include "include/private/SkEncodedInfo.h"
-#include "src/codec/SkBmpBaseCodec.h"
-#include "src/codec/SkColorTable.h"
-#include "src/codec/SkSwizzler.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-
-class SkSampler;
-class SkStream;
-enum SkAlphaType : int;
-enum SkColorType : int;
-struct SkImageInfo;
+#include "SkBmpCodec.h"
+#include "SkColorTable.h"
+#include "SkImageInfo.h"
+#include "SkSwizzler.h"
+#include "SkTypes.h"
 
 /*
  * This class implements the decoding for bmp images that use "standard" modes,
  * which essentially means they do not contain bit masks or RLE codes.
  */
-class SkBmpStandardCodec : public SkBmpBaseCodec {
+class SkBmpStandardCodec : public SkBmpCodec {
 public:
 
     /*
      * Creates an instance of the decoder
      *
-     * Called only by SkBmpCodec::MakeFromStream
+     * Called only by SkBmpCodec::NewFromStream
      * There should be no other callers despite this being public
      *
      * @param info contains properties of the encoded data
@@ -51,23 +37,27 @@ public:
      *                 the icp mask, if there is one)
      * @param inIco    indicates if the bmp is embedded in an ico file
      */
-    SkBmpStandardCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream> stream,
-                       uint16_t bitsPerPixel, uint32_t numColors, uint32_t bytesPerColor,
-                       uint32_t offset, SkCodec::SkScanlineOrder rowOrder,
-                       bool isOpaque, bool inIco);
+    SkBmpStandardCodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
+            uint16_t bitsPerPixel, uint32_t numColors, uint32_t bytesPerColor,
+            uint32_t offset, SkCodec::SkScanlineOrder rowOrder, bool isOpaque,
+            bool inIco);
 
 protected:
 
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst,
-                       size_t dstRowBytes, const Options&,
-                       int*) override;
+                       size_t dstRowBytes, const Options&, SkPMColor*,
+                       int*, int*) override;
 
     bool onInIco() const override {
         return fInIco;
     }
 
     SkCodec::Result onPrepareToDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options& options) override;
+            const SkCodec::Options& options, SkPMColor inputColorPtr[],
+            int* inputColorCount) override;
+
+
+    uint64_t onGetFillValue(const SkImageInfo&) const override;
 
     SkSampler* getSampler(bool createIfNecessary) override {
         SkASSERT(fSwizzler);
@@ -75,8 +65,13 @@ protected:
     }
 
 private:
-    bool createColorTable(SkColorType colorType, SkAlphaType alphaType);
-    SkEncodedInfo swizzlerInfo() const;
+
+    /*
+     * Creates the color table
+     * Sets colorCount to the new color count if it is non-nullptr
+     */
+    bool createColorTable(SkColorType colorType, SkAlphaType alphaType, int* colorCount);
+
     void initializeSwizzler(const SkImageInfo& dstInfo, const Options& opts);
 
     int decodeRows(const SkImageInfo& dstInfo, void* dst, size_t dstRowBytes,
@@ -95,10 +90,11 @@ private:
     const uint32_t              fBytesPerColor;
     const uint32_t              fOffset;
     std::unique_ptr<SkSwizzler> fSwizzler;
+    std::unique_ptr<uint8_t[]>  fSrcBuffer;
     const bool                  fIsOpaque;
     const bool                  fInIco;
     const size_t                fAndMaskRowBytes; // only used for fInIco decodes
+    bool                        fXformOnDecode;
 
-    using INHERITED = SkBmpBaseCodec;
+    typedef SkBmpCodec INHERITED;
 };
-#endif  // SkBmpStandardCodec_DEFINED

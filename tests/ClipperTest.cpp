@@ -5,21 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/core/SkEdgeClipper.h"
-#include "src/core/SkLineClipper.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstring>
+#include "SkCanvas.h"
+#include "SkEdgeClipper.h"
+#include "SkLineClipper.h"
+#include "SkPath.h"
+#include "Test.h"
 
 static void test_hairclipping(skiatest::Reporter* reporter) {
     SkBitmap bm;
@@ -99,11 +89,10 @@ static void test_intersectline(skiatest::Reporter* reporter) {
         { R, T }, { R + 10, T - 10 },
         { R, B }, { R + 10, B + 10 },
     };
-    for (i = 0; i < std::size(gEmpty); i += 2) {
+    for (i = 0; i < SK_ARRAY_COUNT(gEmpty); i += 2) {
         bool valid = SkLineClipper::IntersectLine(&gEmpty[i], gR, dst);
         if (valid) {
-            SkDebugf("----- [%zu] %g %g -> %g %g\n",
-                     i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
+            SkDebugf("----- [%d] %g %g -> %g %g\n", i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
         }
         REPORTER_ASSERT(reporter, !valid);
     }
@@ -124,11 +113,10 @@ static void test_intersectline(skiatest::Reporter* reporter) {
         { L, T }, { R, T },
         { L, B }, { R, B },
     };
-    for (i = 0; i < std::size(gFull); i += 2) {
+    for (i = 0; i < SK_ARRAY_COUNT(gFull); i += 2) {
         bool valid = SkLineClipper::IntersectLine(&gFull[i], gR, dst);
-        if (!valid || 0 != memcmp(&gFull[i], dst, sizeof(dst))) {
-            SkDebugf("++++ [%zu] %g %g -> %g %g\n",
-                     i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
+        if (!valid || memcmp(&gFull[i], dst, sizeof(dst))) {
+            SkDebugf("++++ [%d] %g %g -> %g %g\n", i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
         }
         REPORTER_ASSERT(reporter, valid && !memcmp(&gFull[i], dst, sizeof(dst)));
     }
@@ -144,11 +132,10 @@ static void test_intersectline(skiatest::Reporter* reporter) {
         { L - 10, T }, { R + 10, T }, { L, T }, { R, T },
         { L - 10, B }, { R + 10, B }, { L, B }, { R, B },
     };
-    for (i = 0; i < std::size(gPartial); i += 4) {
+    for (i = 0; i < SK_ARRAY_COUNT(gPartial); i += 4) {
         bool valid = SkLineClipper::IntersectLine(&gPartial[i], gR, dst);
-        if (!valid || 0 != memcmp(&gPartial[i+2], dst, sizeof(dst))) {
-            SkDebugf("++++ [%zu] %g %g -> %g %g\n",
-                     i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
+        if (!valid || memcmp(&gPartial[i+2], dst, sizeof(dst))) {
+            SkDebugf("++++ [%d] %g %g -> %g %g\n", i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
         }
         REPORTER_ASSERT(reporter, valid &&
                                   !memcmp(&gPartial[i+2], dst, sizeof(dst)));
@@ -161,12 +148,3 @@ DEF_TEST(Clipper, reporter) {
     test_edgeclipper();
     test_hairclipping(reporter);
 }
-
-DEF_TEST(LineClipper_skbug_7981, r) {
-    SkPoint src[] = {{ -5.77698802E+17f, -1.81758057E+23f}, {38127, 2}};
-    SkPoint dst[2];
-    SkRect clip = { -32767, -32767, 32767, 32767 };
-
-    SkLineClipper::IntersectLine(src, clip, dst);
-}
-

@@ -4,28 +4,13 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPoint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkFloatBits.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkRandom.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkOpAngle.h"
-#include "src/pathops/SkOpContour.h"
-#include "src/pathops/SkOpSegment.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsQuad.h"
-#include "src/pathops/SkPathOpsTypes.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cfloat>
-#include <cmath>
+#include "PathOpsTestCommon.h"
+#include "SkIntersections.h"
+#include "SkOpContour.h"
+#include "SkOpSegment.h"
+#include "SkRandom.h"
+#include "SkTSort.h"
+#include "Test.h"
 
 static bool gDisableAngleTests = true;
 
@@ -189,7 +174,7 @@ DEF_TEST(PathOpsAngleFindSlop, reporter) {
     if (gDisableAngleTests) {
         return;
     }
-    for (int index = 0; index < (int) std::size(slopTests); ++index) {
+    for (int index = 0; index < (int) SK_ARRAY_COUNT(slopTests); ++index) {
         const double* slopTest = slopTests[index];
         double x = slopTest[0];
         double y = slopTest[1];
@@ -212,7 +197,7 @@ public:
     }
 
     static int AllOnOneSide(SkOpAngle& lh, SkOpAngle& rh) {
-        return lh.lineOnOneSide(&rh, false);
+        return lh.allOnOneSide(&rh);
     }
 
     static int ConvexHullOverlaps(SkOpAngle& lh, SkOpAngle& rh) {
@@ -251,10 +236,10 @@ static CircleData circleDataSet[] = {
             {320.05078125, 227.58743286132812}}}, 3, {} },
 };
 
-static const int circleDataSetSize = (int) std::size(circleDataSet);
+static const int circleDataSetSize = (int) SK_ARRAY_COUNT(circleDataSet);
 
 DEF_TEST(PathOpsAngleCircle, reporter) {
-    SkSTArenaAlloc<4096> allocator;
+    SkChunkAlloc allocator(4096);
     SkOpContourHead contour;
     SkOpGlobalState state(&contour, &allocator  SkDEBUGPARAMS(false) SkDEBUGPARAMS(nullptr));
     contour.init(&state, false, false);
@@ -430,7 +415,7 @@ static IntersectData* intersectDataSets[] = {
 };
 
 #undef I
-#define I(x) (int) std::size(intersectDataSet##x)
+#define I(x) (int) SK_ARRAY_COUNT(intersectDataSet##x)
 
 static const int intersectDataSetSizes[] = {
     I(1), I(2), I(3), I(4), I(5), I(6), I(7), I(8), I(9), I(10),
@@ -439,24 +424,26 @@ static const int intersectDataSetSizes[] = {
 
 #undef I
 
-static const int intersectDataSetsSize = (int) std::size(intersectDataSetSizes);
+static const int intersectDataSetsSize = (int) SK_ARRAY_COUNT(intersectDataSetSizes);
 
 struct FourPoints {
     SkPoint pts[4];
 };
 
 DEF_TEST(PathOpsAngleAfter, reporter) {
+    SkChunkAlloc allocator(4096);
+    SkOpContourHead contour;
+    SkOpGlobalState state(&contour, &allocator  SkDEBUGPARAMS(false) SkDEBUGPARAMS(nullptr));
+    contour.init(&state, false, false);
     for (int index = intersectDataSetsSize - 1; index >= 0; --index) {
         IntersectData* dataArray = intersectDataSets[index];
         const int dataSize = intersectDataSetSizes[index];
         for (int index2 = 0; index2 < dataSize - 2; ++index2) {
-            SkSTArenaAlloc<4096> alloc;
-            SkOpContourHead contour;
-            SkOpGlobalState state(&contour, &alloc  SkDEBUGPARAMS(false) SkDEBUGPARAMS(nullptr));
-            contour.init(&state, false, false);
+            allocator.reset();
+            contour.reset();
             for (int index3 = 0; index3 < 3; ++index3) {
                 IntersectData& data = dataArray[index2 + index3];
-                SkPoint* temp = (SkPoint*) alloc.make<FourPoints>();
+                SkPoint* temp = (SkPoint*) SkOpTAllocator<FourPoints>::Allocate(&allocator);
                 for (int idx2 = 0; idx2 < data.fPtCount; ++idx2) {
                     temp[idx2] = data.fPts.fPts[idx2].asSkPoint();
                 }
@@ -491,8 +478,32 @@ DEF_TEST(PathOpsAngleAfter, reporter) {
     }
 }
 
+void SkOpSegment::debugAddAngle(double startT, double endT) {
+    SkOpPtT* startPtT = startT == 0 ? fHead.ptT() : startT == 1 ? fTail.ptT()
+            : this->addT(startT);
+    SkOpPtT* endPtT = endT == 0 ? fHead.ptT() : endT == 1 ? fTail.ptT()
+            : this->addT(endT);
+    SkOpAngle* angle = SkOpTAllocator<SkOpAngle>::Allocate(this->globalState()->allocator());
+    SkOpSpanBase* startSpan = &fHead;
+    while (startSpan->ptT() != startPtT) {
+        startSpan = startSpan->upCast()->next();
+    }
+    SkOpSpanBase* endSpan = &fHead;
+    while (endSpan->ptT() != endPtT) {
+        endSpan = endSpan->upCast()->next();
+    }
+    angle->set(startSpan, endSpan);
+    if (startT < endT) {
+        startSpan->upCast()->setToAngle(angle);
+        endSpan->setFromAngle(angle);
+    } else {
+        endSpan->upCast()->setToAngle(angle);
+        startSpan->setFromAngle(angle);
+    }
+}
+
 DEF_TEST(PathOpsAngleAllOnOneSide, reporter) {
-    SkSTArenaAlloc<4096> allocator;
+    SkChunkAlloc allocator(4096);
     SkOpContourHead contour;
     SkOpGlobalState state(&contour, &allocator  SkDEBUGPARAMS(false) SkDEBUGPARAMS(nullptr));
     contour.init(&state, false, false);
@@ -513,5 +524,6 @@ DEF_TEST(PathOpsAngleAllOnOneSide, reporter) {
         /* int result = */
             PathOpsAngleTester::AllOnOneSide(*first->debugLastAngle(), *next->debugLastAngle());
   //      SkDebugf("i=%d result=%d\n", i , result);
+  //      SkDebugf("");
     }
 }

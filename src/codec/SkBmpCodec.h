@@ -7,19 +7,13 @@
 #ifndef SkBmpCodec_DEFINED
 #define SkBmpCodec_DEFINED
 
-#include "include/codec/SkCodec.h"
-#include "include/core/SkColorType.h"
-#include "include/core/SkEncodedImageFormat.h"
-#include "include/core/SkTypes.h"
-#include "modules/skcms/skcms.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-
-class SkStream;
-struct SkEncodedInfo;
-struct SkImageInfo;
+#include "SkCodec.h"
+#include "SkColorSpace.h"
+#include "SkColorTable.h"
+#include "SkImageInfo.h"
+#include "SkStream.h"
+#include "SkSwizzler.h"
+#include "SkTypes.h"
 
 /*
  * This class enables code sharing between its bmp codec subclasses.  The
@@ -34,26 +28,28 @@ public:
      * Creates a bmp decoder
      * Reads enough of the stream to determine the image format
      */
-    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*);
+    static SkCodec* NewFromStream(SkStream*);
 
     /*
      * Creates a bmp decoder for a bmp embedded in ico
      * Reads enough of the stream to determine the image format
      */
-    static std::unique_ptr<SkCodec> MakeFromIco(std::unique_ptr<SkStream>, Result*);
+    static SkCodec* NewFromIco(SkStream*);
 
 protected:
 
-    SkBmpCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream>,
+    SkBmpCodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
             uint16_t bitsPerPixel, SkCodec::SkScanlineOrder rowOrder);
 
-    SkEncodedImageFormat onGetEncodedFormat() const override { return SkEncodedImageFormat::kBMP; }
+    SkEncodedFormat onGetEncodedFormat() const override { return kBMP_SkEncodedFormat; }
 
     /*
-     * Read enough of the stream to initialize the SkBmpCodec.
-     * On kSuccess, if codecOut is not nullptr, it will be set to a new SkBmpCodec.
+     * Read enough of the stream to initialize the SkBmpCodec. Returns a bool
+     * representing success or failure. If it returned true, and codecOut was
+     * not nullptr, it will be set to a new SkBmpCodec.
+     * Does *not* take ownership of the passed in SkStream.
      */
-    static Result ReadHeader(SkStream*, bool inIco, std::unique_ptr<SkCodec>* codecOut);
+    static bool ReadHeader(SkStream*, bool inIco, SkCodec** codecOut);
 
     bool onRewind() override;
 
@@ -95,12 +91,22 @@ protected:
      * @param dstInfo         Contains output information.  Height specifies
      *                        the total number of rows that will be decoded.
      * @param options         Additonal options to pass to the decoder.
+     * @param inputColorPtr   Client-provided memory for a color table.  Must
+     *                        be enough for 256 colors.  This will be
+     *                        populated with colors if the encoded image uses
+     *                        a color table.
+     * @param inputColorCount If the encoded image uses a color table, this
+     *                        will be set to the number of colors in the
+     *                        color table.
      */
     virtual SkCodec::Result onPrepareToDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options& options) = 0;
+            const SkCodec::Options& options, SkPMColor inputColorPtr[],
+            int* inputColorCount) = 0;
     SkCodec::Result prepareToDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options& options);
+            const SkCodec::Options& options, SkPMColor inputColorPtr[],
+            int* inputColorCount);
 
+    void applyColorXform(const SkImageInfo& dstInfo, void* dst, void* src) const;
     uint32_t* xformBuffer() const { return fXformBuffer.get(); }
     void resetXformBuffer(int count) { fXformBuffer.reset(new uint32_t[count]); }
 
@@ -108,8 +114,7 @@ protected:
      * BMPs are typically encoded as BGRA/BGR so this is a more efficient choice
      * than RGBA.
      */
-    inline static constexpr SkColorType kXformSrcColorType = kBGRA_8888_SkColorType;
-    inline static constexpr auto kXformSrcColorFormat = skcms_PixelFormat_BGRA_8888;
+    static const SkColorType kXformSrcColorType = kBGRA_8888_SkColorType;
 
 private:
 
@@ -117,7 +122,7 @@ private:
      * Creates a bmp decoder
      * Reads enough of the stream to determine the image format
      */
-    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*, bool inIco);
+    static SkCodec* NewFromStream(SkStream*, bool inIco);
 
     /*
      * Decodes the next dstInfo.height() lines.
@@ -139,8 +144,8 @@ private:
 
     virtual bool skipRows(int count);
 
-    Result onStartScanlineDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options&) override;
+    Result onStartScanlineDecode(const SkImageInfo& dstInfo, const SkCodec::Options&,
+            SkPMColor inputColorPtr[], int* inputColorCount) override;
 
     int onGetScanlines(void* dst, int count, size_t rowBytes) override;
 
@@ -151,7 +156,7 @@ private:
     const size_t                fSrcRowBytes;
     std::unique_ptr<uint32_t[]> fXformBuffer;
 
-    using INHERITED = SkCodec;
+    typedef SkCodec INHERITED;
 };
 
 #endif

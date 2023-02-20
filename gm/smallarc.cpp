@@ -5,11 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
+#include "gm.h"
+#include "SkPath.h"
 
 // this draws a small arc scaled up
 // see https://code.google.com/p/chromium/issues/detail?id=102411

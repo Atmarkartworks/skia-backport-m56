@@ -5,17 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "bench/RecordingBench.h"
-
-#include "include/core/SkBBHFactory.h"
-#include "include/core/SkData.h"
-#include "include/core/SkPictureRecorder.h"
+#include "RecordingBench.h"
+#include "SkBBHFactory.h"
+#include "SkLiteDL.h"
+#include "SkLiteRecorder.h"
+#include "SkPictureRecorder.h"
 
 PictureCentricBench::PictureCentricBench(const char* name, const SkPicture* pic) : fName(name) {
     // Flatten the source picture in case it's trivially nested (useless for timing).
     SkPictureRecorder rec;
-    pic->playback(rec.beginRecording(pic->cullRect(), nullptr /*,
-                                     SkPictureRecorder::kPlaybackDrawPicture_RecordFlag*/));
+    pic->playback(rec.beginRecording(pic->cullRect(), nullptr,
+                                     SkPictureRecorder::kPlaybackDrawPicture_RecordFlag));
     fSrc = rec.finishRecordingAsPicture();
 }
 
@@ -34,42 +34,55 @@ SkIPoint PictureCentricBench::onGetSize() {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-RecordingBench::RecordingBench(const char* name, const SkPicture* pic, bool useBBH)
+RecordingBench::RecordingBench(const char* name, const SkPicture* pic, bool useBBH, bool lite)
     : INHERITED(name, pic)
     , fUseBBH(useBBH)
-{}
+{
+    // If we're recording into an SkLiteDL, also record _from_ one.
+    if (lite) {
+        fDL = SkLiteDL::New(fSrc->cullRect());
+        SkLiteRecorder r;
+        r.reset(fDL.get());
+        fSrc->playback(&r);
+    }
+}
 
 void RecordingBench::onDraw(int loops, SkCanvas*) {
-    SkRTreeFactory factory;
-    SkPictureRecorder recorder;
-    while (loops --> 0) {
-        fSrc->playback(recorder.beginRecording(fSrc->cullRect(), fUseBBH ? &factory : nullptr));
-        (void)recorder.finishRecordingAsPicture();
+    if (fDL) {
+        SkLiteRecorder rec;
+        while (loops --> 0) {
+            sk_sp<SkLiteDL> dl = SkLiteDL::New(fSrc->cullRect());
+            rec.reset(dl.get());
+            fDL->draw(&rec);
+            dl->makeThreadsafe();
+        }
+
+    } else {
+        SkRTreeFactory factory;
+        SkPictureRecorder recorder;
+        while (loops --> 0) {
+            fSrc->playback(recorder.beginRecording(fSrc->cullRect(), fUseBBH ? &factory : nullptr));
+            (void)recorder.finishRecordingAsPicture();
+        }
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-#include "include/core/SkSerialProcs.h"
 
-DeserializePictureBench::DeserializePictureBench(const char* name, sk_sp<SkData> data)
-    : fName(name)
-    , fEncodedPicture(std::move(data))
-{}
+#include "SkPipe.h"
+#include "SkStream.h"
 
-const char* DeserializePictureBench::onGetName() {
-    return fName.c_str();
+PipingBench::PipingBench(const char* name, const SkPicture* pic) : INHERITED(name, pic) {
+    fName.prepend("pipe_");
 }
 
-bool DeserializePictureBench::isSuitableFor(Backend backend) {
-    return backend == kNonRendering_Backend;
-}
+void PipingBench::onDraw(int loops, SkCanvas*) {
+    SkDynamicMemoryWStream stream;
+    SkPipeSerializer serializer;
 
-SkIPoint DeserializePictureBench::onGetSize() {
-    return SkIPoint::Make(128, 128);
-}
-
-void DeserializePictureBench::onDraw(int loops, SkCanvas*) {
-    for (int i = 0; i < loops; ++i) {
-        SkPicture::MakeFromData(fEncodedPicture.get());
+    while (loops --> 0) {
+        fSrc->playback(serializer.beginWrite(fSrc->cullRect(), &stream));
+        serializer.endWrite();
+        stream.reset();
     }
 }

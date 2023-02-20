@@ -5,24 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkClipOp.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRegion.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "src/core/SkAAClip.h"
-#include "src/core/SkMask.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkAAClip.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
 
 namespace skiagm {
 
@@ -40,13 +26,12 @@ static void paint_rgn(SkCanvas* canvas, const SkAAClip& clip,
     // need to copy for deferred drawing test to work
     SkBitmap bm2;
 
-    ToolUtils::copy_to(&bm2, bm.colorType(), bm);
+    bm.deepCopyTo(&bm2);
 
-    canvas->drawImage(bm2.asImage(),
-                      SK_Scalar1 * mask.fBounds.fLeft,
-                      SK_Scalar1 * mask.fBounds.fTop,
-                      SkSamplingOptions(),
-                      &paint);
+    canvas->drawBitmap(bm2,
+                       SK_Scalar1 * mask.fBounds.fLeft,
+                       SK_Scalar1 * mask.fBounds.fTop,
+                       &paint);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -69,25 +54,25 @@ public:
 protected:
     void onOnceBeforeDraw() override {
         // offset the rects a bit so we get anti-aliasing in the rect case
-        fBase.setLTRB(100.65f,
-                      100.65f,
-                      150.65f,
-                      150.65f);
+        fBase.set(100.65f,
+                  100.65f,
+                  150.65f,
+                  150.65f);
         fRect = fBase;
         fRect.inset(5, 5);
         fRect.offset(25, 25);
 
         fBasePath.addRoundRect(fBase, SkIntToScalar(5), SkIntToScalar(5));
         fRectPath.addRoundRect(fRect, SkIntToScalar(5), SkIntToScalar(5));
-        INHERITED::setBGColor(0xFFDDDDDD);
+        INHERITED::setBGColor(sk_tool_utils::color_to_565(0xFFDDDDDD));
     }
 
-    void buildRgn(SkAAClip* clip, SkClipOp op) {
-        clip->setPath(fBasePath, fBasePath.getBounds().roundOut(), true);
+    void buildRgn(SkAAClip* clip, SkCanvas::ClipOp op) {
+        clip->setPath(fBasePath, nullptr, true);
 
         SkAAClip clip2;
-        clip2.setPath(fRectPath, fRectPath.getBounds().roundOut(), true);
-        clip->op(clip2, op);
+        clip2.setPath(fRectPath, nullptr, true);
+        clip->op(clip2, (SkRegion::Op)op);
     }
 
     void drawOrig(SkCanvas* canvas) {
@@ -100,7 +85,7 @@ protected:
         canvas->drawRect(fRect, paint);
     }
 
-    void drawRgnOped(SkCanvas* canvas, SkClipOp op, SkColor color) {
+    void drawRgnOped(SkCanvas* canvas, SkCanvas::ClipOp op, SkColor color) {
 
         SkAAClip clip;
 
@@ -112,7 +97,7 @@ protected:
         paint_rgn(canvas, clip, paint);
     }
 
-    void drawPathsOped(SkCanvas* canvas, SkClipOp op, SkColor color) {
+    void drawPathsOped(SkCanvas* canvas, SkCanvas::ClipOp op, SkColor color) {
 
         this->drawOrig(canvas);
 
@@ -151,7 +136,7 @@ protected:
     }
 
     SkISize onISize() override {
-        return SkISize::Make(500, 240);
+        return SkISize::Make(640, 480);
     }
 
     void onDraw(SkCanvas* canvas) override {
@@ -159,18 +144,26 @@ protected:
         const struct {
             SkColor         fColor;
             const char*     fName;
-            SkClipOp        fOp;
+            SkCanvas::ClipOp fOp;
         } gOps[] = {
-                {SK_ColorBLACK, "Difference", SkClipOp::kDifference},
-                {SK_ColorRED, "Intersect", SkClipOp::kIntersect},
+            { SK_ColorBLACK,    "Difference", SkCanvas::kDifference_Op    },
+            { SK_ColorRED,      "Intersect",  SkCanvas::kIntersect_Op     },
+            { sk_tool_utils::color_to_565(0xFF008800), "Union", SkCanvas::kUnion_Op },
+            { SK_ColorGREEN,    "Rev Diff",   SkCanvas::kReverseDifference_Op },
+            { SK_ColorYELLOW,   "Replace",    SkCanvas::kReplace_Op       },
+            { SK_ColorBLUE,     "XOR",        SkCanvas::kXOR_Op           },
         };
 
         SkPaint textPaint;
-        SkFont  font(ToolUtils::create_portable_typeface(), 24);
+        textPaint.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&textPaint);
+        textPaint.setTextSize(SK_Scalar1*24);
         int xOff = 0;
 
-        for (size_t op = 0; op < std::size(gOps); op++) {
-            canvas->drawString(gOps[op].fName, 75.0f, 50.0f, font, textPaint);
+        for (size_t op = 0; op < SK_ARRAY_COUNT(gOps); op++) {
+            canvas->drawText(gOps[op].fName, strlen(gOps[op].fName),
+                             SkIntToScalar(75), SkIntToScalar(50),
+                             textPaint);
 
             if (kAAClip_GeomType == fGeomType) {
                 this->drawRgnOped(canvas, gOps[op].fOp, gOps[op].fColor);
@@ -197,7 +190,7 @@ private:
     SkPath fBasePath;       // fBase as a round rect
     SkPath fRectPath;       // fRect as a round rect
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -207,4 +200,4 @@ DEF_GM( return new SimpleClipGM(SimpleClipGM::kRect_GeomType); )
 DEF_GM( return new SimpleClipGM(SimpleClipGM::kPath_GeomType); )
 DEF_GM( return new SimpleClipGM(SimpleClipGM::kAAClip_GeomType); )
 
-}  // namespace skiagm
+}

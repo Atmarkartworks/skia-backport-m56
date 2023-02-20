@@ -4,11 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "tests/PathOpsTestCommon.h"
-
-#include <cstddef>
-
-namespace PathOpsCubicIntersectionTestData {
+#include "PathOpsTestCommon.h"
 
 extern const CubicPts pointDegenerates[];
 extern const CubicPts notPointDegenerates[];
@@ -30,5 +26,3 @@ extern const size_t notLines_count;
 extern const size_t modEpsilonLines_count;
 extern const size_t lessEpsilonLines_count;
 extern const size_t negEpsilonLines_count;
-
-}  // namespace PathOpsCubicIntersectionTestData

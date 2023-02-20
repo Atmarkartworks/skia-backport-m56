@@ -4,23 +4,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-
-#include <string.h>
+#include "gm.h"
+#include "SkGradientShader.h"
 
 using namespace skiagm;
 
@@ -41,25 +26,25 @@ constexpr GradData gGradData[] = {
     { 4, gColors, nullptr },
 };
 
-static sk_sp<SkShader> MakeLinear(const SkPoint pts[2], const GradData& data, SkTileMode tm) {
+static sk_sp<SkShader> MakeLinear(const SkPoint pts[2], const GradData& data, SkShader::TileMode tm) {
     return SkGradientShader::MakeLinear(pts, data.fColors, data.fPos, data.fCount, tm);
 }
 
-static sk_sp<SkShader> MakeRadial(const SkPoint pts[2], const GradData& data, SkTileMode tm) {
+static sk_sp<SkShader> MakeRadial(const SkPoint pts[2], const GradData& data, SkShader::TileMode tm) {
     SkPoint center;
     center.set(SkScalarAve(pts[0].fX, pts[1].fX),
                SkScalarAve(pts[0].fY, pts[1].fY));
     return SkGradientShader::MakeRadial(center, center.fX, data.fColors, data.fPos, data.fCount, tm);
 }
 
-static sk_sp<SkShader> MakeSweep(const SkPoint pts[2], const GradData& data, SkTileMode) {
+static sk_sp<SkShader> MakeSweep(const SkPoint pts[2], const GradData& data, SkShader::TileMode) {
     SkPoint center;
     center.set(SkScalarAve(pts[0].fX, pts[1].fX),
                SkScalarAve(pts[0].fY, pts[1].fY));
     return SkGradientShader::MakeSweep(center.fX, center.fY, data.fColors, data.fPos, data.fCount);
 }
 
-static sk_sp<SkShader> Make2Radial(const SkPoint pts[2], const GradData& data, SkTileMode tm) {
+static sk_sp<SkShader> Make2Radial(const SkPoint pts[2], const GradData& data, SkShader::TileMode tm) {
     SkPoint center0, center1;
     center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
                 SkScalarAve(pts[0].fY, pts[1].fY));
@@ -71,7 +56,7 @@ static sk_sp<SkShader> Make2Radial(const SkPoint pts[2], const GradData& data, S
         data.fColors, data.fPos, data.fCount, tm);
 }
 
-static sk_sp<SkShader> Make2Conical(const SkPoint pts[2], const GradData& data, SkTileMode tm) {
+static sk_sp<SkShader> Make2Conical(const SkPoint pts[2], const GradData& data, SkShader::TileMode tm) {
     SkPoint center0, center1;
     SkScalar radius0 = (pts[1].fX - pts[0].fX) / 10;
     SkScalar radius1 = (pts[1].fX - pts[0].fX) / 3;
@@ -84,7 +69,7 @@ static sk_sp<SkShader> Make2Conical(const SkPoint pts[2], const GradData& data, 
 }
 
 
-typedef sk_sp<SkShader> (*GradMaker)(const SkPoint pts[2], const GradData& data, SkTileMode tm);
+typedef sk_sp<SkShader> (*GradMaker)(const SkPoint pts[2], const GradData& data, SkShader::TileMode tm);
 
 constexpr GradMaker gGradMakers[] = {
     MakeLinear, MakeRadial, MakeSweep, Make2Radial, Make2Conical,
@@ -95,7 +80,7 @@ constexpr GradMaker gGradMakers[] = {
 class GradientsNoTextureGM : public GM {
 public:
     GradientsNoTextureGM(bool dither) : fDither(dither) {
-        this->setBGColor(0xFFDDDDDD);
+        this->setBGColor(sk_tool_utils::color_to_565(0xFFDDDDDD));
     }
 
 protected:
@@ -109,7 +94,7 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         constexpr SkPoint kPts[2] = { { 0, 0 },
                                          { SkIntToScalar(50), SkIntToScalar(50) } };
-        constexpr SkTileMode kTM = SkTileMode::kClamp;
+        constexpr SkShader::TileMode kTM = SkShader::kClamp_TileMode;
         SkRect kRect = { 0, 0, SkIntToScalar(50), SkIntToScalar(50) };
         SkPaint paint;
         paint.setAntiAlias(true);
@@ -117,10 +102,10 @@ protected:
 
         canvas->translate(SkIntToScalar(20), SkIntToScalar(20));
         constexpr uint8_t kAlphas[] = { 0xff, 0x40 };
-        for (size_t a = 0; a < std::size(kAlphas); ++a) {
-            for (size_t i = 0; i < std::size(gGradData); ++i) {
+        for (size_t a = 0; a < SK_ARRAY_COUNT(kAlphas); ++a) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(gGradData); ++i) {
                 canvas->save();
-                for (size_t j = 0; j < std::size(gGradMakers); ++j) {
+                for (size_t j = 0; j < SK_ARRAY_COUNT(gGradMakers); ++j) {
                     paint.setShader(gGradMakers[j](kPts, gGradData[i], kTM));
                     paint.setAlpha(kAlphas[a]);
                     canvas->drawRect(kRect, paint);
@@ -135,7 +120,7 @@ protected:
 private:
     bool fDither;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -185,7 +170,7 @@ height: 30px;
         71.89166004442, 74.45795382765857, 76.45795382765857, 82.78364610713776,
         84.78364610713776, 94.52743647737229, 96.52743647737229, 96.03934633331295,
     };
-    const int N = std::size(percent);
+    const int N = SK_ARRAY_COUNT(percent);
     SkScalar pos[N];
     for (int i = 0; i < N; ++i) {
         pos[i] = SkDoubleToScalar(percent[i] / 100);
@@ -199,7 +184,7 @@ static void make1(ColorPos* rec) {
         SK_ColorBLACK, SK_ColorWHITE, SK_ColorBLACK, SK_ColorWHITE,
         SK_ColorBLACK,
     };
-    rec->construct(colors, nullptr, std::size(colors));
+    rec->construct(colors, nullptr, SK_ARRAY_COUNT(colors));
 }
 
 static void make2(ColorPos* rec) {
@@ -208,7 +193,7 @@ static void make2(ColorPos* rec) {
         SK_ColorBLACK, SK_ColorWHITE, SK_ColorBLACK, SK_ColorWHITE,
         SK_ColorBLACK,
     };
-    const int N = std::size(colors);
+    const int N = SK_ARRAY_COUNT(colors);
     SkScalar pos[N];
     for (int i = 0; i < N; ++i) {
         pos[i] = SK_Scalar1 * i / (N - 1);
@@ -223,7 +208,7 @@ static void make3(ColorPos* rec) {
     const SkScalar pos[] = {
         0, 0, 0.5f, 0.5, 1, 1,
     };
-    rec->construct(colors, pos, std::size(colors));
+    rec->construct(colors, pos, SK_ARRAY_COUNT(colors));
 }
 
 class GradientsManyColorsGM : public GM {
@@ -266,11 +251,11 @@ protected:
 
         // expand the drawing rect so we exercise clampping in the gradients
         const SkRect drawR = r.makeOutset(20, 0);
-        for (size_t i = 0; i < std::size(procs); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(procs); ++i) {
             ColorPos rec;
             procs[i](&rec);
             paint.setShader(SkGradientShader::MakeLinear(pts, rec.fColors, rec.fPos, rec.fCount,
-                                                         SkTileMode::kClamp));
+                                                         SkShader::kClamp_TileMode));
             canvas->drawRect(drawR, paint);
 
             canvas->save();
@@ -287,7 +272,7 @@ protected:
 private:
     bool fDither;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

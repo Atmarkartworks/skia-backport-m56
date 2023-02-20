@@ -5,13 +5,83 @@
  * found in the LICENSE file.
  */
 
-#include "tools/gpu/gl/GLTestContext.h"
+#include "GLTestContext.h"
 
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/ganesh/gl/GrGLUtil.h"
-#include "tools/gpu/GpuTimer.h"
+#include "GpuTimer.h"
+#include "gl/GrGLUtil.h"
 
 namespace {
+
+class GLFenceSync : public sk_gpu_test::FenceSync {
+public:
+    static std::unique_ptr<GLFenceSync> MakeIfSupported(const sk_gpu_test::GLTestContext*);
+
+    sk_gpu_test::PlatformFence SK_WARN_UNUSED_RESULT insertFence() const override;
+    bool waitFence(sk_gpu_test::PlatformFence fence) const override;
+    void deleteFence(sk_gpu_test::PlatformFence fence) const override;
+
+private:
+    GLFenceSync(const sk_gpu_test::GLTestContext*, const char* ext = "");
+
+    bool validate() { return fGLFenceSync && fGLClientWaitSync && fGLDeleteSync; }
+
+    static constexpr GrGLenum GL_SYNC_GPU_COMMANDS_COMPLETE  = 0x9117;
+    static constexpr GrGLenum GL_WAIT_FAILED                 = 0x911d;
+    static constexpr GrGLbitfield GL_SYNC_FLUSH_COMMANDS_BIT = 0x00000001;
+
+    typedef struct __GLsync *GLsync;
+    GR_STATIC_ASSERT(sizeof(GLsync) <= sizeof(sk_gpu_test::PlatformFence));
+
+    typedef GLsync (GR_GL_FUNCTION_TYPE* GLFenceSyncProc) (GrGLenum, GrGLbitfield);
+    typedef GrGLenum (GR_GL_FUNCTION_TYPE* GLClientWaitSyncProc) (GLsync, GrGLbitfield, GrGLuint64);
+    typedef GrGLvoid (GR_GL_FUNCTION_TYPE* GLDeleteSyncProc) (GLsync);
+
+    GLFenceSyncProc        fGLFenceSync;
+    GLClientWaitSyncProc   fGLClientWaitSync;
+    GLDeleteSyncProc       fGLDeleteSync;
+
+    typedef FenceSync INHERITED;
+};
+
+std::unique_ptr<GLFenceSync> GLFenceSync::MakeIfSupported(const sk_gpu_test::GLTestContext* ctx) {
+    std::unique_ptr<GLFenceSync> ret;
+    if (kGL_GrGLStandard == ctx->gl()->fStandard) {
+        if (GrGLGetVersion(ctx->gl()) < GR_GL_VER(3,2) && !ctx->gl()->hasExtension("GL_ARB_sync")) {
+            return nullptr;
+        }
+        ret.reset(new GLFenceSync(ctx));
+    } else {
+        if (!ctx->gl()->hasExtension("GL_APPLE_sync")) {
+            return nullptr;
+        }
+        ret.reset(new GLFenceSync(ctx, "APPLE"));
+    }
+    if (!ret->validate()) {
+        ret = nullptr;
+    }
+    return ret;
+}
+
+GLFenceSync::GLFenceSync(const sk_gpu_test::GLTestContext* ctx, const char* ext) {
+    ctx->getGLProcAddress(&fGLFenceSync, "glFenceSync");
+    ctx->getGLProcAddress(&fGLClientWaitSync, "glClientWaitSync");
+    ctx->getGLProcAddress(&fGLDeleteSync, "glDeleteSync");
+}
+
+sk_gpu_test::PlatformFence GLFenceSync::insertFence() const {
+    __GLsync* glsync = fGLFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    return reinterpret_cast<sk_gpu_test::PlatformFence>(glsync);
+}
+
+bool GLFenceSync::waitFence(sk_gpu_test::PlatformFence fence) const {
+    GLsync glsync = reinterpret_cast<GLsync>(fence);
+    return GL_WAIT_FAILED != fGLClientWaitSync(glsync, GL_SYNC_FLUSH_COMMANDS_BIT, -1);
+}
+
+void GLFenceSync::deleteFence(sk_gpu_test::PlatformFence fence) const {
+    GLsync glsync = reinterpret_cast<GLsync>(fence);
+    fGLDeleteSync(glsync);
+}
 
 class GLGpuTimer : public sk_gpu_test::GpuTimer {
 public:
@@ -22,18 +92,17 @@ public:
     void deleteQuery(sk_gpu_test::PlatformTimerQuery) override;
 
 private:
-#ifdef SK_GL
     GLGpuTimer(bool disjointSupport, const sk_gpu_test::GLTestContext*, const char* ext = "");
+
     bool validate() const;
-#endif
 
     sk_gpu_test::PlatformTimerQuery onQueueTimerStart() const override;
     void onQueueTimerStop(sk_gpu_test::PlatformTimerQuery) const override;
 
-    inline static constexpr GrGLenum GL_QUERY_RESULT            = 0x8866;
-    inline static constexpr GrGLenum GL_QUERY_RESULT_AVAILABLE  = 0x8867;
-    inline static constexpr GrGLenum GL_TIME_ELAPSED            = 0x88bf;
-    inline static constexpr GrGLenum GL_GPU_DISJOINT            = 0x8fbb;
+    static constexpr GrGLenum GL_QUERY_RESULT            = 0x8866;
+    static constexpr GrGLenum GL_QUERY_RESULT_AVAILABLE  = 0x8867;
+    static constexpr GrGLenum GL_TIME_ELAPSED            = 0x88bf;
+    static constexpr GrGLenum GL_GPU_DISJOINT            = 0x8fbb;
 
     typedef void (GR_GL_FUNCTION_TYPE* GLGetIntegervProc) (GrGLenum, GrGLint*);
     typedef void (GR_GL_FUNCTION_TYPE* GLGenQueriesProc) (GrGLsizei, GrGLuint*);
@@ -52,11 +121,10 @@ private:
     GLGetQueryObjectui64vProc   fGLGetQueryObjectui64v;
 
 
-    using INHERITED = sk_gpu_test::GpuTimer;
+    typedef sk_gpu_test::GpuTimer INHERITED;
 };
 
 std::unique_ptr<GLGpuTimer> GLGpuTimer::MakeIfSupported(const sk_gpu_test::GLTestContext* ctx) {
-#ifdef SK_GL
     std::unique_ptr<GLGpuTimer> ret;
     const GrGLInterface* gl = ctx->gl();
     if (gl->fExtensions.has("GL_EXT_disjoint_timer_query")) {
@@ -71,12 +139,8 @@ std::unique_ptr<GLGpuTimer> GLGpuTimer::MakeIfSupported(const sk_gpu_test::GLTes
         ret = nullptr;
     }
     return ret;
-#else
-    return nullptr;
-#endif
 }
 
-#ifdef SK_GL
 GLGpuTimer::GLGpuTimer(bool disjointSupport, const sk_gpu_test::GLTestContext* ctx, const char* ext)
     : INHERITED(disjointSupport) {
     ctx->getGLProcAddress(&fGLGetIntegerv, "glGetIntegerv");
@@ -92,7 +156,6 @@ bool GLGpuTimer::validate() const {
     return fGLGetIntegerv && fGLGenQueries && fGLDeleteQueries && fGLBeginQuery && fGLEndQuery &&
            fGLGetQueryObjectuiv && fGLGetQueryObjectui64v;
 }
-#endif
 
 sk_gpu_test::PlatformTimerQuery GLGpuTimer::onQueueTimerStart() const {
     GrGLuint queryID;
@@ -150,7 +213,7 @@ void GLGpuTimer::deleteQuery(sk_gpu_test::PlatformTimerQuery platformTimer) {
     fGLDeleteQueries(1, &queryID);
 }
 
-static_assert(sizeof(GrGLuint) <= sizeof(sk_gpu_test::PlatformTimerQuery));
+GR_STATIC_ASSERT(sizeof(GrGLuint) <= sizeof(sk_gpu_test::PlatformTimerQuery));
 
 }  // anonymous namespace
 
@@ -159,102 +222,65 @@ namespace sk_gpu_test {
 GLTestContext::GLTestContext() : TestContext() {}
 
 GLTestContext::~GLTestContext() {
-    SkASSERT(!fGLInterface);
-    SkASSERT(!fOriginalGLInterface);
+    SkASSERT(nullptr == fGL.get());
 }
 
-bool GLTestContext::isValid() const {
-#ifdef SK_GL
-    return SkToBool(this->gl());
-#else
-    return fWasInitialized;
-#endif
-}
-
-static bool fence_is_supported(const GLTestContext* ctx) {
-#ifdef SK_GL
-    if (kGL_GrGLStandard == ctx->gl()->fStandard) {
-        if (GrGLGetVersion(ctx->gl()) < GR_GL_VER(3, 2) &&
-            !ctx->gl()->hasExtension("GL_ARB_sync")) {
-            return false;
-        }
-        return true;
-    } else {
-        if (ctx->gl()->hasExtension("GL_APPLE_sync")) {
-            return true;
-        } else if (ctx->gl()->hasExtension("GL_NV_fence")) {
-            return true;
-        } else if (GrGLGetVersion(ctx->gl()) >= GR_GL_VER(3, 0)) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-#else
-    return false;
-#endif
-}
-
-void GLTestContext::init(sk_sp<const GrGLInterface> gl) {
-    fGLInterface = std::move(gl);
-    fOriginalGLInterface = fGLInterface;
-    fFenceSupport = fence_is_supported(this);
+void GLTestContext::init(const GrGLInterface* gl, std::unique_ptr<FenceSync> fenceSync) {
+    SkASSERT(!fGL.get());
+    fGL.reset(gl);
+    fFenceSync = fenceSync ? std::move(fenceSync) : GLFenceSync::MakeIfSupported(this);
     fGpuTimer = GLGpuTimer::MakeIfSupported(this);
-#ifndef SK_GL
-    fWasInitialized = true;
-#endif
 }
 
 void GLTestContext::teardown() {
-    fGLInterface.reset();
-    fOriginalGLInterface.reset();
+    fGL.reset(nullptr);
     INHERITED::teardown();
 }
 
 void GLTestContext::testAbandon() {
     INHERITED::testAbandon();
-#ifdef SK_GL
-    if (fGLInterface) {
-        fGLInterface->abandon();
-        fOriginalGLInterface->abandon();
+    if (fGL) {
+        fGL->abandon();
     }
-#endif
+}
+
+void GLTestContext::submit() {
+    if (fGL) {
+        GR_GL_CALL(fGL.get(), Flush());
+    }
 }
 
 void GLTestContext::finish() {
-#ifdef SK_GL
-    if (fGLInterface) {
-        GR_GL_CALL(fGLInterface.get(), Finish());
+    if (fGL) {
+        GR_GL_CALL(fGL.get(), Finish());
     }
-#endif
 }
 
-void GLTestContext::overrideVersion(const char* version, const char* shadingLanguageVersion) {
-#ifdef SK_GL
-    // GrGLFunction has both a limited capture size and doesn't call a destructor when it is
-    // initialized with a lambda. So here we're trusting fOriginalGLInterface will be kept alive.
-    auto getString = [wrapped = &fOriginalGLInterface->fFunctions.fGetString,
-                      version,
-                      shadingLanguageVersion](GrGLenum name) {
-        if (name == GR_GL_VERSION) {
-            return reinterpret_cast<const GrGLubyte*>(version);
-        } else if (name == GR_GL_SHADING_LANGUAGE_VERSION) {
-            return reinterpret_cast<const GrGLubyte*>(shadingLanguageVersion);
-        }
-        return (*wrapped)(name);
-    };
-    auto newInterface = sk_make_sp<GrGLInterface>(*fOriginalGLInterface);
-    newInterface->fFunctions.fGetString = getString;
-    fGLInterface = std::move(newInterface);
-#endif
-}
+GrGLint GLTestContext::createTextureRectangle(int width, int height, GrGLenum internalFormat,
+                                          GrGLenum externalFormat, GrGLenum externalType,
+                                          GrGLvoid* data) {
+    if (!(kGL_GrGLStandard == fGL->fStandard && GrGLGetVersion(fGL.get()) >= GR_GL_VER(3, 1)) &&
+        !fGL->fExtensions.has("GL_ARB_texture_rectangle")) {
+        return 0;
+    }
 
-sk_sp<GrDirectContext> GLTestContext::makeContext(const GrContextOptions& options) {
-#ifdef SK_GL
-    return GrDirectContext::MakeGL(fGLInterface, options);
-#else
-    return nullptr;
-#endif
-}
+    if  (GrGLGetGLSLVersion(fGL.get()) < GR_GLSL_VER(1, 40)) {
+        return 0;
+    }
 
+    GrGLuint id;
+    GR_GL_CALL(fGL.get(), GenTextures(1, &id));
+    GR_GL_CALL(fGL.get(), BindTexture(GR_GL_TEXTURE_RECTANGLE, id));
+    GR_GL_CALL(fGL.get(), TexParameteri(GR_GL_TEXTURE_RECTANGLE, GR_GL_TEXTURE_MAG_FILTER,
+                                        GR_GL_NEAREST));
+    GR_GL_CALL(fGL.get(), TexParameteri(GR_GL_TEXTURE_RECTANGLE, GR_GL_TEXTURE_MIN_FILTER,
+                                        GR_GL_NEAREST));
+    GR_GL_CALL(fGL.get(), TexParameteri(GR_GL_TEXTURE_RECTANGLE, GR_GL_TEXTURE_WRAP_S,
+                                        GR_GL_CLAMP_TO_EDGE));
+    GR_GL_CALL(fGL.get(), TexParameteri(GR_GL_TEXTURE_RECTANGLE, GR_GL_TEXTURE_WRAP_T,
+                                        GR_GL_CLAMP_TO_EDGE));
+    GR_GL_CALL(fGL.get(), TexImage2D(GR_GL_TEXTURE_RECTANGLE, 0, internalFormat, width, height, 0,
+                                     externalFormat, externalType, data));
+    return id;
+}
 }  // namespace sk_gpu_test

@@ -8,35 +8,31 @@
 #ifndef SkLocalMatrixImageFilter_DEFINED
 #define SkLocalMatrixImageFilter_DEFINED
 
-#include "include/core/SkFlattenable.h"
-#include "src/core/SkImageFilter_Base.h"
+#include "SkImageFilter.h"
 
 /**
  *  Wraps another imagefilter + matrix, such that using this filter will give the same result
  *  as using the wrapped filter with the matrix applied to its context.
  */
-class SkLocalMatrixImageFilter : public SkImageFilter_Base {
+class SkLocalMatrixImageFilter : public SkImageFilter {
 public:
     static sk_sp<SkImageFilter> Make(const SkMatrix& localM, sk_sp<SkImageFilter> input);
 
-    SkRect computeFastBounds(const SkRect&) const override;
+    SK_TO_STRING_OVERRIDE()
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkLocalMatrixImageFilter)
 
 protected:
     void flatten(SkWriteBuffer&) const override;
-    sk_sp<SkSpecialImage> onFilterImage(const Context&, SkIPoint* offset) const override;
-    SkIRect onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
-                           MapDirection, const SkIRect* inputRect) const override;
-
-    MatrixCapability onGetCTMCapability() const override { return MatrixCapability::kComplex; }
+    sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
+                                        SkIPoint* offset) const override;
+    SkIRect onFilterBounds(const SkIRect& src, const SkMatrix&, MapDirection) const override;
 
 private:
-    SK_FLATTENABLE_HOOKS(SkLocalMatrixImageFilter)
-
     SkLocalMatrixImageFilter(const SkMatrix& localM, sk_sp<SkImageFilter> input);
 
     SkMatrix fLocalM;
 
-    using INHERITED = SkImageFilter_Base;
+    typedef SkImageFilter INHERITED;
 };
 
 #endif

@@ -7,18 +7,11 @@
 #ifndef SkPathOpsCurve_DEFINE
 #define SkPathOpsCurve_DEFINE
 
-#include "include/core/SkPath.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsConic.h"
-#include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsQuad.h"
-#include "src/pathops/SkPathOpsTypes.h"
+#include "SkIntersections.h"
+
+#ifndef SK_RELEASE
+#include "SkPath.h"
+#endif
 
 struct SkPathOpsBounds;
 
@@ -78,6 +71,7 @@ struct SkDCurve {
     void dumpID(int ) const;
     SkDPoint lineTop(const SkPoint[2], SkScalar , double , double , double* topT);
     double nearPoint(SkPath::Verb verb, const SkDPoint& xy, const SkDPoint& opp) const;
+    void offset(SkPath::Verb verb, const SkDVector& );
     SkDPoint quadTop(const SkPoint curve[3], SkScalar , double s, double e, double* topT);
 
     void setConicBounds(const SkPoint curve[3], SkScalar curveWeight,
@@ -364,18 +358,12 @@ static void (* const CurveDIntersectRay[])(const SkDCurve& , const SkDLine& , Sk
 };
 
 static int line_intercept_h(const SkPoint a[2], SkScalar , SkScalar y, double* roots) {
-    if (a[0].fY == a[1].fY) {
-        return false;
-    }
     SkDLine line;
     roots[0] = SkIntersections::HorizontalIntercept(line.set(a), y);
     return between(0, roots[0], 1);
 }
 
 static int line_intercept_v(const SkPoint a[2], SkScalar , SkScalar x, double* roots) {
-    if (a[0].fX == a[1].fX) {
-        return false;
-    }
     SkDLine line;
     roots[0] = SkIntersections::VerticalIntercept(line.set(a), x);
     return between(0, roots[0], 1);

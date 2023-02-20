@@ -5,24 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkColorFilter.h"
+#include "SkGradientShader.h"
 
 #define WIDTH 512
 #define HEIGHT 1024
@@ -34,7 +19,7 @@ static sk_sp<SkShader> make_color_shader(SkColor color) {
     constexpr SkPoint kPts[] = {{0, 0}, {1, 1}};
     SkColor colors[] = {color, color};
 
-    return SkGradientShader::MakeLinear(kPts, colors, nullptr, 2, SkTileMode::kClamp);
+    return SkGradientShader::MakeLinear(kPts, colors, nullptr, 2, SkShader::kClamp_TileMode);
 }
 
 static sk_sp<SkShader> make_solid_shader() {
@@ -54,22 +39,22 @@ static sk_sp<SkShader> make_bg_shader(int checkSize) {
     SkBitmap bmp;
     bmp.allocN32Pixels(2 * checkSize, 2 * checkSize);
     SkCanvas canvas(bmp);
-    canvas.clear(ToolUtils::color_to_565(0xFF800000));
+    canvas.clear(sk_tool_utils::color_to_565(0xFF800000));
     SkPaint paint;
-    paint.setColor(ToolUtils::color_to_565(0xFF000080));
+    paint.setColor(sk_tool_utils::color_to_565(0xFF000080));
     SkRect rect0 = SkRect::MakeXYWH(0, 0,
                                     SkIntToScalar(checkSize), SkIntToScalar(checkSize));
     SkRect rect1 = SkRect::MakeXYWH(SkIntToScalar(checkSize), SkIntToScalar(checkSize),
                                     SkIntToScalar(checkSize), SkIntToScalar(checkSize));
     canvas.drawRect(rect1, paint);
     canvas.drawRect(rect0, paint);
-    return bmp.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions());
+    return SkShader::MakeBitmapShader(bmp, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode);
 }
 
 class ModeColorFilterGM : public GM {
 public:
     ModeColorFilterGM() {
-        this->setBGColor(0xFF303030);
+        this->setBGColor(sk_tool_utils::color_to_565(0xFF303030));
     }
 
 protected:
@@ -133,14 +118,14 @@ protected:
 
         SkPaint paint;
         int idx = 0;
-        const int kRectsPerRow = std::max(this->getISize().fWidth / kRectWidth, 1);
-        for (size_t cfm = 0; cfm < std::size(modes); ++cfm) {
-            for (size_t cfc = 0; cfc < std::size(colors); ++cfc) {
-                paint.setColorFilter(SkColorFilters::Blend(colors[cfc], modes[cfm]));
-                for (size_t s = 0; s < std::size(shaders); ++s) {
+        const int kRectsPerRow = SkMax32(this->getISize().fWidth / kRectWidth, 1);
+        for (size_t cfm = 0; cfm < SK_ARRAY_COUNT(modes); ++cfm) {
+            for (size_t cfc = 0; cfc < SK_ARRAY_COUNT(colors); ++cfc) {
+                paint.setColorFilter(SkColorFilter::MakeModeFilter(colors[cfc], modes[cfm]));
+                for (size_t s = 0; s < SK_ARRAY_COUNT(shaders); ++s) {
                     paint.setShader(shaders[s]);
                     bool hasShader = nullptr == paint.getShader();
-                    int paintColorCnt = hasShader ? std::size(alphas) : std::size(colors);
+                    int paintColorCnt = hasShader ? SK_ARRAY_COUNT(alphas) : SK_ARRAY_COUNT(colors);
                     SkColor* paintColors = hasShader ? alphas : colors;
                     for (int pc = 0; pc < paintColorCnt; ++pc) {
                         paint.setColor(paintColors[pc]);
@@ -162,11 +147,12 @@ protected:
 
 private:
     sk_sp<SkShader> fBmpShader;
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new ModeColorFilterGM; )
+static GM* MyFactory(void*) { return new ModeColorFilterGM; }
+static GMRegistry reg(MyFactory);
 
-}  // namespace skiagm
+}

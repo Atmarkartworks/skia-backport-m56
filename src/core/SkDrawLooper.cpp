@@ -5,40 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "src/base/SkArenaAlloc.h"
-
-#ifdef SK_SUPPORT_LEGACY_DRAWLOOPER
-
-#include "include/core/SkDrawLooper.h"
-
-void SkDrawLooper::Context::Info::applyToCTM(SkMatrix* ctm) const {
-    if (fApplyPostCTM) {
-        ctm->postTranslate(fTranslate.fX, fTranslate.fY);
-    } else {
-        ctm->preTranslate(fTranslate.fX, fTranslate.fY);
-    }
-}
-
-void SkDrawLooper::Context::Info::applyToCanvas(SkCanvas* canvas) const {
-    if (fApplyPostCTM) {
-        canvas->setMatrix(canvas->getLocalToDevice().postTranslate(fTranslate.fX, fTranslate.fY));
-    } else {
-        canvas->translate(fTranslate.fX, fTranslate.fY);
-    }
-}
+#include "SkDrawLooper.h"
+#include "SkCanvas.h"
+#include "SkMatrix.h"
+#include "SkPaint.h"
+#include "SkRect.h"
+#include "SkSmallAllocator.h"
 
 bool SkDrawLooper::canComputeFastBounds(const SkPaint& paint) const {
-    SkSTArenaAlloc<48> alloc;
+    SkCanvas canvas;
+    SkSmallAllocator<1, 32> allocator;
 
-    SkDrawLooper::Context* context = this->makeContext(&alloc);
+    SkDrawLooper::Context* context = allocator.createWithIniter(
+        this->contextSize(),
+        [&](void* buffer) {
+            return this->createContext(&canvas, buffer);
+        });
     for (;;) {
         SkPaint p(paint);
-        SkDrawLooper::Context::Info info;
-        if (context->next(&info, &p)) {
+        if (context->next(&canvas, &p)) {
+            p.setLooper(nullptr);
             if (!p.canComputeFastBounds()) {
                 return false;
             }
@@ -54,19 +40,23 @@ void SkDrawLooper::computeFastBounds(const SkPaint& paint, const SkRect& s,
     // src and dst rects may alias and we need to keep the original src, so copy it.
     const SkRect src = s;
 
-    SkSTArenaAlloc<48> alloc;
+    SkCanvas canvas;
+    SkSmallAllocator<1, 32> allocator;
 
     *dst = src;   // catch case where there are no loops
-    SkDrawLooper::Context* context = this->makeContext(&alloc);
-
+    SkDrawLooper::Context* context = allocator.createWithIniter(
+        this->contextSize(),
+        [&](void* buffer) {
+            return this->createContext(&canvas, buffer);
+        });
     for (bool firstTime = true;; firstTime = false) {
         SkPaint p(paint);
-        SkDrawLooper::Context::Info info;
-        if (context->next(&info, &p)) {
+        if (context->next(&canvas, &p)) {
             SkRect r(src);
 
+            p.setLooper(nullptr);
             p.computeFastBounds(r, &r);
-            r.offset(info.fTranslate.fX, info.fTranslate.fY);
+            canvas.getTotalMatrix().mapRect(&r);
 
             if (firstTime) {
                 *dst = r;
@@ -82,29 +72,3 @@ void SkDrawLooper::computeFastBounds(const SkPaint& paint, const SkRect& s,
 bool SkDrawLooper::asABlurShadow(BlurShadowRec*) const {
     return false;
 }
-
-void SkDrawLooper::apply(SkCanvas* canvas, const SkPaint& paint,
-                         std::function<void(SkCanvas*, const SkPaint&)> proc) {
-    SkSTArenaAlloc<256> alloc;
-    Context* ctx = this->makeContext(&alloc);
-    if (ctx) {
-        Context::Info info;
-        for (;;) {
-            SkPaint p = paint;
-            if (!ctx->next(&info, &p)) {
-                break;
-            }
-            canvas->save();
-            if (info.fApplyPostCTM) {
-                canvas->setMatrix(canvas->getLocalToDevice().postTranslate(info.fTranslate.fX,
-                                                                           info.fTranslate.fY));
-            } else {
-                canvas->translate(info.fTranslate.fX, info.fTranslate.fY);
-            }
-            proc(canvas, p);
-            canvas->restore();
-        }
-    }
-}
-
-#endif

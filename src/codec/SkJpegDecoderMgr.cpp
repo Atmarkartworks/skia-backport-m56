@@ -4,21 +4,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/codec/SkJpegDecoderMgr.h"
 
-#include "include/core/SkTypes.h"
-#include "src/codec/SkCodecPriv.h"
-#include "src/codec/SkJpegSourceMgr.h"
-#include "src/codec/SkJpegUtility.h"
+#include "SkJpegDecoderMgr.h"
 
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-    #include "include/android/SkAndroidFrameworkUtils.h"
-#endif
-
-#include <cstddef>
-#include <utility>
-
-class SkStream;
+#include "SkJpegUtility.h"
 
 /*
  * Print information, warning, and error messages
@@ -47,9 +36,6 @@ static void progress_monitor(j_common_ptr info) {
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// JpegDecoderMgr
-
 bool JpegDecoderMgr::returnFalse(const char caller[]) {
     print_message((j_common_ptr) &fDInfo, caller);
     return false;
@@ -69,9 +55,6 @@ bool JpegDecoderMgr::getEncodedColor(SkEncodedInfo::Color* outColor) {
             *outColor = SkEncodedInfo::kYUV_Color;
             return true;
         case JCS_RGB:
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-            SkAndroidFrameworkUtils::SafetyNetLog("118372692");
-#endif
             *outColor = SkEncodedInfo::kRGB_Color;
             return true;
         case JCS_YCCK:
@@ -85,12 +68,10 @@ bool JpegDecoderMgr::getEncodedColor(SkEncodedInfo::Color* outColor) {
     }
 }
 
-SkJpegSourceMgr* JpegDecoderMgr::getSourceMgr() {
-    return fSrcMgr.fSourceMgr.get();
-}
-
 JpegDecoderMgr::JpegDecoderMgr(SkStream* stream)
-        : fSrcMgr(SkJpegSourceMgr::Make(stream)), fInit(false) {
+    : fSrcMgr(stream)
+    , fInit(false)
+{
     // Error manager must be set before any calls to libjeg in order to handle failures
     fDInfo.err = jpeg_std_error(&fErrorMgr);
     fErrorMgr.error_exit = skjpeg_err_exit;
@@ -111,47 +92,10 @@ JpegDecoderMgr::~JpegDecoderMgr() {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// JpegDecoderMgr::SourceMgr
-
-// static
-void JpegDecoderMgr::SourceMgr::InitSource(j_decompress_ptr dinfo) {
-    JpegDecoderMgr::SourceMgr* src = (JpegDecoderMgr::SourceMgr*)dinfo->src;
-    src->fSourceMgr->initSource(src->next_input_byte, src->bytes_in_buffer);
+jmp_buf& JpegDecoderMgr::getJmpBuf() {
+    return fErrorMgr.fJmpBuf;
 }
 
-// static
-void JpegDecoderMgr::SourceMgr::SkipInputData(j_decompress_ptr dinfo, long num_bytes_long) {
-    JpegDecoderMgr::SourceMgr* src = (JpegDecoderMgr::SourceMgr*)dinfo->src;
-    size_t num_bytes = static_cast<size_t>(num_bytes_long);
-    if (!src->fSourceMgr->skipInputBytes(num_bytes, src->next_input_byte, src->bytes_in_buffer)) {
-        SkCodecPrintf("Failure to skip.\n");
-        src->next_input_byte = nullptr;
-        src->bytes_in_buffer = 0;
-        dinfo->err->error_exit((j_common_ptr)dinfo);
-    }
-}
-
-// static
-boolean JpegDecoderMgr::SourceMgr::FillInputBuffer(j_decompress_ptr dinfo) {
-    JpegDecoderMgr::SourceMgr* src = (JpegDecoderMgr::SourceMgr*)dinfo->src;
-    if (!src->fSourceMgr->fillInputBuffer(src->next_input_byte, src->bytes_in_buffer)) {
-        SkCodecPrintf("Failure to fill input buffer.\n");
-        src->next_input_byte = nullptr;
-        src->bytes_in_buffer = 0;
-        return false;
-    }
-    return true;
-}
-
-// static
-void JpegDecoderMgr::SourceMgr::TermSource(j_decompress_ptr dinfo) {}
-
-JpegDecoderMgr::SourceMgr::SourceMgr(std::unique_ptr<SkJpegSourceMgr> sourceMgr)
-        : fSourceMgr(std::move(sourceMgr)) {
-    init_source = JpegDecoderMgr::SourceMgr::InitSource;
-    fill_input_buffer = JpegDecoderMgr::SourceMgr::FillInputBuffer;
-    skip_input_data = JpegDecoderMgr::SourceMgr::SkipInputData;
-    resync_to_restart = jpeg_resync_to_restart;
-    term_source = JpegDecoderMgr::SourceMgr::TermSource;
+jpeg_decompress_struct* JpegDecoderMgr::dinfo() {
+    return &fDInfo;
 }

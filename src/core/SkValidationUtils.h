@@ -8,9 +8,14 @@
 #ifndef SkValidationUtils_DEFINED
 #define SkValidationUtils_DEFINED
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "src/core/SkXfermodePriv.h"
+#include "SkBitmap.h"
+#include "SkBlendMode.h"
+
+/** Returns true if coeff's value is in the SkXfermode::Coeff enum.
+  */
+static inline bool SkIsValidCoeff(SkXfermode::Coeff coeff) {
+    return coeff >= 0 && coeff < SkXfermode::kCoeffCount;
+}
 
 /** Returns true if mode's value is in the SkBlendMode enum.
   */

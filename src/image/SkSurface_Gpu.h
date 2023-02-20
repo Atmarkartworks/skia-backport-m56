@@ -8,86 +8,35 @@
 #ifndef SkSurface_Gpu_DEFINED
 #define SkSurface_Gpu_DEFINED
 
-#include "include/core/SkTypes.h"
+#include "SkSurface_Base.h"
 
 #if SK_SUPPORT_GPU
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkScalar.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "src/image/SkSurface_Base.h"
 
-class GrBackendSemaphore;
-class GrRecordingContext;
-class SkCanvas;
-class SkCapabilities;
-class SkColorSpace;
-class SkDeferredDisplayList;
-class SkImage;
-class SkPaint;
-class SkPixmap;
-class SkSurface;
-class SkSurfaceCharacterization;
-enum GrSurfaceOrigin : int;
-enum class GrSemaphoresSubmitted : bool;
-namespace skgpu { class MutableTextureState; }
-namespace skgpu { namespace v1 { class Device; } }
-struct GrFlushInfo;
-struct SkIPoint;
-struct SkIRect;
-struct SkISize;
+class SkGpuDevice;
 
 class SkSurface_Gpu : public SkSurface_Base {
 public:
-    SkSurface_Gpu(sk_sp<skgpu::v1::Device>);
-    ~SkSurface_Gpu() override;
+    SkSurface_Gpu(sk_sp<SkGpuDevice>);
+    virtual ~SkSurface_Gpu();
 
-    SkImageInfo imageInfo() const override;
-
-    GrRecordingContext* onGetRecordingContext() override;
-
-    GrBackendTexture onGetBackendTexture(BackendHandleAccess) override;
-    GrBackendRenderTarget onGetBackendRenderTarget(BackendHandleAccess) override;
-    bool onReplaceBackendTexture(const GrBackendTexture&, GrSurfaceOrigin, ContentChangeMode, TextureReleaseProc,
-                                 ReleaseContext) override;
-
+    GrBackendObject onGetTextureHandle(BackendHandleAccess) override;
+    bool onGetRenderTargetHandle(GrBackendObject*, BackendHandleAccess) override;
     SkCanvas* onNewCanvas() override;
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&) override;
-    sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset) override;
-    void onWritePixels(const SkPixmap&, int x, int y) override;
-    void onAsyncRescaleAndReadPixels(const SkImageInfo& info, SkIRect srcRect,
-                                     RescaleGamma rescaleGamma, RescaleMode,
-                                     ReadPixelsCallback callback,
-                                     ReadPixelsContext context) override;
-    void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
-                                           sk_sp<SkColorSpace> dstColorSpace,
-                                           SkIRect srcRect,
-                                           SkISize dstSize,
-                                           RescaleGamma rescaleGamma,
-                                           RescaleMode,
-                                           ReadPixelsCallback callback,
-                                           ReadPixelsContext context) override;
-    bool onCopyOnWrite(ContentChangeMode) override;
+    sk_sp<SkImage> onNewImageSnapshot(SkBudgeted, SkCopyPixelsMode) override;
+    void onCopyOnWrite(ContentChangeMode) override;
     void onDiscard() override;
-    void onResolveMSAA() override;
-    GrSemaphoresSubmitted onFlush(BackendSurfaceAccess access, const GrFlushInfo& info,
-                                  const skgpu::MutableTextureState*) override;
-    bool onWait(int numSemaphores, const GrBackendSemaphore* waitSemaphores,
-                 bool deleteSemaphoresAfterWait) override;
-    bool onCharacterize(SkSurfaceCharacterization*) const override;
-    bool onIsCompatible(const SkSurfaceCharacterization&) const override;
-    void onDraw(SkCanvas* canvas, SkScalar x, SkScalar y, const SkSamplingOptions&,
-                const SkPaint* paint) override;
-    bool onDraw(sk_sp<const SkDeferredDisplayList>, SkIPoint offset) override;
+    void onPrepareForExternalIO() override;
 
-    sk_sp<const SkCapabilities> onCapabilities() override;
-    skgpu::v1::Device* getDevice();
+    SkGpuDevice* getDevice() { return fDevice.get(); }
+
+    static bool Valid(const SkImageInfo&);
+    static bool Valid(GrContext*, GrPixelConfig, SkColorSpace*);
 
 private:
-    sk_sp<skgpu::v1::Device> fDevice;
+    sk_sp<SkGpuDevice> fDevice;
 
-    using INHERITED = SkSurface_Base;
+    typedef SkSurface_Base INHERITED;
 };
 
 #endif // SK_SUPPORT_GPU

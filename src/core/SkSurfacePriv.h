@@ -8,16 +8,18 @@
 #ifndef SkSurfacePriv_DEFINED
 #define SkSurfacePriv_DEFINED
 
-#include "include/core/SkSurfaceProps.h"
-
-struct SkImageInfo;
+#include "SkSurfaceProps.h"
 
 static inline SkSurfaceProps SkSurfacePropsCopyOrDefault(const SkSurfaceProps* props) {
-    return props ? *props : SkSurfaceProps();
+    if (props) {
+        return *props;
+    } else {
+        return SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType);
+    }
 }
 
-constexpr size_t kIgnoreRowBytesValue = static_cast<size_t>(~0);
-
-bool SkSurfaceValidateRasterInfo(const SkImageInfo&, size_t rb = kIgnoreRowBytesValue);
+static inline SkPixelGeometry SkSurfacePropsDefaultPixelGeometry() {
+    return SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType).pixelGeometry();
+}
 
 #endif

@@ -5,12 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "bench/BitmapRegionDecoderBench.h"
-#ifdef SK_ENABLE_ANDROID_UTILS
-#include "bench/CodecBenchPriv.h"
-#include "client_utils/android/BitmapRegionDecoder.h"
-#include "include/core/SkBitmap.h"
-#include "src/core/SkOSFile.h"
+#include "BitmapRegionDecoderBench.h"
+#include "CodecBenchPriv.h"
+#include "SkBitmap.h"
+#include "SkOSFile.h"
 
 BitmapRegionDecoderBench::BitmapRegionDecoderBench(const char* baseName, SkData* encoded,
         SkColorType colorType, uint32_t sampleSize, const SkIRect& subset)
@@ -38,15 +36,12 @@ bool BitmapRegionDecoderBench::isSuitableFor(Backend backend) {
 }
 
 void BitmapRegionDecoderBench::onDelayedSetup() {
-    fBRD = android::skia::BitmapRegionDecoder::Make(fData);
+    fBRD.reset(SkBitmapRegionDecoder::Create(fData, SkBitmapRegionDecoder::kAndroidCodec_Strategy));
 }
 
 void BitmapRegionDecoderBench::onDraw(int n, SkCanvas* canvas) {
-    auto ct = fBRD->computeOutputColorType(fColorType);
-    auto cs = fBRD->computeOutputColorSpace(ct, nullptr);
     for (int i = 0; i < n; i++) {
         SkBitmap bm;
-        SkAssertResult(fBRD->decodeRegion(&bm, nullptr, fSubset, fSampleSize, ct, false, cs));
+        SkAssertResult(fBRD->decodeRegion(&bm, nullptr, fSubset, fSampleSize, fColorType, false));
     }
 }
-#endif // SK_ENABLE_ANDROID_UTILS

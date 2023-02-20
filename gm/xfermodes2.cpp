@@ -4,38 +4,21 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
-#include "include/utils/SkTextUtils.h"
-#include "tools/ToolUtils.h"
-#include <stdint.h>
-#include <string.h>
+#include "gm.h"
+#include "SkBitmap.h"
+#include "SkShader.h"
+#include "SkBlendModePriv.h"
+#include "SkColorPriv.h"
 
 namespace skiagm {
 
 class Xfermodes2GM : public GM {
 public:
-    Xfermodes2GM(bool grayscale) : fGrayscale(grayscale) {}
+    Xfermodes2GM() {}
 
 protected:
     SkString onShortName() override {
-        return fGrayscale ? SkString("xfermodes2_gray") : SkString("xfermodes2");
+        return SkString("xfermodes2");
     }
 
     SkISize onISize() override {
@@ -48,12 +31,15 @@ protected:
         const SkScalar w = SkIntToScalar(kSize);
         const SkScalar h = SkIntToScalar(kSize);
 
-        SkFont font(ToolUtils::create_portable_typeface());
+        SkPaint labelP;
+        labelP.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&labelP);
+        labelP.setTextAlign(SkPaint::kCenter_Align);
 
         const int W = 6;
 
         SkScalar x = 0, y = 0;
-        for (size_t m = 0; m < kSkBlendModeCount; m++) {
+        for (size_t m = 0; m <= (size_t)SkBlendMode::kLastMode; m++) {
             SkBlendMode mode = static_cast<SkBlendMode>(m);
 
             canvas->save();
@@ -85,8 +71,8 @@ protected:
             canvas->restore();
 
 #if 1
-            SkTextUtils::DrawString(canvas, SkBlendMode_Name(mode), x + w/2, y - font.getSize()/2, font, SkPaint(),
-                                    SkTextUtils::kCenter_Align);
+            canvas->drawText(SkBlendMode_Name(mode), strlen(SkBlendMode_Name(mode)),
+                             x + w/2, y - labelP.getTextSize()/2, labelP);
 #endif
             x += w + SkIntToScalar(10);
             if ((m % W) == W - 1) {
@@ -110,7 +96,8 @@ private:
 
         SkMatrix lm;
         lm.setScale(SkIntToScalar(16), SkIntToScalar(16));
-        fBG = bg.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions(), lm);
+        fBG = SkShader::MakeBitmapShader(bg, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode,
+                                         &lm);
 
         SkBitmap srcBmp;
         srcBmp.allocN32Pixels(kSize, kSize);
@@ -118,24 +105,26 @@ private:
 
         for (int y = 0; y < kSize; ++y) {
             int c = y * (1 << kShift);
-            SkPMColor rowColor = fGrayscale ? SkPackARGB32(c, c, c, c) : SkPackARGB32(c, c, 0, c/2);
+            SkPMColor rowColor = SkPackARGB32(c, c, 0, c/2);
             for (int x = 0; x < kSize; ++x) {
                 pixels[kSize * y + x] = rowColor;
             }
         }
-        fSrc = srcBmp.makeShader(SkSamplingOptions());
+        fSrc = SkShader::MakeBitmapShader(srcBmp, SkShader::kClamp_TileMode,
+                                          SkShader::kClamp_TileMode);
         SkBitmap dstBmp;
         dstBmp.allocN32Pixels(kSize, kSize);
         pixels = reinterpret_cast<SkPMColor*>(dstBmp.getPixels());
 
         for (int x = 0; x < kSize; ++x) {
             int c = x * (1 << kShift);
-            SkPMColor colColor = fGrayscale ? SkPackARGB32(c, c, c, c) : SkPackARGB32(c, 0, c, c/2);
+            SkPMColor colColor = SkPackARGB32(c, 0, c, c/2);
             for (int y = 0; y < kSize; ++y) {
                 pixels[kSize * y + x] = colColor;
             }
         }
-        fDst = dstBmp.makeShader(SkSamplingOptions());
+        fDst = SkShader::MakeBitmapShader(dstBmp, SkShader::kClamp_TileMode,
+                                          SkShader::kClamp_TileMode);
     }
 
     enum {
@@ -143,17 +132,16 @@ private:
         kSize = 256 >> kShift,
     };
 
-    bool fGrayscale;
     sk_sp<SkShader> fBG;
     sk_sp<SkShader> fSrc;
     sk_sp<SkShader> fDst;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new Xfermodes2GM(false); )
-DEF_GM( return new Xfermodes2GM(true); )
+static GM* MyFactory(void*) { return new Xfermodes2GM; }
+static GMRegistry reg(MyFactory);
 
-}  // namespace skiagm
+}

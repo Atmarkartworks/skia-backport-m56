@@ -8,11 +8,8 @@
 #ifndef Stats_DEFINED
 #define Stats_DEFINED
 
-#include <algorithm>
-#include <vector>
-
-#include "include/core/SkString.h"
-#include "include/private/base/SkFloatingPoint.h"
+#include "SkString.h"
+#include "SkTSort.h"
 
 #ifdef SK_BUILD_FOR_WIN
     static const char* kBars[] = { ".", "o", "O" };
@@ -21,8 +18,8 @@
 #endif
 
 struct Stats {
-    Stats(const SkTArray<double>& samples, bool want_plot) {
-        int n = samples.size();
+    Stats(const SkTArray<double>& samples) {
+        int n = samples.count();
         if (!n) {
             min = max = mean = var = median = 0;
             return;
@@ -45,14 +42,15 @@ struct Stats {
         for (int i = 0 ; i < n; i++) {
             err += (samples[i] - mean) * (samples[i] - mean);
         }
-        var = sk_ieee_double_divide(err, n-1);
+        var = err / (n-1);
 
-        std::vector<double> sorted(samples.begin(), samples.end());
-        std::sort(sorted.begin(), sorted.end());
+        SkAutoTMalloc<double> sorted(n);
+        memcpy(sorted.get(), samples.begin(), n * sizeof(double));
+        SkTQSort(sorted.get(), sorted.get() + n - 1);
         median = sorted[n/2];
 
         // Normalize samples to [min, max] in as many quanta as we have distinct bars to print.
-        for (int i = 0; want_plot && i < n; i++) {
+        for (int i = 0; i < n; i++) {
             if (min == max) {
                 // All samples are the same value.  Don't divide by zero.
                 plot.append(kBars[0]);
@@ -62,9 +60,9 @@ struct Stats {
             double s = samples[i];
             s -= min;
             s /= (max - min);
-            s *= (std::size(kBars) - 1);
+            s *= (SK_ARRAY_COUNT(kBars) - 1);
             const size_t bar = (size_t)(s + 0.5);
-            SkASSERT_RELEASE(bar < std::size(kBars));
+            SkASSERT_RELEASE(bar < SK_ARRAY_COUNT(kBars));
             plot.append(kBars[bar]);
         }
     }

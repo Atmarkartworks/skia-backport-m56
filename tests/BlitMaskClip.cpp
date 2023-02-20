@@ -5,15 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkColor.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkTypes.h"
-#include "src/core/SkBlitter.h"
-#include "src/core/SkMask.h"
-#include "tests/Test.h"
-
-#include <cstdint>
-#include <string>
+#include "SkBlitter.h"
+#include "SkMask.h"
+#include "Test.h"
+#include <string.h>
 
 class TestBlitter : public SkBlitter {
 public:

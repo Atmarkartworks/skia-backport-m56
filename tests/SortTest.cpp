@@ -5,13 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "src/base/SkRandom.h"
-#include "src/base/SkTSort.h"
-#include "tests/Test.h"
+#include "SkRandom.h"
+#include "SkTSort.h"
+#include "Test.h"
 
-#include <cstdlib>
-#include <cstring>
-#include <string>
+#include <stdlib.h>
 
 extern "C" {
     static int compare_int(const void* a, const void* b) {
@@ -39,14 +37,14 @@ DEF_TEST(Sort, reporter) {
     /** An array of random numbers to be sorted. */
     int randomArray[500];
     /** The reference sort of the random numbers. */
-    int sortedArray[std::size(randomArray)];
+    int sortedArray[SK_ARRAY_COUNT(randomArray)];
     /** The random numbers are copied into this array, sorted by an SkSort,
         then this array is compared against the reference sort. */
-    int workingArray[std::size(randomArray)];
+    int workingArray[SK_ARRAY_COUNT(randomArray)];
     SkRandom    rand;
 
     for (int i = 0; i < 10000; i++) {
-        int count = rand.nextRangeU(1, std::size(randomArray));
+        int count = rand.nextRangeU(1, SK_ARRAY_COUNT(randomArray));
         rand_array(rand, randomArray, count);
 
         // Use qsort as the reference sort.
@@ -58,7 +56,7 @@ DEF_TEST(Sort, reporter) {
         check_sort(reporter, "Heap", workingArray, sortedArray, count);
 
         memcpy(workingArray, randomArray, sizeof(randomArray));
-        SkTQSort<int>(workingArray, workingArray + count);
+        SkTQSort<int>(workingArray, workingArray + count - 1);
         check_sort(reporter, "Quick", workingArray, sortedArray, count);
     }
 }

@@ -5,21 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypes.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "src/base/SkRandom.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkRandom.h"
+#include "SkSurface.h"
+
+#if SK_SUPPORT_GPU
 
 namespace skiagm {
 
@@ -30,7 +22,8 @@ namespace skiagm {
 class DiscardGM : public GM {
 
 public:
-    DiscardGM() {}
+    DiscardGM() {
+    }
 
 protected:
     SkString onShortName() override {
@@ -41,22 +34,19 @@ protected:
         return SkISize::Make(100, 100);
     }
 
-    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
-        auto dContext = GrAsDirectContext(canvas->recordingContext());
-        if (!dContext || dContext->abandoned()) {
-            *errorMsg = "GM relies on having access to a live direct context.";
-            return DrawResult::kSkip;
+    void onDraw(SkCanvas* canvas) override {
+        GrContext* context = canvas->getGrContext();
+        if (nullptr == context) {
+            return;
         }
 
         SkISize size = this->getISize();
         size.fWidth /= 10;
         size.fHeight /= 10;
         SkImageInfo info = SkImageInfo::MakeN32Premul(size);
-        sk_sp<SkSurface> surface =
-                SkSurface::MakeRenderTarget(dContext, skgpu::Budgeted::kNo, info);
+        auto surface = SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info);
         if (nullptr == surface) {
-            *errorMsg = "Could not create render target.";
-            return DrawResult::kFail;
+            return;
         }
 
         canvas->clear(SK_ColorBLACK);
@@ -66,7 +56,7 @@ protected:
             for (int y = 0; y < 10; ++y) {
               surface->getCanvas()->discard();
               // Make something that isn't too close to the background color, black.
-              SkColor color = ToolUtils::color_to_565(rand.nextU() | 0xFF404040);
+              SkColor color = sk_tool_utils::color_to_565(rand.nextU() | 0xFF404040);
               switch (rand.nextULessThan(3)) {
                   case 0:
                       surface->getCanvas()->drawColor(color);
@@ -76,24 +66,25 @@ protected:
                       break;
                   case 2:
                       SkPaint paint;
-                      paint.setShader(SkShaders::Color(color));
+                      paint.setShader(SkShader::MakeColorShader(color));
                       surface->getCanvas()->drawPaint(paint);
                       break;
               }
-              surface->draw(canvas, 10.f*x, 10.f*y);
+              surface->draw(canvas, 10.f*x, 10.f*y, nullptr);
             }
         }
 
         surface->getCanvas()->discard();
-        return DrawResult::kOk;
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new DiscardGM;)
 
-}  // namespace skiagm
+} // end namespace
+
+#endif

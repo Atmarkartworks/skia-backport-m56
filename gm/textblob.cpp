@@ -5,26 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTDArray.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
 
-#include <cstring>
+#include "SkCanvas.h"
+#include "SkPoint.h"
+#include "SkTextBlob.h"
+#include "SkTDArray.h"
 
 namespace  {
 
@@ -76,7 +62,7 @@ const struct BlobCfg {
 };
 
 const SkScalar kFontSize = 16;
-}  // namespace
+}
 
 class TextBlobGM : public skiagm::GM {
 public:
@@ -86,13 +72,14 @@ public:
 
 protected:
     void onOnceBeforeDraw() override {
-        fTypeface = ToolUtils::create_portable_typeface("serif", SkFontStyle());
-        SkFont font(fTypeface);
+        fTypeface = sk_tool_utils::create_portable_typeface("serif", SkFontStyle());
+        SkPaint p;
+        p.setTypeface(fTypeface);
         size_t txtLen = strlen(fText);
-        int glyphCount = font.countText(fText, txtLen, SkTextEncoding::kUTF8);
+        int glyphCount = p.textToGlyphs(fText, txtLen, nullptr);
 
         fGlyphs.append(glyphCount);
-        font.textToGlyphs(fText, txtLen, SkTextEncoding::kUTF8, fGlyphs.begin(), glyphCount);
+        p.textToGlyphs(fText, txtLen, fGlyphs.begin());
     }
 
     SkString onShortName() override {
@@ -104,11 +91,10 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        for (unsigned b = 0; b < std::size(blobConfigs); ++b) {
+        for (unsigned b = 0; b < SK_ARRAY_COUNT(blobConfigs); ++b) {
             sk_sp<SkTextBlob> blob(this->makeBlob(b));
 
             SkPaint p;
-            p.setAntiAlias(true);
             SkPoint offset = SkPoint::Make(SkIntToScalar(10 + 300 * (b % 2)),
                                            SkIntToScalar(20 + 150 * (b / 2)));
 
@@ -118,7 +104,6 @@ protected:
             p.setStyle(SkPaint::kStroke_Style);
             SkRect box = blob->bounds();
             box.offset(offset);
-            p.setAntiAlias(false);
             canvas->drawRect(box, p);
 
         }
@@ -128,28 +113,29 @@ private:
     sk_sp<SkTextBlob> makeBlob(unsigned blobIndex) {
         SkTextBlobBuilder builder;
 
-        SkFont font;
-        font.setSubpixel(true);
-        font.setEdging(SkFont::Edging::kAntiAlias);
+        SkPaint font;
+        font.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
+        font.setAntiAlias(true);
+        font.setSubpixelText(true);
         font.setTypeface(fTypeface);
 
-        for (unsigned l = 0; l < std::size(blobConfigs[blobIndex]); ++l) {
+        for (unsigned l = 0; l < SK_ARRAY_COUNT(blobConfigs[blobIndex]); ++l) {
             unsigned currentGlyph = 0;
 
-            for (unsigned c = 0; c < std::size(blobConfigs[blobIndex][l]); ++c) {
+            for (unsigned c = 0; c < SK_ARRAY_COUNT(blobConfigs[blobIndex][l]); ++c) {
                 const BlobCfg* cfg = &blobConfigs[blobIndex][l][c];
                 unsigned count = cfg->count;
 
-                if (count > fGlyphs.size() - currentGlyph) {
-                    count = fGlyphs.size() - currentGlyph;
+                if (count > fGlyphs.count() - currentGlyph) {
+                    count = fGlyphs.count() - currentGlyph;
                 }
                 if (0 == count) {
                     break;
                 }
 
-                font.setSize(kFontSize * cfg->scale);
-                const SkScalar advanceX = font.getSize() * 0.85f;
-                const SkScalar advanceY = font.getSize() * 1.5f;
+                font.setTextSize(kFontSize * cfg->scale);
+                const SkScalar advanceX = font.getTextSize() * 0.85f;
+                const SkScalar advanceY = font.getTextSize() * 1.5f;
 
                 SkPoint offset = SkPoint::Make(currentGlyph * advanceX + c * advanceX,
                                                advanceY * l);
@@ -197,7 +183,7 @@ private:
     SkTDArray<uint16_t> fGlyphs;
     sk_sp<SkTypeface>   fTypeface;
     const char*         fText;
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM(return new TextBlobGM("hamburgefons");)

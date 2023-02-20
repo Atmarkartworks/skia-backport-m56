@@ -5,64 +5,52 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkFont.h"
-#include "include/core/SkFontArguments.h"
-#include "include/core/SkFontMgr.h"
-#include "include/core/SkFontParameters.h"
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkDebug.h"
-#include "src/core/SkAdvancedTypefaceMetrics.h" // IWYU pragma: keep
-#include "src/core/SkScalerContext.h"
-#include "tests/Test.h"
-#include "tools/flags/CommandLineFlags.h"
+#include "SkCommandLineFlags.h"
+#include "SkFontMgr.h"
+#include "SkTypeface.h"
+#include "Test.h"
 
-#include <cstddef>
-#include <cstdint>
+#include "SkFont.h"
+#include "SkPaint.h"
+
 #include <initializer_list>
-#include <memory>
+#include <limits>
 #include <vector>
 
-class SkDescriptor;
-class SkFontDescriptor;
+static void test_font(skiatest::Reporter* reporter) {
+    uint32_t flags = 0;
+    sk_sp<SkFont> font(SkFont::Make(nullptr, 24, SkFont::kA8_MaskType, flags));
 
-DECLARE_bool(verboseFontMgr)
-
-DEF_TEST(FontMgr_Font, reporter) {
-    SkFont font(nullptr, 24);
-
-    //REPORTER_ASSERT(reporter, SkTypeface::GetDefaultTypeface() == font.getTypeface());
-    REPORTER_ASSERT(reporter, 24 == font.getSize());
-    REPORTER_ASSERT(reporter, 1 == font.getScaleX());
-    REPORTER_ASSERT(reporter, 0 == font.getSkewX());
+    REPORTER_ASSERT(reporter, font->getTypeface());
+    REPORTER_ASSERT(reporter, 24 == font->getSize());
+    REPORTER_ASSERT(reporter, 1 == font->getScaleX());
+    REPORTER_ASSERT(reporter, 0 == font->getSkewX());
+    REPORTER_ASSERT(reporter, SkFont::kA8_MaskType == font->getMaskType());
 
     uint16_t glyphs[5];
     sk_bzero(glyphs, sizeof(glyphs));
 
-    // Check that no glyphs are copied with insufficient storage.
-    int count = font.textToGlyphs("Hello", 5, SkTextEncoding::kUTF8, glyphs, 2);
+    int count = font->textToGlyphs("Hello", 5, kUTF8_SkTextEncoding, glyphs, SK_ARRAY_COUNT(glyphs));
+
     REPORTER_ASSERT(reporter, 5 == count);
-    for (const auto glyph : glyphs) { REPORTER_ASSERT(reporter, glyph == 0); }
-
-    SkAssertResult(font.textToGlyphs("Hello", 5, SkTextEncoding::kUTF8, glyphs,
-                                     std::size(glyphs)) == count);
-
     for (int i = 0; i < count; ++i) {
         REPORTER_ASSERT(reporter, 0 != glyphs[i]);
     }
     REPORTER_ASSERT(reporter, glyphs[0] != glyphs[1]); // 'h' != 'e'
     REPORTER_ASSERT(reporter, glyphs[2] == glyphs[3]); // 'l' == 'l'
 
-    const SkFont newFont(font.makeWithSize(36));
-    REPORTER_ASSERT(reporter, font.getTypefaceOrDefault() == newFont.getTypefaceOrDefault());
-    REPORTER_ASSERT(reporter, 36 == newFont.getSize());   // double check we haven't changed
-    REPORTER_ASSERT(reporter, 24 == font.getSize());   // double check we haven't changed
+    sk_sp<SkFont> newFont(font->makeWithSize(36));
+    REPORTER_ASSERT(reporter, newFont.get());
+    REPORTER_ASSERT(reporter, font->getTypeface() == newFont->getTypeface());
+    REPORTER_ASSERT(reporter, 36 == newFont->getSize());   // double check we haven't changed
+    REPORTER_ASSERT(reporter, 24 == font->getSize());   // double check we haven't changed
+
+    SkPaint paint;
+    paint.setTextSize(18);
+    font = SkFont::Testing_CreateFromPaint(paint);
+    REPORTER_ASSERT(reporter, font.get());
+    REPORTER_ASSERT(reporter, font->getSize() == paint.getTextSize());
+    REPORTER_ASSERT(reporter, SkFont::kBW_MaskType == font->getMaskType());
 }
 
 /*
@@ -70,31 +58,30 @@ DEF_TEST(FontMgr_Font, reporter) {
  *  (e.g. sans -> Arial) then we want to at least get the same typeface back
  *  if we request the alias name multiple times.
  */
-DEF_TEST(FontMgr_AliasNames, reporter) {
+static void test_alias_names(skiatest::Reporter* reporter) {
     const char* inNames[] = {
         "sans", "sans-serif", "serif", "monospace", "times", "helvetica"
     };
 
-    for (size_t i = 0; i < std::size(inNames); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(inNames); ++i) {
         sk_sp<SkTypeface> first(SkTypeface::MakeFromName(inNames[i], SkFontStyle()));
         if (nullptr == first.get()) {
             continue;
         }
-        SkString firstName;
-        first->getFamilyName(&firstName);
         for (int j = 0; j < 10; ++j) {
             sk_sp<SkTypeface> face(SkTypeface::MakeFromName(inNames[i], SkFontStyle()));
-
+    #if 0
             SkString name;
             face->getFamilyName(&name);
-            REPORTER_ASSERT(reporter, first->uniqueID() == face->uniqueID(),
-                "Request \"%s\" First Name: \"%s\" Id: %x Received Name \"%s\" Id %x",
-                inNames[i], firstName.c_str(), first->uniqueID(), name.c_str(), face->uniqueID());
+            printf("request %s, received %s, first id %x received %x\n",
+                   inNames[i], name.c_str(), first->uniqueID(), face->uniqueID());
+    #endif
+            REPORTER_ASSERT(reporter, first->uniqueID() == face->uniqueID());
         }
     }
 }
 
-DEF_TEST(FontMgr_Iter, reporter) {
+static void test_fontiter(skiatest::Reporter* reporter, bool verbose) {
     sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
     int count = fm->countFamilies();
 
@@ -106,7 +93,7 @@ DEF_TEST(FontMgr_Iter, reporter) {
         sk_sp<SkFontStyleSet> set(fm->createStyleSet(i));
         REPORTER_ASSERT(reporter, fnset->count() == set->count());
 
-        if (FLAGS_verboseFontMgr) {
+        if (verbose) {
             SkDebugf("[%2d] %s\n", i, fname.c_str());
         }
 
@@ -119,7 +106,7 @@ DEF_TEST(FontMgr_Iter, reporter) {
             sk_sp<SkTypeface> face(set->createTypeface(j));
 //            REPORTER_ASSERT(reporter, face.get());
 
-            if (FLAGS_verboseFontMgr) {
+            if (verbose) {
                 SkDebugf("\t[%d] %s [%3d %d %d]\n", j, sname.c_str(),
                          fs.weight(), fs.width(), fs.slant());
             }
@@ -127,40 +114,31 @@ DEF_TEST(FontMgr_Iter, reporter) {
     }
 }
 
-DEF_TEST(FontMgr_Match, reporter) {
-    sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
-    sk_sp<SkFontStyleSet> styleSet(fm->matchFamily(nullptr));
-    REPORTER_ASSERT(reporter, styleSet);
-}
-
-DEF_TEST(FontMgr_MatchStyleCSS3, reporter) {
+static void test_matchStyleCSS3(skiatest::Reporter* reporter) {
     static const SkFontStyle invalidFontStyle(101, SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
 
     class TestTypeface : public SkTypeface {
     public:
         TestTypeface(const SkFontStyle& fontStyle) : SkTypeface(fontStyle, false){}
     protected:
-        std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override { return nullptr; }
-        sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override {
-            return sk_ref_sp(this);
-        }
-        std::unique_ptr<SkScalerContext> onCreateScalerContext(
-            const SkScalerContextEffects& effects, const SkDescriptor* desc) const override
-        {
-            return SkScalerContext::MakeEmpty(
-                    sk_ref_sp(const_cast<TestTypeface*>(this)), effects, desc);
-        }
-        void onFilterRec(SkScalerContextRec*) const override { }
-        std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override {
+        SkStreamAsset* onOpenStream(int* ttcIndex) const override { return nullptr; }
+        SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
+                                               const SkDescriptor*) const override {
             return nullptr;
         }
+        void onFilterRec(SkScalerContextRec*) const override { }
+        virtual SkAdvancedTypefaceMetrics* onGetAdvancedTypefaceMetrics(
+            PerGlyphInfo,
+            const uint32_t*, uint32_t) const override { return nullptr; }
         void onGetFontDescriptor(SkFontDescriptor*, bool*) const override { }
-        void onCharsToGlyphs(const SkUnichar* chars, int count, SkGlyphID glyphs[]) const override {
-            sk_bzero(glyphs, count * sizeof(glyphs[0]));
+        virtual int onCharsToGlyphs(const void* chars, Encoding encoding,
+            uint16_t glyphs[], int glyphCount) const override {
+            if (glyphs && glyphCount > 0) {
+                sk_bzero(glyphs, glyphCount * sizeof(glyphs[0]));
+            }
+            return 0;
         }
         int onCountGlyphs() const override { return 0; }
-        void getPostScriptGlyphNames(SkString*) const override {}
-        void getGlyphToUnicodeMap(SkUnichar*) const override {}
         int onGetUPEM() const override { return 0; }
         class EmptyLocalizedStrings : public SkTypeface::LocalizedStrings {
         public:
@@ -169,21 +147,8 @@ DEF_TEST(FontMgr_MatchStyleCSS3, reporter) {
         void onGetFamilyName(SkString* familyName) const override {
             familyName->reset();
         }
-        bool onGetPostScriptName(SkString*) const override { return false; }
         SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override {
             return new EmptyLocalizedStrings;
-        }
-        bool onGlyphMaskNeedsCurrentColor() const override { return false; }
-        int onGetVariationDesignPosition(
-                SkFontArguments::VariationPosition::Coordinate coordinates[],
-                int coordinateCount) const override
-        {
-            return 0;
-        }
-        int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
-                                           int parameterCount) const override
-        {
-            return -1;
         }
         int onGetTableTags(SkFontTableTag tags[]) const override { return 0; }
         size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const override {
@@ -227,10 +192,13 @@ DEF_TEST(FontMgr_MatchStyleCSS3, reporter) {
     SkFontStyle  expanded_obliqu_900(SkFontStyle::kBlack_Weight, SkFontStyle::kExpanded_Width,  SkFontStyle::kOblique_Slant);
 
     SkFontStyle normal_normal_100(SkFontStyle::kThin_Weight,       SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+    SkFontStyle normal_normal_200(SkFontStyle::kExtraLight_Weight, SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
     SkFontStyle normal_normal_300(SkFontStyle::kLight_Weight,      SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
     SkFontStyle normal_normal_400(SkFontStyle::kNormal_Weight,     SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
     SkFontStyle normal_normal_500(SkFontStyle::kMedium_Weight,     SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
     SkFontStyle normal_normal_600(SkFontStyle::kSemiBold_Weight,   SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+    SkFontStyle normal_normal_700(SkFontStyle::kBold_Weight,       SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
+    SkFontStyle normal_normal_800(SkFontStyle::kExtraBold_Weight,  SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
     SkFontStyle normal_normal_900(SkFontStyle::kBlack_Weight,      SkFontStyle::kNormal_Width, SkFontStyle::kUpright_Slant);
 
     struct StyleSetTest {
@@ -241,23 +209,6 @@ DEF_TEST(FontMgr_MatchStyleCSS3, reporter) {
         };
         std::vector<Case> cases;
     } tests[] = {
-        {
-            { normal_normal_500, normal_normal_400 },
-            {
-                { normal_normal_400, normal_normal_400 },
-                { normal_normal_500, normal_normal_500 },
-            },
-        },
-
-        {
-            { normal_normal_500, normal_normal_300 },
-            {
-                { normal_normal_300, normal_normal_300 },
-                { normal_normal_400, normal_normal_500 },
-                { normal_normal_500, normal_normal_500 },
-            },
-        },
-
         {
             { condensed_normal_100,condensed_normal_900,condensed_italic_100,condensed_italic_900,
                expanded_normal_100, expanded_normal_900, expanded_italic_100, expanded_italic_900 },
@@ -750,13 +701,11 @@ DEF_TEST(FontMgr_MatchStyleCSS3, reporter) {
     }
 }
 
-DEF_TEST(FontMgr_MatchCharacter, reporter) {
-    sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
-    // 0xD800 <= codepoint <= 0xDFFF || 0x10FFFF < codepoint are invalid
-    SkSafeUnref(fm->matchFamilyStyleCharacter("Blah", SkFontStyle::Normal(), nullptr, 0, 0x0));
-    SkSafeUnref(fm->matchFamilyStyleCharacter("Blah", SkFontStyle::Normal(), nullptr, 0, 0xD800));
-    SkSafeUnref(fm->matchFamilyStyleCharacter("Blah", SkFontStyle::Normal(), nullptr, 0, 0xDFFF));
-    SkSafeUnref(fm->matchFamilyStyleCharacter("Blah", SkFontStyle::Normal(), nullptr, 0, 0x110000));
-    SkSafeUnref(fm->matchFamilyStyleCharacter("Blah", SkFontStyle::Normal(), nullptr, 0, 0x1FFFFF));
-    SkSafeUnref(fm->matchFamilyStyleCharacter("Blah", SkFontStyle::Normal(), nullptr, 0, -1));
+DEFINE_bool(verboseFontMgr, false, "run verbose fontmgr tests.");
+
+DEF_TEST(FontMgr, reporter) {
+    test_matchStyleCSS3(reporter);
+    test_fontiter(reporter, FLAGS_verboseFontMgr);
+    test_alias_names(reporter);
+    test_font(reporter);
 }

@@ -8,12 +8,9 @@
 #ifndef SkData_DEFINED
 #define SkData_DEFINED
 
-#include "include/core/SkRefCnt.h"
-#include "include/private/base/SkAPI.h"
-#include "include/private/base/SkAssert.h"
+#include <stdio.h>
 
-#include <cstdint>
-#include <cstdio>
+#include "SkRefCnt.h"
 
 class SkStream;
 
@@ -54,7 +51,7 @@ public:
             // only assert we're unique if we're not empty
             SkASSERT(this->unique());
         }
-        return const_cast<void*>(fPtr);
+        return fPtr;
     }
 
     /**
@@ -90,12 +87,6 @@ public:
     static sk_sp<SkData> MakeUninitialized(size_t length);
 
     /**
-     *  Create a new data with zero-initialized contents. The caller should call writable_data()
-     *  to write into the buffer, but this must be done before another ref() is made.
-     */
-    static sk_sp<SkData> MakeZeroInitialized(size_t length);
-
-    /**
      *  Create a new dataref by copying the specified c-string
      *  (a null-terminated array of bytes). The returned SkData will have size()
      *  equal to strlen(cstr) + 1. If cstr is NULL, it will be treated the same
@@ -114,7 +105,7 @@ public:
      *  SkData. Suitable for with const globals.
      */
     static sk_sp<SkData> MakeWithoutCopy(const void* data, size_t length) {
-        return MakeWithProc(data, length, NoopReleaseProc, nullptr);
+        return MakeWithProc(data, length, DummyReleaseProc, nullptr);
     }
 
     /**
@@ -170,7 +161,7 @@ private:
     friend class SkNVRefCnt<SkData>;
     ReleaseProc fReleaseProc;
     void*       fReleaseProcContext;
-    const void* fPtr;
+    void*       fPtr;
     size_t      fSize;
 
     SkData(const void* ptr, size_t size, ReleaseProc, void* context);
@@ -178,14 +169,17 @@ private:
     ~SkData();
 
     // Ensure the unsized delete is called.
-    void operator delete(void* p);
+    void operator delete(void* p) { ::operator delete(p); }
+
+    // Called the first time someone calls NewEmpty to initialize the singleton.
+    friend SkData* sk_new_empty_data();
 
     // shared internal factory
     static sk_sp<SkData> PrivateNewWithCopy(const void* srcOrNull, size_t length);
 
-    static void NoopReleaseProc(const void*, void*); // {}
+    static void DummyReleaseProc(const void*, void*); // {}
 
-    using INHERITED = SkRefCnt;
+    typedef SkRefCnt INHERITED;
 };
 
 #endif

@@ -9,8 +9,8 @@
 #ifndef SkScan_DEFINED
 #define SkScan_DEFINED
 
-#include "include/core/SkRect.h"
-#include "include/private/base/SkFixed.h"
+#include "SkFixed.h"
+#include "SkRect.h"
 #include <atomic>
 
 class SkRasterClip;
@@ -24,7 +24,6 @@ class SkPath;
 typedef SkIRect SkXRect;
 
 extern std::atomic<bool> gSkUseAnalyticAA;
-extern std::atomic<bool> gSkForceAnalyticAA;
 
 class AdditiveBlitter;
 
@@ -41,11 +40,6 @@ public:
 
     static void FillPath(const SkPath&, const SkIRect&, SkBlitter*);
 
-    // Paths of a certain size cannot be anti-aliased unless externally tiled (handled by SkDraw).
-    // AA clipping doesn't do that, so it's better for the clip stack to adjust AA state early
-    // rather than clip to the internal limits of the blitter.
-    static bool DowngradeClipAA(const SkIRect& bounds);
-
     ///////////////////////////////////////////////////////////////////////////
     // rasterclip
 
@@ -56,6 +50,7 @@ public:
     static void AntiFillXRect(const SkXRect&, const SkRasterClip&, SkBlitter*);
     static void FillPath(const SkPath&, const SkRasterClip&, SkBlitter*);
     static void AntiFillPath(const SkPath&, const SkRasterClip&, SkBlitter*);
+    static void AAAFillPath(const SkPath&, const SkRasterClip&, SkBlitter*);
     static void FrameRect(const SkRect&, const SkPoint& strokeSize,
                           const SkRasterClip&, SkBlitter*);
     static void AntiFrameRect(const SkRect&, const SkPoint& strokeSize,
@@ -72,9 +67,6 @@ public:
     static void HairRoundPath(const SkPath&, const SkRasterClip&, SkBlitter*);
     static void AntiHairRoundPath(const SkPath&, const SkRasterClip&, SkBlitter*);
 
-    // Needed by do_fill_path in SkScanPriv.h
-    static void FillPath(const SkPath&, const SkRegion& clip, SkBlitter*);
-
 private:
     friend class SkAAClip;
     friend class SkRegion;
@@ -84,17 +76,17 @@ private:
     static void FillRect(const SkRect&, const SkRegion* clip, SkBlitter*);
     static void AntiFillRect(const SkRect&, const SkRegion* clip, SkBlitter*);
     static void AntiFillXRect(const SkXRect&, const SkRegion*, SkBlitter*);
-    static void AntiFillPath(const SkPath&, const SkRegion& clip, SkBlitter*, bool forceRLE);
+    static void FillPath(const SkPath&, const SkRegion& clip, SkBlitter*);
+    static void AntiFillPath(const SkPath&, const SkRegion& clip, SkBlitter*,
+                             bool forceRLE = false);
     static void FillTriangle(const SkPoint pts[], const SkRegion*, SkBlitter*);
 
     static void AntiFrameRect(const SkRect&, const SkPoint& strokeSize,
                               const SkRegion*, SkBlitter*);
     static void HairLineRgn(const SkPoint[], int count, const SkRegion*, SkBlitter*);
     static void AntiHairLineRgn(const SkPoint[], int count, const SkRegion*, SkBlitter*);
-    static void AAAFillPath(const SkPath& path, SkBlitter* blitter, const SkIRect& pathIR,
-                            const SkIRect& clipBounds, bool forceRLE);
-    static void SAAFillPath(const SkPath& path, SkBlitter* blitter, const SkIRect& pathIR,
-                            const SkIRect& clipBounds, bool forceRLE);
+    static void AAAFillPath(const SkPath& path, const SkRegion& origClip, SkBlitter* blitter,
+                            bool forceRLE = false); // SkAAClip uses forceRLE
 };
 
 /** Assign an SkXRect from a SkIRect, by promoting the src rect's coordinates

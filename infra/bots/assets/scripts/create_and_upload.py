@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Copyright 2017 Google Inc.
+# Copyright 2016 Google Inc.
 #
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -10,13 +10,10 @@
 
 
 import argparse
+import common
 import os
 import subprocess
 import sys
-
-FILE_DIR = os.path.dirname(os.path.abspath(__file__))
-INFRA_BOTS_DIR = os.path.realpath(os.path.join(FILE_DIR, os.pardir, os.pardir))
-sys.path.insert(0, INFRA_BOTS_DIR)
 import utils
 
 
@@ -27,8 +24,8 @@ def main():
 
   with utils.tmp_dir():
     cwd = os.getcwd()
-    create_script = os.path.join(FILE_DIR, 'create.py')
-    upload_script = os.path.join(FILE_DIR, 'upload.py')
+    create_script = os.path.join(common.FILE_DIR, 'create.py')
+    upload_script = os.path.join(common.FILE_DIR, 'upload.py')
 
     try:
       subprocess.check_call(['python', create_script, '-t', cwd])

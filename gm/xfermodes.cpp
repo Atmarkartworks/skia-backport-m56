@@ -5,25 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/utils/SkTextUtils.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkBitmap.h"
+#include "SkShader.h"
+#include "SkXfermode.h"
+#include "SkPM4f.h"
 
 enum SrcType {
     //! A WxH image with a rectangle in the lower right.
@@ -49,43 +35,44 @@ enum SrcType {
 
 const struct {
     SkBlendMode fMode;
+    const char* fLabel;
     int         fSourceTypeMask;  // The source types to use this
-                                  // mode with. See draw_mode for
-                                  // an explanation of each type.
-                                  // PDF has to play some tricks
-                                  // to support the base modes,
-                                  // test those more extensively.
+    // mode with. See draw_mode for
+    // an explanation of each type.
+    // PDF has to play some tricks
+    // to support the base modes,
+    // test those more extensively.
 } gModes[] = {
-    { SkBlendMode::kClear,        kAll_SrcType   },
-    { SkBlendMode::kSrc,          kAll_SrcType   },
-    { SkBlendMode::kDst,          kAll_SrcType   },
-    { SkBlendMode::kSrcOver,      kAll_SrcType   },
-    { SkBlendMode::kDstOver,      kAll_SrcType   },
-    { SkBlendMode::kSrcIn,        kAll_SrcType   },
-    { SkBlendMode::kDstIn,        kAll_SrcType   },
-    { SkBlendMode::kSrcOut,       kAll_SrcType   },
-    { SkBlendMode::kDstOut,       kAll_SrcType   },
-    { SkBlendMode::kSrcATop,      kAll_SrcType   },
-    { SkBlendMode::kDstATop,      kAll_SrcType   },
+    { SkBlendMode::kClear,        "Clear",        kAll_SrcType   },
+    { SkBlendMode::kSrc,          "Src",          kAll_SrcType   },
+    { SkBlendMode::kDst,          "Dst",          kAll_SrcType   },
+    { SkBlendMode::kSrcOver,      "SrcOver",      kAll_SrcType   },
+    { SkBlendMode::kDstOver,      "DstOver",      kAll_SrcType   },
+    { SkBlendMode::kSrcIn,        "SrcIn",        kAll_SrcType   },
+    { SkBlendMode::kDstIn,        "DstIn",        kAll_SrcType   },
+    { SkBlendMode::kSrcOut,       "SrcOut",       kAll_SrcType   },
+    { SkBlendMode::kDstOut,       "DstOut",       kAll_SrcType   },
+    { SkBlendMode::kSrcATop,      "SrcATop",      kAll_SrcType   },
+    { SkBlendMode::kDstATop,      "DstATop",      kAll_SrcType   },
 
-    { SkBlendMode::kXor,          kBasic_SrcType },
-    { SkBlendMode::kPlus,         kBasic_SrcType },
-    { SkBlendMode::kModulate,     kAll_SrcType   },
-    { SkBlendMode::kScreen,       kBasic_SrcType },
-    { SkBlendMode::kOverlay,      kBasic_SrcType },
-    { SkBlendMode::kDarken,       kBasic_SrcType },
-    { SkBlendMode::kLighten,      kBasic_SrcType },
-    { SkBlendMode::kColorDodge,   kBasic_SrcType },
-    { SkBlendMode::kColorBurn,    kBasic_SrcType },
-    { SkBlendMode::kHardLight,    kBasic_SrcType },
-    { SkBlendMode::kSoftLight,    kBasic_SrcType },
-    { SkBlendMode::kDifference,   kBasic_SrcType },
-    { SkBlendMode::kExclusion,    kBasic_SrcType },
-    { SkBlendMode::kMultiply,     kAll_SrcType   },
-    { SkBlendMode::kHue,          kBasic_SrcType },
-    { SkBlendMode::kSaturation,   kBasic_SrcType },
-    { SkBlendMode::kColor,        kBasic_SrcType },
-    { SkBlendMode::kLuminosity,   kBasic_SrcType },
+    { SkBlendMode::kXor,          "Xor",          kBasic_SrcType },
+    { SkBlendMode::kPlus,         "Plus",         kBasic_SrcType },
+    { SkBlendMode::kModulate,     "Modulate",     kAll_SrcType   },
+    { SkBlendMode::kScreen,       "Screen",       kBasic_SrcType },
+    { SkBlendMode::kOverlay,      "Overlay",      kBasic_SrcType },
+    { SkBlendMode::kDarken,       "Darken",       kBasic_SrcType },
+    { SkBlendMode::kLighten,      "Lighten",      kBasic_SrcType },
+    { SkBlendMode::kColorDodge,   "ColorDodge",   kBasic_SrcType },
+    { SkBlendMode::kColorBurn,    "ColorBurn",    kBasic_SrcType },
+    { SkBlendMode::kHardLight,    "HardLight",    kBasic_SrcType },
+    { SkBlendMode::kSoftLight,    "SoftLight",    kBasic_SrcType },
+    { SkBlendMode::kDifference,   "Difference",   kBasic_SrcType },
+    { SkBlendMode::kExclusion,    "Exclusion",    kBasic_SrcType },
+    { SkBlendMode::kMultiply,     "Multiply",     kAll_SrcType   },
+    { SkBlendMode::kHue,          "Hue",          kBasic_SrcType },
+    { SkBlendMode::kSaturation,   "Saturation",   kBasic_SrcType },
+    { SkBlendMode::kColor,        "Color",        kBasic_SrcType },
+    { SkBlendMode::kLuminosity,   "Luminosity",   kBasic_SrcType },
 };
 
 static void make_bitmaps(int w, int h, SkBitmap* src, SkBitmap* dst,
@@ -102,8 +89,8 @@ static void make_bitmaps(int w, int h, SkBitmap* src, SkBitmap* dst,
 
     {
         SkCanvas c(*src);
-        p.setColor(ToolUtils::color_to_565(0xFFFFCC44));
-        r.setWH(ww*3/4, hh*3/4);
+        p.setColor(sk_tool_utils::color_to_565(0xFFFFCC44));
+        r.set(0, 0, ww*3/4, hh*3/4);
         c.drawOval(r, p);
     }
 
@@ -112,8 +99,8 @@ static void make_bitmaps(int w, int h, SkBitmap* src, SkBitmap* dst,
 
     {
         SkCanvas c(*dst);
-        p.setColor(ToolUtils::color_to_565(0xFF66AAFF));
-        r.setLTRB(ww/3, hh/3, ww*19/20, hh*19/20);
+        p.setColor(sk_tool_utils::color_to_565(0xFF66AAFF));
+        r.set(ww/3, hh/3, ww*19/20, hh*19/20);
         c.drawRect(r, p);
     }
 
@@ -133,12 +120,11 @@ class XfermodesGM : public skiagm::GM {
      */
     void draw_mode(SkCanvas* canvas, SkBlendMode mode, SrcType srcType, SkScalar x, SkScalar y) {
         SkPaint p;
-        SkSamplingOptions sampling;
         SkMatrix m;
         bool restoreNeeded = false;
         m.setTranslate(x, y);
 
-        canvas->drawImage(fSrcB.asImage(), x, y, sampling, &p);
+        canvas->drawBitmap(fSrcB, x, y, &p);
         p.setBlendMode(mode);
         switch (srcType) {
             case kSmallTransparentImage_SrcType: {
@@ -146,7 +132,7 @@ class XfermodesGM : public skiagm::GM {
 
                 SkAutoCanvasRestore acr(canvas, true);
                 canvas->concat(m);
-                canvas->drawImage(fTransparent.asImage(), 0, 0, sampling, &p);
+                canvas->drawBitmap(fTransparent, 0, 0, &p);
                 break;
             }
             case kQuarterClearInLayer_SrcType: {
@@ -155,16 +141,16 @@ class XfermodesGM : public skiagm::GM {
                 canvas->saveLayer(&bounds, &p);
                 restoreNeeded = true;
                 p.setBlendMode(SkBlendMode::kSrcOver);
-                [[fallthrough]];
+                // Fall through.
             }
             case kQuarterClear_SrcType: {
                 SkScalar halfW = SkIntToScalar(W) / 2;
                 SkScalar halfH = SkIntToScalar(H) / 2;
-                p.setColor(ToolUtils::color_to_565(0xFF66AAFF));
+                p.setColor(sk_tool_utils::color_to_565(0xFF66AAFF));
                 SkRect r = SkRect::MakeXYWH(x + halfW, y, halfW,
                                             SkIntToScalar(H));
                 canvas->drawRect(r, p);
-                p.setColor(ToolUtils::color_to_565(0xFFAA66FF));
+                p.setColor(sk_tool_utils::color_to_565(0xFFAA66FF));
                 r = SkRect::MakeXYWH(x, y + halfH, SkIntToScalar(W), halfH);
                 canvas->drawRect(r, p);
                 break;
@@ -176,27 +162,27 @@ class XfermodesGM : public skiagm::GM {
                 SkScalar h = SkIntToScalar(H);
                 SkRect r = SkRect::MakeXYWH(x, y + h / 4, w, h * 23 / 60);
                 canvas->clipRect(r);
-                [[fallthrough]];
+                // Fall through.
             }
             case kRectangle_SrcType: {
                 SkScalar w = SkIntToScalar(W);
                 SkScalar h = SkIntToScalar(H);
                 SkRect r = SkRect::MakeXYWH(x + w / 3, y + h / 3,
                                             w * 37 / 60, h * 37 / 60);
-                p.setColor(ToolUtils::color_to_565(0xFF66AAFF));
+                p.setColor(sk_tool_utils::color_to_565(0xFF66AAFF));
                 canvas->drawRect(r, p);
                 break;
             }
             case kSmallRectangleImageWithAlpha_SrcType:
                 m.postScale(SK_ScalarHalf, SK_ScalarHalf, x, y);
-                [[fallthrough]];
+                // Fall through.
             case kRectangleImageWithAlpha_SrcType:
                 p.setAlpha(0x88);
-                [[fallthrough]];
+                // Fall through.
             case kRectangleImage_SrcType: {
                 SkAutoCanvasRestore acr(canvas, true);
                 canvas->concat(m);
-                canvas->drawImage(fDstB.asImage(), 0, 0, sampling, &p);
+                canvas->drawBitmap(fDstB, 0, 0, &p);
                 break;
             }
             default:
@@ -237,21 +223,21 @@ protected:
         const SkScalar h = SkIntToScalar(H);
         SkMatrix m;
         m.setScale(SkIntToScalar(6), SkIntToScalar(6));
-        auto s = fBG.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
-                                SkSamplingOptions(), m);
+        auto s = SkShader::MakeBitmapShader(fBG, SkShader::kRepeat_TileMode,
+                                            SkShader::kRepeat_TileMode, &m);
 
         SkPaint labelP;
         labelP.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&labelP);
+        labelP.setTextAlign(SkPaint::kCenter_Align);
 
-        SkFont font(ToolUtils::create_portable_typeface());
-
-        const int kWrap = 5;
+        const int W = 5;
 
         SkScalar x0 = 0;
         SkScalar y0 = 0;
         for (int sourceType = 1; sourceType & kAll_SrcType; sourceType <<= 1) {
             SkScalar x = x0, y = y0;
-            for (size_t i = 0; i < std::size(gModes); i++) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(gModes); i++) {
                 if ((gModes[i].fSourceTypeMask & sourceType) == 0) {
                     continue;
                 }
@@ -273,12 +259,11 @@ protected:
                 canvas->drawRect(r, p);
 
 #if 1
-                const char* label = SkBlendMode_Name(gModes[i].fMode);
-                SkTextUtils::DrawString(canvas, label, x + w/2, y - font.getSize()/2,
-                                        font, labelP, SkTextUtils::kCenter_Align);
+                canvas->drawText(gModes[i].fLabel, strlen(gModes[i].fLabel),
+                                 x + w/2, y - labelP.getTextSize()/2, labelP);
 #endif
                 x += w + SkIntToScalar(10);
-                if ((i % kWrap) == kWrap - 1) {
+                if ((i % W) == W - 1) {
                     x = x0;
                     y += h + SkIntToScalar(30);
                 }
@@ -296,6 +281,6 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 DEF_GM( return new XfermodesGM; )

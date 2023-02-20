@@ -5,19 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkRandom.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkPath.h"
+#include "SkRandom.h"
 
 int make_bm(SkBitmap* bm, int height) {
     constexpr int kRadius = 22;
@@ -76,7 +68,7 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        for (size_t i = 0; i < std::size(fTallBmps); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fTallBmps); ++i) {
             int h = SkToInt((4 + i) * 1024);
 
             fTallBmps[i].fItemCnt = make_bm(&fTallBmps[i].fBmp, h);
@@ -85,7 +77,7 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         canvas->scale(1.3f, 1.3f);
-        for (size_t i = 0; i < std::size(fTallBmps); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fTallBmps); ++i) {
             SkASSERT(fTallBmps[i].fItemCnt > 10);
             SkBitmap bmp = fTallBmps[i].fBmp;
             // Draw the last 10 elements of the bitmap.
@@ -94,10 +86,9 @@ protected:
             SkIRect subRect = SkIRect::MakeLTRB(0, startItem * itemHeight,
                                                bmp.width(), bmp.height());
             SkRect dstRect = SkRect::MakeWH(SkIntToScalar(bmp.width()), 10.f * itemHeight);
-            canvas->drawImageRect(ToolUtils::MakeTextureImage(canvas, bmp.asImage()),
-                                  SkRect::Make(subRect), dstRect,
-                                  SkSamplingOptions(SkFilterMode::kLinear), nullptr,
-                                  SkCanvas::kStrict_SrcRectConstraint);
+            SkPaint paint;
+            paint.setFilterQuality(kLow_SkFilterQuality);
+            canvas->drawBitmapRect(bmp, subRect, dstRect, &paint);
             canvas->translate(SkIntToScalar(bmp.width() + 10), 0);
         }
     }
@@ -107,7 +98,7 @@ private:
         SkBitmap fBmp;
         int      fItemCnt;
     } fTallBmps[8];
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////

@@ -5,38 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrDirectContext.h"
-#include "tests/CtsEnforcement.h"
-#include "tests/Test.h"
-#include "tools/Resources.h"
+#include "SkCanvas.h"
+#include "SkImage.h"
+#include "SkShader.h"
+#include "SkSurface.h"
+#include "SkTypes.h"
+#include "Test.h"
 
-#include <cstring>
+#if SK_SUPPORT_GPU
+#include "GrContext.h"
+#endif
 
-class GrRecordingContext;
-struct GrContextOptions;
+void testBitmapEquality(skiatest::Reporter* reporter, SkBitmap& bm1, SkBitmap& bm2) {
+    SkAutoLockPixels lockBm1(bm1);
+    SkAutoLockPixels lockBm2(bm2);
 
-static void test_bitmap_equality(skiatest::Reporter* reporter, SkBitmap& bm1, SkBitmap& bm2) {
-    REPORTER_ASSERT(reporter, bm1.computeByteSize() == bm2.computeByteSize());
-    REPORTER_ASSERT(reporter, 0 == memcmp(bm1.getPixels(), bm2.getPixels(), bm1.computeByteSize()));
+    REPORTER_ASSERT(reporter, bm1.getSize() == bm2.getSize());
+    REPORTER_ASSERT(reporter, 0 == memcmp(bm1.getPixels(), bm2.getPixels(), bm1.getSize()));
 }
 
-static void paint_source(SkSurface* sourceSurface) {
+void paintSource(SkSurface* sourceSurface) {
     SkCanvas* sourceCanvas = sourceSurface->getCanvas();
     sourceCanvas->clear(0xFFDEDEDE);
 
@@ -53,13 +41,13 @@ static void paint_source(SkSurface* sourceSurface) {
     sourceCanvas->drawRect(rect, paintColor);
 }
 
-static void run_shader_test(skiatest::Reporter* reporter, SkSurface* sourceSurface,
-                            SkSurface* destinationSurface, SkImageInfo& info) {
-    paint_source(sourceSurface);
+void runShaderTest(skiatest::Reporter* reporter, SkSurface* sourceSurface, SkSurface* destinationSurface, SkImageInfo& info) {
+    paintSource(sourceSurface);
 
     sk_sp<SkImage> sourceImage(sourceSurface->makeImageSnapshot());
     sk_sp<SkShader> sourceShader = sourceImage->makeShader(
-            SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions());
+            SkShader::kRepeat_TileMode,
+            SkShader::kRepeat_TileMode);
 
     SkPaint paint;
     paint.setShader(sourceShader);
@@ -68,25 +56,27 @@ static void run_shader_test(skiatest::Reporter* reporter, SkSurface* sourceSurfa
     destinationCanvas->clear(SK_ColorTRANSPARENT);
     destinationCanvas->drawPaint(paint);
 
+    SkIRect rect = info.bounds();
+
     SkBitmap bmOrig;
-    bmOrig.allocN32Pixels(info.width(), info.height());
-    sourceSurface->readPixels(bmOrig, 0, 0);
+    sourceSurface->getCanvas()->readPixels(rect, &bmOrig);
 
 
     SkBitmap bm;
-    bm.allocN32Pixels(info.width(), info.height());
-    destinationSurface->readPixels(bm, 0, 0);
+    destinationCanvas->readPixels(rect, &bm);
 
-    test_bitmap_equality(reporter, bmOrig, bm);
+    testBitmapEquality(reporter, bmOrig, bm);
+
+
 
     // Test with a translated shader
     SkMatrix matrix;
     matrix.setTranslate(SkIntToScalar(-1), SkIntToScalar(0));
 
     sk_sp<SkShader> sourceShaderTranslated = sourceImage->makeShader(
-            SkTileMode::kRepeat,
-            SkTileMode::kRepeat,
-            SkSamplingOptions(), &matrix);
+            SkShader::kRepeat_TileMode,
+            SkShader::kRepeat_TileMode,
+            &matrix);
 
     destinationCanvas->clear(SK_ColorTRANSPARENT);
 
@@ -96,11 +86,11 @@ static void run_shader_test(skiatest::Reporter* reporter, SkSurface* sourceSurfa
     destinationCanvas->drawPaint(paintTranslated);
 
     SkBitmap bmt;
-    bmt.allocN32Pixels(info.width(), info.height());
-    destinationSurface->readPixels(bmt, 0, 0);
+    destinationCanvas->readPixels(rect, &bmt);
 
     //  Test correctness
     {
+        SkAutoLockPixels lockBm(bmt);
         for (int y = 0; y < info.height(); y++) {
             REPORTER_ASSERT(reporter, 0xFFFF0000 == bmt.getColor(0, y));
 
@@ -117,50 +107,47 @@ DEF_TEST(ImageNewShader, reporter) {
     auto sourceSurface(SkSurface::MakeRaster(info));
     auto destinationSurface(SkSurface::MakeRaster(info));
 
-    run_shader_test(reporter, sourceSurface.get(), destinationSurface.get(), info);
+    runShaderTest(reporter, sourceSurface.get(), destinationSurface.get(), info);
 }
 
-static void gpu_to_gpu(skiatest::Reporter* reporter, GrRecordingContext* rContext) {
+#if SK_SUPPORT_GPU
+
+void gpuToGpu(skiatest::Reporter* reporter, GrContext* context) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(5, 5);
 
-    auto sourceSurface(SkSurface::MakeRenderTarget(rContext, skgpu::Budgeted::kNo, info));
-    auto destinationSurface(SkSurface::MakeRenderTarget(rContext, skgpu::Budgeted::kNo, info));
+    auto sourceSurface(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info));
+    auto destinationSurface(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info));
 
-    run_shader_test(reporter, sourceSurface.get(), destinationSurface.get(), info);
+    runShaderTest(reporter, sourceSurface.get(), destinationSurface.get(), info);
 }
 
-static void raster_to_gpu(skiatest::Reporter* reporter, GrRecordingContext* rContext) {
+void gpuToRaster(skiatest::Reporter* reporter, GrContext* context) {
+    SkImageInfo info = SkImageInfo::MakeN32Premul(5, 5);
+
+    auto sourceSurface(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info));
+    auto destinationSurface(SkSurface::MakeRaster(info));
+
+    runShaderTest(reporter, sourceSurface.get(), destinationSurface.get(), info);
+}
+
+void rasterToGpu(skiatest::Reporter* reporter, GrContext* context) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(5, 5);
 
     auto sourceSurface(SkSurface::MakeRaster(info));
-    auto destinationSurface(SkSurface::MakeRenderTarget(rContext, skgpu::Budgeted::kNo, info));
+    auto destinationSurface(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info));
 
-    run_shader_test(reporter, sourceSurface.get(), destinationSurface.get(), info);
+    runShaderTest(reporter, sourceSurface.get(), destinationSurface.get(), info);
 }
 
-DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ImageNewShader_GPU,
-                                       reporter,
-                                       ctxInfo,
-                                       CtsEnforcement::kApiLevel_T) {
-    auto dContext = ctxInfo.directContext();
-
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ImageNewShader_GPU, reporter, ctxInfo) {
     //  GPU -> GPU
-    gpu_to_gpu(reporter, dContext);
+    gpuToGpu(reporter, ctxInfo.grContext());
 
-    //  GPU -> RASTER not currently supported
+    //  GPU -> RASTER
+    gpuToRaster(reporter, ctxInfo.grContext());
 
     //  RASTER -> GPU
-    raster_to_gpu(reporter, dContext);
+    rasterToGpu(reporter, ctxInfo.grContext());
 }
 
-DEF_TEST(ImageRawShader, reporter) {
-    auto image = GetResourceAsImage("images/mandrill_32.png");
-    REPORTER_ASSERT(reporter, image);
-
-    // We should be able to turn this into a "raw" image shader:
-    REPORTER_ASSERT(reporter, image->makeRawShader(SkSamplingOptions{}));
-
-    // ... but not if we request cubic filtering
-    REPORTER_ASSERT(reporter,
-                    !image->makeRawShader(SkSamplingOptions{SkCubicResampler::Mitchell()}));
-}
+#endif

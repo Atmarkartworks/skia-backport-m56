@@ -5,20 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkTileMode.h"
-#include "include/effects/SkGradientShader.h"
-
-#include <initializer_list>
-#include <utility>
+#include "gm.h"
+#include "SkGradientShader.h"
 
 namespace skiagm {
 
@@ -29,19 +17,17 @@ DEF_SIMPLE_GM(stroke_rect_shader, canvas, 690, 300) {
     constexpr SkRect kRect {0, 0, 100, 100};
     constexpr SkPoint kPts[] {{kRect.fLeft, kRect.fTop}, {kRect.fRight, kRect.fBottom}};
     constexpr SkColor kColors[] {SK_ColorRED, SK_ColorBLUE};
+    SkPaint paint;
     sk_sp<SkShader> shader = SkGradientShader::MakeLinear(kPts, kColors, nullptr, 2,
-                                                          SkTileMode::kClamp);
-
+                                                          SkShader::kClamp_TileMode);
+    paint.setShader(std::move(shader));
+    paint.setStyle(SkPaint::kStroke_Style);
     // Do a large initial translate so that local coords disagree with device coords significantly
     // for the first rect drawn.
     canvas->translate(kRect.centerX(), kRect.centerY());
     constexpr SkScalar kPad = 20;
     for (auto aa : {false, true}) {
-        SkPaint paint;
-        paint.setShader(shader);
-        paint.setStyle(SkPaint::kStroke_Style);
         paint.setAntiAlias(aa);
-
         canvas->save();
 
         constexpr SkScalar kStrokeWidth = 10;
@@ -72,4 +58,4 @@ DEF_SIMPLE_GM(stroke_rect_shader, canvas, 690, 300) {
     }
 }
 
-}  // namespace skiagm
+}

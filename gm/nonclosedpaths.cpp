@@ -5,14 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPathBuilder.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
 
 namespace skiagm {
 
@@ -49,22 +44,20 @@ protected:
 
     // Use rect-like geometry for non-closed path, for right angles make it
     // easier to show the visual difference of lineCap and lineJoin.
-    static SkPath MakePath(ClosureType type) {
-        SkPathBuilder path;
+    static void MakePath(SkPath* path, ClosureType type) {
         if (FakeCloseMiddle == type) {
-            path.moveTo(30, 50);
-            path.lineTo(30, 30);
+            path->moveTo(30, 50);
+            path->lineTo(30, 30);
         } else {
-            path.moveTo(30, 30);
+            path->moveTo(30, 30);
         }
-        path.lineTo(70, 30);
-        path.lineTo(70, 70);
-        path.lineTo(30, 70);
-        path.lineTo(30, 50);
+        path->lineTo(70, 30);
+        path->lineTo(70, 70);
+        path->lineTo(30, 70);
+        path->lineTo(30, 50);
         if (FakeCloseCorner == type) {
-            path.lineTo(30, 30);
+            path->lineTo(30, 30);
         }
-        return path.detach();
     }
 
     // Set the location for the current test on the canvas
@@ -79,7 +72,7 @@ protected:
         // 0(may use hairline rendering), 10(common case for stroke-style)
         // 40 and 50(>= geometry width/height, make the contour filled in fact)
         constexpr int kStrokeWidth[] = {0, 10, 40, 50};
-        int numWidths = std::size(kStrokeWidth);
+        int numWidths = SK_ARRAY_COUNT(kStrokeWidth);
 
         constexpr SkPaint::Style kStyle[] = {
             SkPaint::kStroke_Style, SkPaint::kStrokeAndFill_Style
@@ -103,14 +96,15 @@ protected:
 
         // For stroke style painter and fill-and-stroke style painter
         for (size_t type = 0; type < kClosureTypeCount; ++type) {
-            for (size_t style = 0; style < std::size(kStyle); ++style) {
-                for (size_t cap = 0; cap < std::size(kCap); ++cap) {
-                    for (size_t join = 0; join < std::size(kJoin); ++join) {
+            for (size_t style = 0; style < SK_ARRAY_COUNT(kStyle); ++style) {
+                for (size_t cap = 0; cap < SK_ARRAY_COUNT(kCap); ++cap) {
+                    for (size_t join = 0; join < SK_ARRAY_COUNT(kJoin); ++join) {
                         for (int width = 0; width < numWidths; ++width) {
                             canvas->save();
                             SetLocation(canvas, counter, SkPaint::kJoinCount * numWidths);
 
-                            SkPath path = MakePath(kType[type]);
+                            SkPath path;
+                            MakePath(&path, kType[type]);
 
                             paint.setStyle(kStyle[style]);
                             paint.setStrokeCap(kCap[cap]);
@@ -132,7 +126,8 @@ protected:
             canvas->save();
             SetLocation(canvas, counter, SkPaint::kJoinCount * numWidths);
 
-            SkPath path = MakePath(kType[type]);
+            SkPath path;
+            MakePath(&path, kType[type]);
 
             canvas->drawPath(path, paint);
             canvas->restore();
@@ -141,11 +136,11 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new NonClosedPathsGM;)
 
-}  // namespace skiagm
+}

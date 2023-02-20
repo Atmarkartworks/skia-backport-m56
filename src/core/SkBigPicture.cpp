@@ -5,29 +5,32 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBBHFactory.h"
-#include "src/core/SkBigPicture.h"
-#include "src/core/SkRecord.h"
-#include "src/core/SkRecordDraw.h"
-#include "src/core/SkTraceEvent.h"
+#include "SkBBoxHierarchy.h"
+#include "SkBigPicture.h"
+#include "SkPictureCommon.h"
+#include "SkRecord.h"
+#include "SkRecordDraw.h"
+#include "SkTraceEvent.h"
 
 SkBigPicture::SkBigPicture(const SkRect& cull,
-                           sk_sp<SkRecord> record,
-                           std::unique_ptr<SnapshotArray> drawablePicts,
-                           sk_sp<SkBBoxHierarchy> bbh,
+                           SkRecord* record,
+                           SnapshotArray* drawablePicts,
+                           SkBBoxHierarchy* bbh,
                            size_t approxBytesUsedBySubPictures)
     : fCullRect(cull)
     , fApproxBytesUsedBySubPictures(approxBytesUsedBySubPictures)
-    , fRecord(std::move(record))
-    , fDrawablePicts(std::move(drawablePicts))
-    , fBBH(std::move(bbh))
+    , fRecord(record)               // Take ownership of caller's ref.
+    , fDrawablePicts(drawablePicts) // Take ownership.
+    , fBBH(bbh)                     // Take ownership of caller's ref.
 {}
 
 void SkBigPicture::playback(SkCanvas* canvas, AbortCallback* callback) const {
     SkASSERT(canvas);
 
     // If the query contains the whole picture, don't bother with the BBH.
-    const bool useBBH = !canvas->getLocalClipBounds().contains(this->cullRect());
+    SkRect clipBounds = { 0, 0, 0, 0 };
+    (void)canvas->getClipBounds(&clipBounds);
+    const bool useBBH = !clipBounds.contains(this->cullRect());
 
     SkRecordDraw(*fRecord,
                  canvas,
@@ -41,7 +44,7 @@ void SkBigPicture::playback(SkCanvas* canvas, AbortCallback* callback) const {
 void SkBigPicture::partialPlayback(SkCanvas* canvas,
                                    int start,
                                    int stop,
-                                   const SkM44& initialCTM) const {
+                                   const SkMatrix& initialCTM) const {
     SkASSERT(canvas);
     SkRecordPartialDraw(*fRecord,
                         canvas,
@@ -52,29 +55,15 @@ void SkBigPicture::partialPlayback(SkCanvas* canvas,
                         initialCTM);
 }
 
-struct NestedApproxOpCounter {
-    int fCount = 0;
-
-    template <typename T> void operator()(const T& op) {
-        fCount += 1;
-    }
-    void operator()(const SkRecords::DrawPicture& op) {
-        fCount += op.picture->approximateOpCount(true);
-    }
-};
+const SkBigPicture::Analysis& SkBigPicture::analysis() const {
+    fAnalysisOnce([this] { fAnalysis.init(*fRecord); });
+    return fAnalysis;
+}
 
 SkRect SkBigPicture::cullRect()            const { return fCullRect; }
-int SkBigPicture::approximateOpCount(bool nested) const {
-    if (nested) {
-        NestedApproxOpCounter visitor;
-        for (int i = 0; i < fRecord->count(); i++) {
-            fRecord->visit(i, visitor);
-        }
-        return visitor.fCount;
-    } else {
-        return fRecord->count();
-    }
-}
+bool   SkBigPicture::willPlayBackBitmaps() const { return this->analysis().fWillPlaybackBitmaps; }
+int    SkBigPicture::numSlowPaths() const { return this->analysis().fNumSlowPathsAndDashEffects; }
+int    SkBigPicture::approximateOpCount()   const { return fRecord->count(); }
 size_t SkBigPicture::approximateBytesUsed() const {
     size_t bytes = sizeof(*this) + fRecord->bytesUsed() + fApproxBytesUsedBySubPictures;
     if (fBBH) { bytes += fBBH->bytesUsed(); }
@@ -89,3 +78,17 @@ SkPicture const* const* SkBigPicture::drawablePicts() const {
     return fDrawablePicts ? fDrawablePicts->begin() : nullptr;
 }
 
+void SkBigPicture::Analysis::init(const SkRecord& record) {
+    TRACE_EVENT0("disabled-by-default-skia", "SkBigPicture::Analysis::init()");
+    SkBitmapHunter bitmap;
+    SkPathCounter  path;
+
+    bool hasBitmap = false;
+    for (int i = 0; i < record.count(); i++) {
+        hasBitmap = hasBitmap || record.visit(i, bitmap);
+        record.visit(i, path);
+    }
+
+    fWillPlaybackBitmaps        = hasBitmap;
+    fNumSlowPathsAndDashEffects = SkTMin<int>(path.fNumSlowPathsAndDashEffects, 255);
+}

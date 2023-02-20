@@ -5,19 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkTaskGroup.h"
-#include "tests/PathOpsThreadedCommon.h"
-
-#include <functional>
+#include "PathOpsExtendedTest.h"
+#include "PathOpsThreadedCommon.h"
+#include "SkTaskGroup.h"
 
 PathOpsThreadedTestRunner::~PathOpsThreadedTestRunner() {
-    for (int index = 0; index < fRunnables.size(); index++) {
+    for (int index = 0; index < fRunnables.count(); index++) {
         delete fRunnables[index];
     }
 }
 
 void PathOpsThreadedTestRunner::render() {
-    SkTaskGroup().batch(fRunnables.size(), [&](int i) {
+    SkTaskGroup().batch(fRunnables.count(), [&](int i) {
         (*fRunnables[i])();
     });
 }

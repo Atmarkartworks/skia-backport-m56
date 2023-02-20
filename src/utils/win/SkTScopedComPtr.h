@@ -8,10 +8,16 @@
 #ifndef SkTScopedComPtr_DEFINED
 #define SkTScopedComPtr_DEFINED
 
-#include "src/base/SkLeanWindows.h"
-#include "src/utils/win/SkObjBase.h"
+#include "SkLeanWindows.h"
 
 #ifdef SK_BUILD_FOR_WIN
+
+template<typename T>
+class SkBlockComRef : public T {
+private:
+    virtual ULONG STDMETHODCALLTYPE AddRef(void) = 0;
+    virtual ULONG STDMETHODCALLTYPE Release(void) = 0;
+};
 
 template<typename T> T* SkRefComPtr(T* ptr) {
     ptr->AddRef();
@@ -26,31 +32,20 @@ template<typename T> T* SkSafeRefComPtr(T* ptr) {
 }
 
 template<typename T>
-class SkTScopedComPtr {
+class SkTScopedComPtr : SkNoncopyable {
 private:
     T *fPtr;
 
 public:
-    constexpr SkTScopedComPtr() : fPtr(nullptr) {}
-    constexpr SkTScopedComPtr(std::nullptr_t) : fPtr(nullptr) {}
-    explicit SkTScopedComPtr(T *ptr) : fPtr(ptr) {}
-    SkTScopedComPtr(SkTScopedComPtr&& that) : fPtr(that.release()) {}
-    SkTScopedComPtr(const SkTScopedComPtr&) = delete;
+    explicit SkTScopedComPtr(T *ptr = nullptr) : fPtr(ptr) { }
 
     ~SkTScopedComPtr() { this->reset();}
-
-    SkTScopedComPtr& operator=(SkTScopedComPtr&& that) {
-        this->reset(that.release());
-        return *this;
-    }
-    SkTScopedComPtr& operator=(const SkTScopedComPtr&) = delete;
-    SkTScopedComPtr& operator=(std::nullptr_t) { this->reset(); return *this; }
 
     T &operator*() const { SkASSERT(fPtr != nullptr); return *fPtr; }
 
     explicit operator bool() const { return fPtr != nullptr; }
 
-    T *operator->() const { return fPtr; }
+    SkBlockComRef<T> *operator->() const { return static_cast<SkBlockComRef<T>*>(fPtr); }
 
     /**
      * Returns the address of the underlying pointer.
@@ -62,11 +57,11 @@ public:
 
     T *get() const { return fPtr; }
 
-    void reset(T* ptr = nullptr) {
-        if (fPtr) {
-            fPtr->Release();
+    void reset() {
+        if (this->fPtr) {
+            this->fPtr->Release();
+            this->fPtr = nullptr;
         }
-        fPtr = ptr;
     }
 
     void swap(SkTScopedComPtr<T>& that) {

@@ -5,19 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
+#include "gm.h"
+#include "SkBlurMaskFilter.h"
+#include "SkColorFilter.h"
+#include "SkPaint.h"
+#include "SkRRect.h"
 
 namespace skiagm {
 
@@ -26,7 +18,7 @@ namespace skiagm {
 class BlurredClippedCircleGM : public GM {
 public:
     BlurredClippedCircleGM() {
-        this->setBGColor(0xFFCCCCCC);
+        this->setBGColor(sk_tool_utils::color_to_565(0xFFCCCCCC));
     }
 
 protected:
@@ -50,7 +42,9 @@ protected:
         canvas->scale(kScale, kScale);
 
         canvas->save();
-            SkRect clipRect1 = SkRect::MakeLTRB(0, 0, kWidth, kHeight);
+            SkRect clipRect1 = SkRect::MakeLTRB(0, 0,
+                                                SkIntToScalar(kWidth), SkIntToScalar(kHeight));
+
             canvas->clipRect(clipRect1);
 
             canvas->save();
@@ -62,17 +56,20 @@ protected:
 
                     SkRect clipRect2 = SkRect::MakeLTRB(8, 8, 288, 288);
                     SkRRect clipRRect = SkRRect::MakeOval(clipRect2);
-                    canvas->clipRRect(clipRRect, SkClipOp::kDifference, true);
+                    canvas->clipRRect(clipRRect, SkCanvas::kDifference_Op, true);
 
                     SkRect r = SkRect::MakeLTRB(4, 4, 292, 292);
                     SkRRect rr = SkRRect::MakeOval(r);
 
                     SkPaint paint;
 
-                    paint.setMaskFilter(SkMaskFilter::MakeBlur(
+                    paint.setMaskFilter(SkBlurMaskFilter::Make(
                                             kNormal_SkBlurStyle,
-                                            1.366025f));
-                    paint.setColorFilter(SkColorFilters::Blend(SK_ColorRED, SkBlendMode::kSrcIn));
+                                            1.366025f,
+                                            SkBlurMaskFilter::kHighQuality_BlurFlag));
+                    paint.setColorFilter(SkColorFilter::MakeModeFilter(
+                                             SK_ColorRED,
+                                             SkBlendMode::kSrcIn));
                     paint.setAntiAlias(true);
 
                     canvas->drawRRect(rr, paint);
@@ -83,13 +80,13 @@ protected:
     }
 
 private:
-    inline static constexpr int kWidth = 1164;
-    inline static constexpr int kHeight = 802;
+    static constexpr int kWidth = 1164;
+    static constexpr int kHeight = 802;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new BlurredClippedCircleGM;)
-}  // namespace skiagm
+}

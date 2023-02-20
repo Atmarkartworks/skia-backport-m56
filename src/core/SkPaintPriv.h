@@ -8,11 +8,11 @@
 #ifndef SkPaintPriv_DEFINED
 #define SkPaintPriv_DEFINED
 
-#include "include/core/SkPaint.h"
+#include "SkTypes.h"
 
-class SkReadBuffer;
-class SkWriteBuffer;
-enum SkColorType : int;
+class SkBitmap;
+class SkImage;
+class SkPaint;
 
 class SkPaintPriv {
 public:
@@ -30,34 +30,21 @@ public:
      */
     static bool Overwrites(const SkPaint* paint, ShaderOverrideOpacity);
 
-    static bool ShouldDither(const SkPaint&, SkColorType);
+    static bool Overwrites(const SkPaint& paint) {
+        return Overwrites(&paint, kNone_ShaderOverrideOpacity);
+    }
 
-    /*
-     * The luminance color is used to determine which Gamma Canonical color to map to.  This is
-     * really only used by backends which want to cache glyph masks, and need some way to know if
-     * they need to generate new masks based off a given color.
+    /**
+     *  Returns true if drawing this bitmap with this paint (or nullptr) will ovewrite all affected
+     *  pixels.
      */
-    static SkColor ComputeLuminanceColor(const SkPaint&);
+    static bool Overwrites(const SkBitmap&, const SkPaint* paint);
 
-    /** Serializes SkPaint into a buffer. A companion unflatten() call
-    can reconstitute the paint at a later time.
-
-    @param buffer  SkWriteBuffer receiving the flattened SkPaint data
-    */
-    static void Flatten(const SkPaint& paint, SkWriteBuffer& buffer);
-
-    /** Populates SkPaint, typically from a serialized stream, created by calling
-        flatten() at an earlier time.
-    */
-    static SkPaint Unflatten(SkReadBuffer& buffer);
-
-    // If this paint has any color filter, fold it into the shader and/or paint color
-    // so that it draws the same but getColorFilter() returns nullptr.
-    //
-    // Since we may be filtering now, we need to know what color space to filter in,
-    // typically the color space of the device we're drawing into.
-    static void RemoveColorFilter(SkPaint*, SkColorSpace* dstCS);
-
+    /**
+     *  Returns true if drawing this image with this paint (or nullptr) will ovewrite all affected
+     *  pixels.
+     */
+    static bool Overwrites(const SkImage*, const SkPaint* paint);
 };
 
 #endif

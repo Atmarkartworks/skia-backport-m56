@@ -5,23 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBBHFactory.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPicture.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "tests/Test.h"
+#include "Test.h"
 
+#include "../include/core/SkCanvas.h"
+#include "../include/core/SkPicture.h"
+#include "../include/core/SkStream.h"
+#include "../include/core/SkString.h"
+#include "../include/core/SkPictureRecorder.h"
+#include "../src/core/SkBlendModePriv.h"
 #include <cstring>
 
 // Verify that replay of a recording into a clipped canvas
@@ -34,12 +25,12 @@ namespace {
 class Drawer {
  public:
     explicit Drawer() : fImageInfo(SkImageInfo::MakeN32Premul(200, 100)) {
-        auto surf = SkSurface::MakeRasterN32Premul(100, 100);
-        surf->getCanvas()->clear(0xffffffff);
+        fCircleBM.allocPixels(SkImageInfo::MakeN32Premul(100, 100));
+        SkCanvas canvas(fCircleBM);
+        canvas.clear(0xffffffff);
         SkPaint circlePaint;
         circlePaint.setColor(0xff000000);
-        surf->getCanvas()->drawCircle(50, 50, 50, circlePaint);
-        fCircleImage = surf->makeImageSnapshot();
+        canvas.drawCircle(50, 50, 50, circlePaint);
     }
 
     const SkImageInfo& imageInfo() const { return fImageInfo; }
@@ -63,15 +54,14 @@ class Drawer {
         canvas->saveLayer(nullptr, &blackPaint);
             canvas->drawRect(canvasRect, greenPaint);
             canvas->saveLayer(nullptr, &layerPaint);
-                canvas->drawImageRect(fCircleImage, SkRect::MakeXYWH(20,20,60,60),
-                                      SkSamplingOptions(), &blackPaint);
+                canvas->drawBitmapRect(fCircleBM, SkRect::MakeXYWH(20,20,60,60), &blackPaint);
             canvas->restore();
         canvas->restore();
     }
 
  private:
     const SkImageInfo fImageInfo;
-    sk_sp<SkImage> fCircleImage;
+    SkBitmap fCircleBM;
 };
 
 class RecordingStrategy {
@@ -153,22 +143,22 @@ DEF_TEST(SkRecordingAccuracyXfermode, reporter) {
     SkString errors;
 #endif
 
-    for (int iMode = 0; iMode < kSkBlendModeCount; iMode++) {
+    for (int iMode = 0; iMode < int(SkBlendMode::kLastMode); iMode++) {
         const SkRect& clip = SkRect::MakeXYWH(100, 0, 100, 100);
         SkBlendMode mode = SkBlendMode(iMode);
 
         const SkBitmap& goldenBM = golden.recordAndReplay(drawer, clip, mode);
         const SkBitmap& pictureBM = picture.recordAndReplay(drawer, clip, mode);
 
-        size_t pixelsSize = goldenBM.computeByteSize();
-        REPORTER_ASSERT(reporter, pixelsSize == pictureBM.computeByteSize());
+        size_t pixelsSize = goldenBM.getSize();
+        REPORTER_ASSERT(reporter, pixelsSize == pictureBM.getSize());
 
         // The pixel arrays should match.
 #if FINEGRAIN
         REPORTER_ASSERT(reporter,
                         0 == memcmp(goldenBM.getPixels(), pictureBM.getPixels(), pixelsSize));
 #else
-        if (0 != memcmp(goldenBM.getPixels(), pictureBM.getPixels(), pixelsSize)) {
+        if (memcmp(goldenBM.getPixels(), pictureBM.getPixels(), pixelsSize)) {
             numErrors++;
             errors.appendf("For SkXfermode %d %s:    SkPictureRecorder bitmap is wrong\n",
                            iMode, SkBlendMode_Name(mode));
@@ -177,6 +167,6 @@ DEF_TEST(SkRecordingAccuracyXfermode, reporter) {
     }
 
 #if !FINEGRAIN
-    REPORTER_ASSERT(reporter, 0 == numErrors, "%s", errors.c_str());
+    REPORTER_ASSERT_MESSAGE(reporter, 0 == numErrors, errors.c_str());
 #endif
 }

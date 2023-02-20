@@ -4,19 +4,9 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPath.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/pathops/SkPathOps.h"
-#include "include/private/base/SkTDArray.h"
-#include "tests/PathOpsDebug.h"
-#include "tests/PathOpsExtendedTest.h"
-#include "tests/PathOpsThreadedCommon.h"
-#include "tests/Test.h"
-
-#include <atomic>
+#include "PathOpsExtendedTest.h"
+#include "PathOpsThreadedCommon.h"
+#include "SkString.h"
 
 static int loopNo = 17;
 
@@ -36,9 +26,10 @@ static void add_point(SkString* str, SkScalar x, SkScalar y) {
     }
 }
 
-static std::atomic<int> gLoopsTestNo{0};
-
 static void testOpLoopsMain(PathOpsThreadState* data) {
+#if DEBUG_SHOW_TEST_NAME
+    strncpy(DEBUG_FILENAME_STRING, "", DEBUG_FILENAME_STRING_LENGTH);
+#endif
     SkASSERT(data);
     PathOpsThreadState& state = *data;
     SkString pathStr;
@@ -85,12 +76,9 @@ static void testOpLoopsMain(PathOpsThreadState* data) {
             pathStr.appendf("    testPathOp(reporter, path, pathB, kIntersect_SkPathOp,"
                     " filename);\n");
             pathStr.appendf("}\n");
-            state.outputProgress(pathStr.c_str(), kIntersect_SkPathOp);
+            outputProgress(state.fPathStr, pathStr.c_str(), kIntersect_SkPathOp);
         }
-        SkString testName;
-        testName.printf("thread_loops%d", ++gLoopsTestNo);
-        testPathOp(state.fReporter, pathA, pathB, kIntersect_SkPathOp, testName.c_str());
-        if (PathOpsDebug::gCheckForDuplicateNames) return;
+        testPathOp(state.fReporter, pathA, pathB, kIntersect_SkPathOp, "loops");
                 }
             }
         }

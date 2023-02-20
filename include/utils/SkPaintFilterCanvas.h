@@ -8,50 +8,14 @@
 #ifndef SkPaintFilterCanvas_DEFINED
 #define SkPaintFilterCanvas_DEFINED
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkCanvasVirtualEnforcer.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTDArray.h"
-#include "include/utils/SkNWayCanvas.h"
-
-#include <cstddef>
-
-namespace sktext {
-class GlyphRunList;
-}
-
-class GrRecordingContext;
-class SkData;
-class SkDrawable;
-class SkImage;
-class SkMatrix;
-class SkPaint;
-class SkPath;
-class SkPicture;
-class SkPixmap;
-class SkRRect;
-class SkRegion;
-class SkSurface;
-class SkSurfaceProps;
-class SkTextBlob;
-class SkVertices;
-enum class SkBlendMode;
-struct SkDrawShadowRec;
-struct SkPoint;
-struct SkRSXform;
-struct SkRect;
+#include "SkNWayCanvas.h"
+#include "SkTLazy.h"
 
 /** \class SkPaintFilterCanvas
 
     A utility proxy base class for implementing draw/paint filters.
 */
-class SK_API SkPaintFilterCanvas : public SkCanvasVirtualEnforcer<SkNWayCanvas> {
+class SK_API SkPaintFilterCanvas : public SkNWayCanvas {
 public:
     /**
      * The new SkPaintFilterCanvas is configured for forwarding to the
@@ -60,17 +24,28 @@ public:
     SkPaintFilterCanvas(SkCanvas* canvas);
 
     enum Type {
+        kPaint_Type,
+        kPoint_Type,
+        kArc_Type,
+        kBitmap_Type,
+        kRect_Type,
+        kRRect_Type,
+        kDRRect_Type,
+        kOval_Type,
+        kPath_Type,
         kPicture_Type,
-    };
+        kText_Type,
+        kTextBlob_Type,
+        kVertices_Type,
+        kPatch_Type,
 
-    // Forwarded to the wrapped canvas.
-    SkISize getBaseLayerSize() const override { return proxy()->getBaseLayerSize(); }
-    GrRecordingContext* recordingContext() override { return proxy()->recordingContext(); }
+        kTypeCount
+    };
 
 protected:
     /**
      *  Called with the paint that will be used to draw the specified type.
-     *  The implementation may modify the paint as they wish.
+     *  The implementation may modify the paint as they wish (using SkTCopyOnFirstWrite::writable).
      *
      *  The result bool is used to determine whether the draw op is to be
      *  executed (true) or skipped (false).
@@ -79,63 +54,53 @@ protected:
      *        To also filter encapsulated paints (e.g. SkPicture, SkTextBlob), clients may need to
      *        override the relevant methods (i.e. drawPicture, drawTextBlob).
      */
-    virtual bool onFilter(SkPaint& paint) const = 0;
+    virtual bool onFilter(SkTCopyOnFirstWrite<SkPaint>* paint, Type type) const = 0;
 
     void onDrawPaint(const SkPaint&) override;
-    void onDrawBehind(const SkPaint&) override;
     void onDrawPoints(PointMode, size_t count, const SkPoint pts[], const SkPaint&) override;
     void onDrawRect(const SkRect&, const SkPaint&) override;
     void onDrawRRect(const SkRRect&, const SkPaint&) override;
     void onDrawDRRect(const SkRRect&, const SkRRect&, const SkPaint&) override;
-    void onDrawRegion(const SkRegion&, const SkPaint&) override;
     void onDrawOval(const SkRect&, const SkPaint&) override;
     void onDrawArc(const SkRect&, SkScalar, SkScalar, bool, const SkPaint&) override;
     void onDrawPath(const SkPath&, const SkPaint&) override;
-
-    void onDrawImage2(const SkImage*, SkScalar, SkScalar, const SkSamplingOptions&,
-                      const SkPaint*) override;
-    void onDrawImageRect2(const SkImage*, const SkRect&, const SkRect&, const SkSamplingOptions&,
-                          const SkPaint*, SrcRectConstraint) override;
-    void onDrawImageLattice2(const SkImage*, const Lattice&, const SkRect&, SkFilterMode,
-                             const SkPaint*) override;
-    void onDrawAtlas2(const SkImage*, const SkRSXform[], const SkRect[], const SkColor[], int,
-                     SkBlendMode, const SkSamplingOptions&, const SkRect*, const SkPaint*) override;
-
-    void onDrawVerticesObject(const SkVertices*, SkBlendMode, const SkPaint&) override;
+    void onDrawBitmap(const SkBitmap&, SkScalar left, SkScalar top, const SkPaint*) override;
+    void onDrawBitmapRect(const SkBitmap&, const SkRect* src, const SkRect& dst, const SkPaint*,
+                          SrcRectConstraint) override;
+    void onDrawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst,
+                          const SkPaint*) override;
+    void onDrawImage(const SkImage*, SkScalar left, SkScalar top, const SkPaint*) override;
+    void onDrawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
+                         const SkPaint*, SrcRectConstraint) override;
+    void onDrawImageNine(const SkImage*, const SkIRect& center, const SkRect& dst,
+                         const SkPaint*) override;
+    void onDrawVertices(VertexMode vmode, int vertexCount,
+                              const SkPoint vertices[], const SkPoint texs[],
+                              const SkColor colors[], SkBlendMode,
+                              const uint16_t indices[], int indexCount,
+                              const SkPaint&) override;
     void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                              const SkPoint texCoords[4], SkBlendMode,
                              const SkPaint& paint) override;
     void onDrawPicture(const SkPicture*, const SkMatrix*, const SkPaint*) override;
-    void onDrawDrawable(SkDrawable*, const SkMatrix*) override;
 
-    void onDrawGlyphRunList(const sktext::GlyphRunList&, const SkPaint&) override;
+    void onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
+                    const SkPaint&) override;
+    void onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
+                       const SkPaint&) override;
+    void onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
+                        SkScalar constY, const SkPaint&) override;
+    void onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
+                          const SkMatrix* matrix, const SkPaint&) override;
+    void onDrawTextRSXform(const void* text, size_t byteLength, const SkRSXform xform[],
+                           const SkRect* cull, const SkPaint& paint) override;
     void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                         const SkPaint& paint) override;
-    void onDrawAnnotation(const SkRect& rect, const char key[], SkData* value) override;
-    void onDrawShadowRec(const SkPath& path, const SkDrawShadowRec& rec) override;
-
-    void onDrawEdgeAAQuad(const SkRect&, const SkPoint[4], QuadAAFlags, const SkColor4f&,
-                          SkBlendMode) override;
-    void onDrawEdgeAAImageSet2(const ImageSetEntry[], int count, const SkPoint[], const SkMatrix[],
-                               const SkSamplingOptions&,const SkPaint*, SrcRectConstraint) override;
-
-    // Forwarded to the wrapped canvas.
-    sk_sp<SkSurface> onNewSurface(const SkImageInfo&, const SkSurfaceProps&) override;
-    bool onPeekPixels(SkPixmap* pixmap) override;
-    bool onAccessTopLayerPixels(SkPixmap* pixmap) override;
-    SkImageInfo onImageInfo() const override;
-    bool onGetProps(SkSurfaceProps* props, bool top) const override;
 
 private:
     class AutoPaintFilter;
 
-    SkCanvas* proxy() const { SkASSERT(fList.size() == 1); return fList[0]; }
-
-    SkPaintFilterCanvas* internal_private_asPaintFilterCanvas() const override {
-        return const_cast<SkPaintFilterCanvas*>(this);
-    }
-
-    friend class SkAndroidFrameworkUtils;
+    typedef SkNWayCanvas INHERITED;
 };
 
 #endif

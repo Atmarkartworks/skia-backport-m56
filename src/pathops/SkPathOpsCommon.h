@@ -7,30 +7,27 @@
 #ifndef SkPathOpsCommon_DEFINED
 #define SkPathOpsCommon_DEFINED
 
-#include "include/pathops/SkPathOps.h"
-#include "src/pathops/SkPathOpsTypes.h"
+#include "SkOpAngle.h"
+#include "SkTDArray.h"
 
-class SkOpAngle;
 class SkOpCoincidence;
-class SkOpContourHead;
-class SkOpSegment;
-class SkOpSpan;
-class SkOpSpanBase;
-class SkPath;
-
-template <typename T> class SkTDArray;
+class SkOpContour;
+class SkPathWriter;
 
 const SkOpAngle* AngleWinding(SkOpSpanBase* start, SkOpSpanBase* end, int* windingPtr,
                               bool* sortable);
 SkOpSegment* FindChase(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** startPtr,
                        SkOpSpanBase** endPtr);
 SkOpSpan* FindSortableTop(SkOpContourHead* );
-SkOpSpan* FindUndone(SkOpContourHead* );
+SkOpSegment* FindUndone(SkOpContourHead* , SkOpSpanBase** startPtr,
+                        SkOpSpanBase** endPtr);
 bool FixWinding(SkPath* path);
 bool SortContourList(SkOpContourHead** , bool evenOdd, bool oppEvenOdd);
 bool HandleCoincidence(SkOpContourHead* , SkOpCoincidence* );
 bool OpDebug(const SkPath& one, const SkPath& two, SkPathOp op, SkPath* result
              SkDEBUGPARAMS(bool skipAssert)
              SkDEBUGPARAMS(const char* testName));
+SkScalar ScaleFactor(const SkPath& path);
+void ScalePath(const SkPath& path, SkScalar scale, SkPath* scaled);
 
 #endif

@@ -5,131 +5,161 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkPoint3.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTileMode.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/effects/SkImageFilters.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkColorFilter.h"
+#include "SkColorPriv.h"
+#include "SkShader.h"
 
-#include <utility>
-
-namespace {
-
-sk_sp<SkImage> make_checkerboard();
-sk_sp<SkImage> make_gradient_circle(int width, int height);
-void draw(SkCanvas*, sk_sp<SkImage>, const SkIRect&, sk_sp<SkImageFilter>);
-
-}  // namespace
+#include "SkBlurImageFilter.h"
+#include "SkColorMatrixFilter.h"
+#include "SkDisplacementMapEffect.h"
+#include "SkDropShadowImageFilter.h"
+#include "SkGradientShader.h"
+#include "SkImageSource.h"
+#include "SkMorphologyImageFilter.h"
+#include "SkColorFilterImageFilter.h"
+#include "SkLightingImageFilter.h"
+#include "SkMergeImageFilter.h"
+#include "SkOffsetImageFilter.h"
+#include "SkPoint3.h"
+#include "SkSurface.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
-DEF_SIMPLE_GM(imagefilterscropexpand, canvas, 730, 650) {
-    SkIRect cropRect = SkIRect::MakeXYWH(10, 10, 44, 44);
+class ImageFiltersCropExpandGM : public skiagm::GM {
+public:
+    ImageFiltersCropExpandGM () {}
 
-    sk_sp<SkImage> gradientCircle(make_gradient_circle(64, 64));
-    auto checkerboard = make_checkerboard();
+protected:
 
-    sk_sp<SkImageFilter> gradientCircleSource(SkImageFilters::Image(std::move(gradientCircle)));
-    sk_sp<SkImageFilter> noopCropped(SkImageFilters::Offset(0, 0, nullptr, &cropRect));
-    // This color matrix saturates the green component but only partly increases the opacity.
-    // For the opaque checkerboard, the opacity boost doesn't matter but it does impact the
-    // area outside the checkerboard.
-    float matrix[20] = { 1, 0, 0, 0, 0,
-                         0, 1, 0, 0, 1,
-                         0, 0, 1, 0, 0,
-                         0, 0, 0, 1, 32.0f/255 };
-    sk_sp<SkColorFilter> cfAlphaTrans(SkColorFilters::Matrix(matrix));
-
-    SkRect r = SkRect::MakeWH(SkIntToScalar(64), SkIntToScalar(64));
-    SkScalar MARGIN = SkIntToScalar(12);
-
-    SkPoint3 pointLocation = SkPoint3::Make(0, 0, SkIntToScalar(10));
-    SkScalar kd = SkIntToScalar(2);
-    SkScalar surfaceScale = SkIntToScalar(1);
-    SkIRect bounds;
-    r.roundOut(&bounds);
-
-    SkPaint paint;
-    canvas->translate(MARGIN, MARGIN);
-    for (int outset = -15; outset <= 20; outset += 5) {
-        canvas->save();
-        SkIRect bigRect = cropRect;
-        bigRect.outset(outset, outset);
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::ColorFilter(cfAlphaTrans, noopCropped,  &bigRect));
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::Blur(0.3f, 0.3f,  noopCropped, &bigRect));
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::Blur(8.0f, 8.0f,  noopCropped, &bigRect));
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::Dilate(2, 2, noopCropped, &bigRect));
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::Erode(2, 2, noopCropped, &bigRect));
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::DropShadow(10, 10, 3, 3, SK_ColorBLUE, noopCropped, &bigRect));
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::DisplacementMap(SkColorChannel::kR, SkColorChannel::kR, 12,
-                                             gradientCircleSource, noopCropped, &bigRect));
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::Offset(SkIntToScalar(-8), SkIntToScalar(16), noopCropped, &bigRect));
-
-        draw(canvas, checkerboard, bigRect,
-             SkImageFilters::PointLitDiffuse(pointLocation, SK_ColorWHITE, surfaceScale, kd,
-                                             noopCropped, &bigRect));
-
-        canvas->restore();
-        canvas->translate(0, SkIntToScalar(80));
+    SkString onShortName() override {
+        return SkString("imagefilterscropexpand");
     }
-}
 
-namespace {
-    sk_sp<SkImage> make_checkerboard() {
-        auto surf = SkSurface::MakeRasterN32Premul(64, 64);
-        auto canvas = surf->getCanvas();
-        canvas->clear(0xFFFF0000);
+    SkISize onISize() override { return SkISize::Make(730, 650); }
+
+    void onDraw(SkCanvas* canvas) override {
+        SkImageFilter::CropRect cropRect(
+            SkRect::Make(SkIRect::MakeXYWH(10, 10, 44, 44)),
+            SkImageFilter::CropRect::kHasAll_CropEdge);
+
+        sk_sp<SkImage> gradientCircle(MakeGradientCircle(64, 64));
+        SkBitmap checkerboard;
+        MakeCheckerboard(&checkerboard);
+
+        sk_sp<SkImageFilter> gradientCircleSource(SkImageSource::Make(std::move(gradientCircle)));
+        sk_sp<SkImageFilter> noopCropped(SkOffsetImageFilter::Make(0, 0, nullptr, &cropRect));
+        // This color matrix saturates the green component but only partly increases the opacity.
+        // For the opaque checkerboard, the opacity boost doesn't matter but it does impact the
+        // area outside the checkerboard.
+        SkScalar matrix[20] = { 1, 0, 0, 0, 0,
+                                0, 1, 0, 0, 255,
+                                0, 0, 1, 0, 0,
+                                0, 0, 0, 1, 32 };
+        sk_sp<SkColorFilter> cfAlphaTrans(SkColorFilter::MakeMatrixFilterRowMajor255(matrix));
+
+        SkRect r = SkRect::MakeWH(SkIntToScalar(64), SkIntToScalar(64));
+        SkScalar MARGIN = SkIntToScalar(12);
+
+        SkPoint3 pointLocation = SkPoint3::Make(0, 0, SkIntToScalar(10));
+        SkScalar kd = SkIntToScalar(2);
+        SkScalar surfaceScale = SkIntToScalar(1);
+        SkIRect bounds;
+        r.roundOut(&bounds);
+
+        SkPaint paint;
+        canvas->translate(MARGIN, MARGIN);
+        for (int outset = -15; outset <= 20; outset += 5) {
+            canvas->save();
+            SkRect rect = cropRect.rect();
+            rect.outset(SkIntToScalar(outset),
+                        SkIntToScalar(outset));
+            SkImageFilter::CropRect bigRect(rect, SkImageFilter::CropRect::kHasAll_CropEdge);
+
+            Draw(canvas, checkerboard, rect, SkColorFilterImageFilter::Make(cfAlphaTrans,
+                                                                            noopCropped,
+                                                                            &bigRect));
+
+            Draw(canvas, checkerboard, rect, SkBlurImageFilter::Make(0.3f, 0.3f,
+                                                                     noopCropped,
+                                                                     &bigRect));
+
+            Draw(canvas, checkerboard, rect, SkBlurImageFilter::Make(8.0f, 8.0f,
+                                                                     noopCropped,
+                                                                     &bigRect));
+
+            Draw(canvas, checkerboard, rect, SkDilateImageFilter::Make(2, 2,
+                                                                       noopCropped,
+                                                                       &bigRect));
+
+            Draw(canvas, checkerboard, rect, SkErodeImageFilter::Make(2, 2,
+                                                                      noopCropped,
+                                                                      &bigRect));
+
+            Draw(canvas, checkerboard, rect,
+                 SkDropShadowImageFilter::Make(
+                                    SkIntToScalar(10),
+                                    SkIntToScalar(10),
+                                    SkIntToScalar(3),
+                                    SkIntToScalar(3),
+                                    SK_ColorBLUE,
+                                    SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode,
+                                    noopCropped,
+                                    &bigRect));
+
+            Draw(canvas, checkerboard, rect,
+                 SkDisplacementMapEffect::Make(SkDisplacementMapEffect::kR_ChannelSelectorType,
+                                               SkDisplacementMapEffect::kR_ChannelSelectorType,
+                                               SkIntToScalar(12),
+                                               gradientCircleSource,
+                                               noopCropped,
+                                               &bigRect));
+
+            Draw(canvas, checkerboard, rect,
+                 SkOffsetImageFilter::Make(SkIntToScalar(-8), SkIntToScalar(16),
+                                           noopCropped,
+                                           &bigRect));
+
+            Draw(canvas, checkerboard, rect,
+                 SkLightingImageFilter::MakePointLitDiffuse(pointLocation,
+                                                            SK_ColorWHITE,
+                                                            surfaceScale,
+                                                            kd,
+                                                            noopCropped,
+                                                            &bigRect));
+
+            canvas->restore();
+            canvas->translate(0, SkIntToScalar(80));
+        }
+    }
+
+private:
+    static void MakeCheckerboard(SkBitmap* bitmap) {
+        bitmap->allocN32Pixels(64, 64);
+        SkCanvas canvas(*bitmap);
+        canvas.clear(0xFFFF0000);
         SkPaint darkPaint;
-        darkPaint.setColor(0xFF404040);
+        darkPaint.setColor(sk_tool_utils::color_to_565(0xFF404040));
         SkPaint lightPaint;
-        lightPaint.setColor(0xFFA0A0A0);
+        lightPaint.setColor(sk_tool_utils::color_to_565(0xFFA0A0A0));
         for (int y = 8; y < 48; y += 16) {
             for (int x = 8; x < 48; x += 16) {
-                canvas->save();
-                canvas->translate(SkIntToScalar(x), SkIntToScalar(y));
-                canvas->drawRect(SkRect::MakeXYWH(0, 0, 8, 8), darkPaint);
-                canvas->drawRect(SkRect::MakeXYWH(8, 0, 8, 8), lightPaint);
-                canvas->drawRect(SkRect::MakeXYWH(0, 8, 8, 8), lightPaint);
-                canvas->drawRect(SkRect::MakeXYWH(8, 8, 8, 8), darkPaint);
-                canvas->restore();
+                canvas.save();
+                canvas.translate(SkIntToScalar(x), SkIntToScalar(y));
+                canvas.drawRect(SkRect::MakeXYWH(0, 0, 8, 8), darkPaint);
+                canvas.drawRect(SkRect::MakeXYWH(8, 0, 8, 8), lightPaint);
+                canvas.drawRect(SkRect::MakeXYWH(0, 8, 8, 8), lightPaint);
+                canvas.drawRect(SkRect::MakeXYWH(8, 8, 8, 8), darkPaint);
+                canvas.restore();
             }
         }
-        return surf->makeImageSnapshot();
     }
 
-    sk_sp<SkImage> make_gradient_circle(int width, int height) {
+    static sk_sp<SkImage> MakeGradientCircle(int width, int height) {
         SkScalar x = SkIntToScalar(width / 2);
         SkScalar y = SkIntToScalar(height / 2);
-        SkScalar radius = std::min(x, y) * 0.8f;
+        SkScalar radius = SkMinScalar(x, y) * 0.8f;
         auto surface(SkSurface::MakeRasterN32Premul(width, height));
         SkCanvas* canvas = surface->getCanvas();
         canvas->clear(0x00000000);
@@ -138,21 +168,18 @@ namespace {
         colors[1] = SK_ColorBLACK;
         SkPaint paint;
         paint.setShader(SkGradientShader::MakeRadial(SkPoint::Make(x, y), radius, colors, nullptr,
-                                                     2, SkTileMode::kClamp));
+                                                     2, SkShader::kClamp_TileMode));
         canvas->drawCircle(x, y, radius, paint);
 
         return surface->makeImageSnapshot();
     }
 
-    void draw(SkCanvas* canvas, sk_sp<SkImage> image, const SkIRect& layerRect,
+    static void Draw(SkCanvas* canvas, const SkBitmap& bitmap, const SkRect& rect,
                      sk_sp<SkImageFilter> filter) {
-        // Convert SkIRect to SkRect since that's what saveLayer and drawRect need
-        SkRect rect = SkRect::Make(layerRect);
-
         SkPaint paint;
         paint.setImageFilter(std::move(filter));
         canvas->saveLayer(&rect, &paint);
-        canvas->drawImage(image, 0, 0);
+        canvas->drawBitmap(bitmap, 0, 0);
         canvas->restore();
 
         SkPaint strokePaint;
@@ -162,4 +189,10 @@ namespace {
 
         canvas->translate(SkIntToScalar(80), 0);
     }
-}  // namespace
+
+    typedef GM INHERITED;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+DEF_GM( return new ImageFiltersCropExpandGM; )

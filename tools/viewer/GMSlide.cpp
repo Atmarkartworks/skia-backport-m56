@@ -11,43 +11,22 @@
 * found in the LICENSE file.
 */
 
-#include "include/core/SkCanvas.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "tools/viewer/GMSlide.h"
+#include "GMSlide.h"
+#include "SkCanvas.h"
 
-GMSlide::GMSlide(std::unique_ptr<skiagm::GM> gm) : fGM(std::move(gm)) {
-    fGM->setMode(skiagm::GM::kSample_Mode);
-
-    fName.printf("GM_%s", fGM->getName());
+GMSlide::GMSlide(skiagm::GM* gm) : fGM(gm) {
+    fName.printf("GM_%s", gm->getName());
 }
 
-GMSlide::~GMSlide() = default;
-
-void GMSlide::gpuTeardown() {
-    fGM->gpuTeardown();
-}
+GMSlide::~GMSlide() { delete fGM; }
 
 void GMSlide::draw(SkCanvas* canvas) {
-    SkString msg;
-
-    auto result = fGM->gpuSetup(canvas, &msg);
-    if (result != skiagm::GM::DrawResult::kOk) {
-        return;
-    }
-
-    fGM->draw(canvas, &msg);
+    // Do we care about timing the draw of the background (once)?
+    // Does the GM ever rely on drawBackground to lazily compute something?
+    fGM->drawBackground(canvas);
+    fGM->drawContent(canvas);
 }
 
-bool GMSlide::animate(double nanos) { return fGM->animate(nanos); }
-
-bool GMSlide::onChar(SkUnichar c) { return fGM->onChar(c); }
-
-bool GMSlide::onGetControls(SkMetaData* controls) {
-    return fGM->getControls(controls);
+bool GMSlide::animate(const SkAnimTimer& timer) {
+    return fGM->animate(timer);
 }
-
-void GMSlide::onSetControls(const SkMetaData& controls) {
-    fGM->setControls(controls);
-}
-

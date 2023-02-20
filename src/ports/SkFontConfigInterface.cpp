@@ -5,29 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkFontMgr.h"
-#include "include/core/SkRefCnt.h"
-#include "include/ports/SkFontConfigInterface.h"
-#include "include/private/base/SkMutex.h"
+#include "SkFontConfigInterface.h"
+#include "SkFontMgr.h"
+#include "SkMutex.h"
+#include "SkRefCnt.h"
 
-static SkMutex& font_config_interface_mutex() {
-    static SkMutex& mutex = *(new SkMutex);
-    return mutex;
-}
+SK_DECLARE_STATIC_MUTEX(gFontConfigInterfaceMutex);
 static SkFontConfigInterface* gFontConfigInterface;
 
-sk_sp<SkFontConfigInterface> SkFontConfigInterface::RefGlobal() {
-    SkAutoMutexExclusive ac(font_config_interface_mutex());
+SkFontConfigInterface* SkFontConfigInterface::RefGlobal() {
+    SkAutoMutexAcquire ac(gFontConfigInterfaceMutex);
 
     if (gFontConfigInterface) {
-        return sk_ref_sp(gFontConfigInterface);
+        return SkRef(gFontConfigInterface);
     }
-    return sk_ref_sp(SkFontConfigInterface::GetSingletonDirectInterface());
+    return SkSafeRef(SkFontConfigInterface::GetSingletonDirectInterface());
 }
 
-void SkFontConfigInterface::SetGlobal(sk_sp<SkFontConfigInterface> fc) {
-    SkAutoMutexExclusive ac(font_config_interface_mutex());
+SkFontConfigInterface* SkFontConfigInterface::SetGlobal(SkFontConfigInterface* fc) {
+    SkAutoMutexAcquire ac(gFontConfigInterfaceMutex);
 
-    SkSafeUnref(gFontConfigInterface);
-    gFontConfigInterface = fc.release();
+    SkRefCnt_SafeAssign(gFontConfigInterface, fc);
+    return fc;
 }

@@ -8,7 +8,7 @@
 #ifndef SkMatrix22_DEFINED
 #define SkMatrix22_DEFINED
 
-#include "include/core/SkPoint.h"
+#include "SkPoint.h"
 
 class SkMatrix;
 

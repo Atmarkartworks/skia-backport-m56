@@ -5,38 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "tests/Test.h"
+#include "Test.h"
 
-#include "include/core/SkString.h"
-#include "include/core/SkTime.h"
-#include "tools/flags/CommandLineFlags.h"
+#include "SkCommandLineFlags.h"
+#include "SkString.h"
+#include "SkTime.h"
 
-#include <cstdlib>
-#include <string>
-
-static DEFINE_string2(tmpDir, t, nullptr, "Temp directory to use.");
+DEFINE_string2(tmpDir, t, nullptr, "Temp directory to use.");
 
 void skiatest::Reporter::bumpTestCount() {}
 
 bool skiatest::Reporter::allowExtendedTest() const { return false; }
 
 bool skiatest::Reporter::verbose() const { return false; }
-
-
-void skiatest::Reporter::reportFailedWithContext(const skiatest::Failure& f) {
-    SkString fullMessage = f.message;
-    if (!fContextStack.empty()) {
-        fullMessage.append(" [");
-        for (int i = 0; i < fContextStack.size(); ++i) {
-            if (i > 0) {
-                fullMessage.append(", ");
-            }
-            fullMessage.append(fContextStack[i]);
-        }
-        fullMessage.append("]");
-    }
-    this->reportFailed(skiatest::Failure(f.fileName, f.lineNo, f.condition, fullMessage));
-}
 
 SkString skiatest::Failure::toString() const {
     SkString result = SkStringPrintf("%s:%d\t", this->fileName, this->lineNo);
@@ -51,24 +32,8 @@ SkString skiatest::Failure::toString() const {
 }
 
 SkString skiatest::GetTmpDir() {
-    if (!FLAGS_tmpDir.isEmpty()) {
-        return SkString(FLAGS_tmpDir[0]);
-    }
-#ifdef SK_BUILD_FOR_ANDROID
-    const char* environmentVariable = "TMPDIR";
-    const char* defaultValue = "/data/local/tmp";
-#elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_UNIX)
-    const char* environmentVariable = "TMPDIR";
-    const char* defaultValue = "/tmp";
-#elif defined(SK_BUILD_FOR_WIN)
-    const char* environmentVariable = "TEMP";
-    const char* defaultValue = nullptr;
-#else
-    const char* environmentVariable = nullptr;
-    const char* defaultValue = nullptr;
-#endif
-    const char* tmpdir = environmentVariable ? getenv(environmentVariable) : nullptr;
-    return SkString(tmpdir ? tmpdir : defaultValue);
+    const char* tmpDir = FLAGS_tmpDir.isEmpty() ? nullptr : FLAGS_tmpDir[0];
+    return SkString(tmpDir);
 }
 
 skiatest::Timer::Timer() : fStartNanos(SkTime::GetNSecs()) {}

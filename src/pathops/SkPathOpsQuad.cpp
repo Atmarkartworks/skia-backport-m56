@@ -4,18 +4,11 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/pathops/SkPathOpsQuad.h"
-
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkLineParameters.h"
-#include "src/pathops/SkPathOpsConic.h"
-#include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsRect.h"
-#include "src/pathops/SkPathOpsTypes.h"
-
-#include <algorithm>
-#include <cmath>
+#include "SkIntersections.h"
+#include "SkLineParameters.h"
+#include "SkPathOpsCubic.h"
+#include "SkPathOpsCurve.h"
+#include "SkPathOpsQuad.h"
 
 // from blackpawn.com/texts/pointinpoly
 static bool pointInTriangle(const SkDPoint fPts[3], const SkDPoint& test) {
@@ -28,14 +21,11 @@ static bool pointInTriangle(const SkDPoint fPts[3], const SkDPoint& test) {
     double dot11 = v1.dot(v1);
     double dot12 = v1.dot(v2);
     // Compute barycentric coordinates
-    double denom = dot00 * dot11 - dot01 * dot01;
-    double u = dot11 * dot02 - dot01 * dot12;
-    double v = dot00 * dot12 - dot01 * dot02;
+    double invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+    double u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    double v = (dot00 * dot12 - dot01 * dot02) * invDenom;
     // Check if point is in triangle
-    if (denom >= 0) {
-        return u >= 0 && v >= 0 && u + v < denom;
-    }
-    return u <= 0 && v <= 0 && u + v > denom;
+    return u >= 0 && v >= 0 && u + v < 1;
 }
 
 static bool matchesEnd(const SkDPoint fPts[3], const SkDPoint& test) {
@@ -148,15 +138,6 @@ int SkDQuad::RootsValidT(double A, double B, double C, double t[2]) {
     return foundRoots;
 }
 
-static int handle_zero(const double B, const double C, double s[2]) {
-    if (approximately_zero(B)) {
-        s[0] = 0;
-        return C == 0;
-    }
-    s[0] = -C / B;
-    return 1;
-}
-
 /*
 Numeric Solutions (5.6) suggests to solve the quadratic by computing
        Q = -1/2(B + sgn(B)Sqrt(B^2 - 4 A C))
@@ -165,15 +146,17 @@ and using the roots
       t2 = C / Q
 */
 // this does not discard real roots <= 0 or >= 1
-// TODO(skbug.com/14063) Deduplicate with SkQuads::RootsReal
 int SkDQuad::RootsReal(const double A, const double B, const double C, double s[2]) {
-    if (!A) {
-        return handle_zero(B, C, s);
-    }
     const double p = B / (2 * A);
     const double q = C / A;
-    if (approximately_zero(A) && (approximately_zero_inverse(p) || approximately_zero_inverse(q))) {
-        return handle_zero(B, C, s);
+    if (!A || (approximately_zero(A) && (approximately_zero_inverse(p)
+            || approximately_zero_inverse(q)))) {
+        if (approximately_zero(B)) {
+            s[0] = 0;
+            return C == 0;
+        }
+        s[0] = -C / B;
+        return 1;
     }
     /* normal form: x^2 + px + q = 0 */
     const double p2 = p * p;
@@ -195,11 +178,11 @@ bool SkDQuad::isLinear(int startIndex, int endIndex) const {
     // FIXME: maybe it's possible to avoid this and compare non-normalized
     lineParameters.normalize();
     double distance = lineParameters.controlPtDistance(*this);
-    double tiniest = std::min(std::min(std::min(std::min(std::min(fPts[0].fX, fPts[0].fY),
+    double tiniest = SkTMin(SkTMin(SkTMin(SkTMin(SkTMin(fPts[0].fX, fPts[0].fY),
             fPts[1].fX), fPts[1].fY), fPts[2].fX), fPts[2].fY);
-    double largest = std::max(std::max(std::max(std::max(std::max(fPts[0].fX, fPts[0].fY),
+    double largest = SkTMax(SkTMax(SkTMax(SkTMax(SkTMax(fPts[0].fX, fPts[0].fY),
             fPts[1].fX), fPts[1].fY), fPts[2].fX), fPts[2].fY);
-    largest = std::max(largest, -tiniest);
+    largest = SkTMax(largest, -tiniest);
     return approximately_zero_when_compared_to(distance, largest);
 }
 
@@ -404,20 +387,4 @@ void SkDQuad::SetABC(const double* quad, double* a, double* b, double* c) {
     *b -= *c;          // b =     2*B -   C
     *a -= *b;          // a = A - 2*B +   C
     *b -= *c;          // b =     2*B - 2*C
-}
-
-int SkTQuad::intersectRay(SkIntersections* i, const SkDLine& line) const {
-    return i->intersectRay(fQuad, line);
-}
-
-bool SkTQuad::hullIntersects(const SkDConic& conic, bool* isLinear) const  {
-    return conic.hullIntersects(fQuad, isLinear);
-}
-
-bool SkTQuad::hullIntersects(const SkDCubic& cubic, bool* isLinear) const {
-    return cubic.hullIntersects(fQuad, isLinear);
-}
-
-void SkTQuad::setBounds(SkDRect* rect) const {
-    rect->setBounds(fQuad);
 }

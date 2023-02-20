@@ -8,8 +8,9 @@
 #ifndef RecordingBench_DEFINED
 #define RecordingBench_DEFINED
 
-#include "bench/Benchmark.h"
-#include "include/core/SkPicture.h"
+#include "Benchmark.h"
+#include "SkPicture.h"
+#include "SkLiteDL.h"
 
 class PictureCentricBench : public Benchmark {
 public:
@@ -24,37 +25,32 @@ protected:
     sk_sp<const SkPicture> fSrc;
     SkString fName;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class RecordingBench : public PictureCentricBench {
 public:
-    RecordingBench(const char* name, const SkPicture*, bool useBBH);
+    RecordingBench(const char* name, const SkPicture*, bool useBBH, bool lite);
 
 protected:
     void onDraw(int loops, SkCanvas*) override;
 
 private:
+    sk_sp<SkLiteDL> fDL;
     bool fUseBBH;
 
-    using INHERITED = PictureCentricBench;
+    typedef PictureCentricBench INHERITED;
 };
 
-class DeserializePictureBench : public Benchmark {
+class PipingBench : public PictureCentricBench {
 public:
-    DeserializePictureBench(const char* name, sk_sp<SkData> encodedPicture);
+    PipingBench(const char* name, const SkPicture*);
 
 protected:
-    const char* onGetName() override;
-    bool isSuitableFor(Backend) override;
-    SkIPoint onGetSize() override;
     void onDraw(int loops, SkCanvas*) override;
 
 private:
-    SkString      fName;
-    sk_sp<SkData> fEncodedPicture;
-
-    using INHERITED = Benchmark;
+    typedef PictureCentricBench INHERITED;
 };
 
 #endif//RecordingBench_DEFINED

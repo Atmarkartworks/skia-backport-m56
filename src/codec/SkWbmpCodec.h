@@ -8,20 +8,9 @@
 #ifndef SkCodec_wbmp_DEFINED
 #define SkCodec_wbmp_DEFINED
 
-#include "include/codec/SkCodec.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/codec/SkSwizzler.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-
-class SkSampler;
-class SkStream;
-enum class SkEncodedImageFormat;
-struct SkEncodedInfo;
-struct SkImageInfo;
+#include "SkCodec.h"
+#include "SkColorSpace.h"
+#include "SkSwizzler.h"
 
 class SkWbmpCodec final : public SkCodec {
 public:
@@ -32,18 +21,19 @@ public:
      * Creates a wbmp codec
      * Takes ownership of the stream
      */
-    static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*);
+    static SkCodec* NewFromStream(SkStream*);
 
 protected:
-    SkEncodedImageFormat onGetEncodedFormat() const override;
+    SkEncodedFormat onGetEncodedFormat() const override;
     Result onGetPixels(const SkImageInfo&, void*, size_t,
-                       const Options&, int*) override;
+                       const Options&, SkPMColor[], int*, int*) override;
     bool onRewind() override;
-    bool conversionSupported(const SkImageInfo& dst, bool srcIsOpaque,
-                             bool needsXform) override;
-    // No need to Xform; all pixels are either black or white.
-    bool usesColorXform() const override { return false; }
 private:
+    /*
+     * Returns a swizzler on success, nullptr on failure
+     */
+    SkSwizzler* initializeSwizzler(const SkImageInfo& info, const SkPMColor* ctable,
+                                   const Options& opts);
     SkSampler* getSampler(bool createIfNecessary) override {
         SkASSERT(fSwizzler || !createIfNecessary);
         return fSwizzler.get();
@@ -54,20 +44,21 @@ private:
      */
     bool readRow(uint8_t* row);
 
-    SkWbmpCodec(SkEncodedInfo&&, std::unique_ptr<SkStream>);
+    SkWbmpCodec(int width, int height, const SkEncodedInfo&, SkStream*);
 
     const size_t                fSrcRowBytes;
 
     // Used for scanline decodes:
     std::unique_ptr<SkSwizzler> fSwizzler;
-    skia_private::AutoTMalloc<uint8_t>      fSrcBuffer;
+    sk_sp<SkColorTable>         fColorTable;
+    SkAutoTMalloc<uint8_t>      fSrcBuffer;
 
     int onGetScanlines(void* dst, int count, size_t dstRowBytes) override;
     bool onSkipScanlines(int count) override;
-    Result onStartScanlineDecode(const SkImageInfo& dstInfo,
-            const Options& options) override;
+    Result onStartScanlineDecode(const SkImageInfo& dstInfo, const Options& options,
+            SkPMColor inputColorTable[], int* inputColorCount) override;
 
-    using INHERITED = SkCodec;
+    typedef SkCodec INHERITED;
 };
 
 #endif  // SkCodec_wbmp_DEFINED

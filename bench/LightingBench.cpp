@@ -4,10 +4,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPoint3.h"
-#include "include/effects/SkImageFilters.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkLightingImageFilter.h"
+#include "SkPoint3.h"
 
 #define FILTER_WIDTH_SMALL  SkIntToScalar(32)
 #define FILTER_HEIGHT_SMALL SkIntToScalar(32)
@@ -37,10 +37,11 @@ protected:
     static SkPoint3 GetDistantDirection() {
         static SkScalar azimuthRad = SkDegreesToRadians(SkIntToScalar(225));
         static SkScalar elevationRad = SkDegreesToRadians(SkIntToScalar(5));
-        static SkPoint3 distantDirection = SkPoint3::Make(
-                                              SkScalarCos(azimuthRad) * SkScalarCos(elevationRad),
-                                              SkScalarSin(azimuthRad) * SkScalarCos(elevationRad),
-                                              SkScalarSin(elevationRad));
+        static SkPoint3 distantDirection = SkPoint3::Make(SkScalarMul(SkScalarCos(azimuthRad),
+                                                                      SkScalarCos(elevationRad)),
+                                                          SkScalarMul(SkScalarSin(azimuthRad),
+                                                                      SkScalarCos(elevationRad)),
+                                                          SkScalarSin(elevationRad));
         return distantDirection;
     }
 
@@ -92,7 +93,7 @@ protected:
     }
 
     bool fIsSmall;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class LightingPointLitDiffuseBench : public LightingBaseBench {
@@ -105,12 +106,15 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkImageFilters::PointLitDiffuse(
-                GetPointLocation(), GetWhite(),  GetSurfaceScale(), GetKd(), nullptr));
+        draw(loops, canvas, SkLightingImageFilter::MakePointLitDiffuse(GetPointLocation(),
+                                                                       GetWhite(),
+                                                                       GetSurfaceScale(),
+                                                                       GetKd(),
+                                                                       nullptr));
     }
 
 private:
-    using INHERITED = LightingBaseBench;
+    typedef LightingBaseBench INHERITED;
 };
 
 class LightingDistantLitDiffuseBench : public LightingBaseBench {
@@ -123,12 +127,15 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkImageFilters::DistantLitDiffuse(
-            GetDistantDirection(), GetWhite(), GetSurfaceScale(), GetKd(), nullptr));
+        draw(loops, canvas, SkLightingImageFilter::MakeDistantLitDiffuse(GetDistantDirection(),
+                                                                         GetWhite(),
+                                                                         GetSurfaceScale(),
+                                                                         GetKd(),
+                                                                         nullptr));
     }
 
 private:
-    using INHERITED = LightingBaseBench;
+    typedef LightingBaseBench INHERITED;
 };
 
 class LightingSpotLitDiffuseBench : public LightingBaseBench {
@@ -141,13 +148,18 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkImageFilters::SpotLitDiffuse(
-                GetSpotLocation(), GetSpotTarget(), GetSpotExponent(), GetCutoffAngle(),
-                GetWhite(), GetSurfaceScale(), GetKd(), nullptr));
+        draw(loops, canvas, SkLightingImageFilter::MakeSpotLitDiffuse(GetSpotLocation(),
+                                                                       GetSpotTarget(),
+                                                                       GetSpotExponent(),
+                                                                       GetCutoffAngle(),
+                                                                       GetWhite(),
+                                                                       GetSurfaceScale(),
+                                                                       GetKd(),
+                                                                       nullptr));
     }
 
 private:
-    using INHERITED = LightingBaseBench;
+    typedef LightingBaseBench INHERITED;
 };
 
 class LightingPointLitSpecularBench : public LightingBaseBench {
@@ -160,13 +172,16 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkImageFilters::PointLitSpecular(
-                GetPointLocation(), GetWhite(), GetSurfaceScale(), GetKs(), GetShininess(),
-                nullptr));
+        draw(loops, canvas, SkLightingImageFilter::MakePointLitSpecular(GetPointLocation(),
+                                                                        GetWhite(),
+                                                                        GetSurfaceScale(),
+                                                                        GetKs(),
+                                                                        GetShininess(),
+                                                                        nullptr));
     }
 
 private:
-    using INHERITED = LightingBaseBench;
+    typedef LightingBaseBench INHERITED;
 };
 
 class LightingDistantLitSpecularBench : public LightingBaseBench {
@@ -179,13 +194,16 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkImageFilters::DistantLitSpecular(
-                GetDistantDirection(), GetWhite(), GetSurfaceScale(), GetKs(), GetShininess(),
-                nullptr));
+        draw(loops, canvas, SkLightingImageFilter::MakeDistantLitSpecular(GetDistantDirection(),
+                                                                          GetWhite(),
+                                                                          GetSurfaceScale(),
+                                                                          GetKs(),
+                                                                          GetShininess(),
+                                                                          nullptr));
     }
 
 private:
-    using INHERITED = LightingBaseBench;
+    typedef LightingBaseBench INHERITED;
 };
 
 class LightingSpotLitSpecularBench : public LightingBaseBench {
@@ -198,13 +216,19 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        draw(loops, canvas, SkImageFilters::SpotLitSpecular(
-                GetSpotLocation(), GetSpotTarget(), GetSpotExponent(), GetCutoffAngle(),
-                GetWhite(), GetSurfaceScale(), GetKs(), GetShininess(), nullptr));
+        draw(loops, canvas, SkLightingImageFilter::MakeSpotLitSpecular(GetSpotLocation(),
+                                                                       GetSpotTarget(),
+                                                                       GetSpotExponent(),
+                                                                       GetCutoffAngle(),
+                                                                       GetWhite(),
+                                                                       GetSurfaceScale(),
+                                                                       GetKs(),
+                                                                       GetShininess(),
+                                                                       nullptr));
     }
 
 private:
-    using INHERITED = LightingBaseBench;
+    typedef LightingBaseBench INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

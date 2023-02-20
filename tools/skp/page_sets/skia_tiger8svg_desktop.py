@@ -14,8 +14,8 @@ class SkiaBuildbotDesktopPage(page_module.Page):
   def __init__(self, url, page_set):
     super(SkiaBuildbotDesktopPage, self).__init__(
         url=url,
-        name=url,
         page_set=page_set,
+        credentials_path='data/credentials.json',
         shared_page_state_class=shared_page_state.SharedDesktopPageState)
     self.archive_data_file = 'data/skia_tiger8svg_desktop.json'
 
@@ -34,8 +34,7 @@ class SkiaTiger8svgDesktopPageSet(story.StorySet):
 
     urls_list = [
       # Why: from skbug.com/4713
-      ('https://storage.googleapis.com/skia-recreateskps-bot-hosted-pages/'
-       'tiger-8.svg'),
+      'http://www.googledrive.com/host/0B5nDjttF0gt9QzJjdjRNVlNvems',
     ]
 
     for url in urls_list:

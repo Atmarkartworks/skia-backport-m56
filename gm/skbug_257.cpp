@@ -5,25 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
-#include "tools/ToolUtils.h"
-
-#include <string.h>
+#include "gm.h"
+#include "SkImage.h"
+#include "SkRRect.h"
 
 static void rotated_checkerboard_shader(SkPaint* paint,
                                         SkColor c1,
@@ -37,47 +21,55 @@ static void rotated_checkerboard_shader(SkPaint* paint,
     SkMatrix matrix;
     matrix.setScale(0.75f, 0.75f);
     matrix.preRotate(30.0f);
-    paint->setShader(bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
-                                   SkSamplingOptions(), matrix));
+    paint->setShader(
+            SkShader::MakeBitmapShader(bm, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode,
+                                       &matrix));
 }
 
 static void exercise_draw_pos_text(SkCanvas* canvas,
                                    const char* text,
                                    SkScalar x, SkScalar y,
-                                   const SkFont& font, const SkPaint& paint) {
-    const int count = font.countText(text, strlen(text), SkTextEncoding::kUTF8);
-    SkTextBlobBuilder builder;
-    auto rec = builder.allocRunPos(font, count);
-    font.textToGlyphs(text, strlen(text), SkTextEncoding::kUTF8, rec.glyphs, count);
-    font.getPos(rec.glyphs, count, rec.points(), {x, y});
-    canvas->drawTextBlob(builder.make(), 0, 0, paint);
+                                   const SkPaint& paint) {
+    size_t textLen = strlen(text);
+    int count = paint.countText(text, textLen);
+    SkAutoTArray<SkScalar> widths(count);
+    paint.getTextWidths(text, textLen, &widths[0]);
+    SkAutoTArray<SkPoint> pos(count);
+    for (int i = 0; i < count; ++i) {
+        pos[i].set(x, y);
+        x += widths[i];
+    }
+    canvas->drawPosText(text, textLen, &pos[0], paint);
 }
 
 static void exercise_draw_pos_text_h(SkCanvas* canvas,
                                      const char* text,
                                      SkScalar x, SkScalar y,
-                                     const SkFont& font, const SkPaint& paint) {
-    const int count = font.countText(text, strlen(text), SkTextEncoding::kUTF8);
-    SkTextBlobBuilder builder;
-    auto rec = builder.allocRunPosH(font, count, 0);
-    font.textToGlyphs(text, strlen(text), SkTextEncoding::kUTF8, rec.glyphs, count);
-    font.getXPos(rec.glyphs, count, rec.pos);
-    canvas->drawTextBlob(builder.make(), x, y, paint);
+                                     const SkPaint& paint) {
+    size_t textLen = strlen(text);
+    int count = paint.countText(text, textLen);
+    SkAutoTArray<SkScalar> widths(count);
+    paint.getTextWidths(text, textLen, &widths[0]);
+    SkAutoTArray<SkScalar> pos(count);
+    for (int i = 0; i < count; ++i) {
+        pos[i] = x;
+        x += widths[i];
+    }
+    canvas->drawPosTextH(text, textLen, &pos[0], y, paint);
 }
 
 static void test_text(SkCanvas* canvas, SkScalar size,
                       SkColor color, SkScalar Y) {
-    SkFont font(ToolUtils::create_portable_typeface(), 24);
-    font.setEdging(SkFont::Edging::kAlias);
     SkPaint type;
+    type.setTextSize(24);
+    sk_tool_utils::set_portable_typeface(&type);
     type.setColor(color);
     const char text[] = "HELLO WORLD";
-    canvas->drawSimpleText(text, strlen(text), SkTextEncoding::kUTF8, 32, size / 2 + Y,
-                           font, type);
-    SkScalar lineSpacing = font.getSpacing();
-    exercise_draw_pos_text(canvas, text, 32, size / 2 + Y + lineSpacing, font, type);
+    canvas->drawText(text, strlen(text), 32, size / 2 + Y, type);
+    SkScalar lineSpacing = type.getFontSpacing();
+    exercise_draw_pos_text(canvas, text, 32, size / 2 + Y + lineSpacing, type);
     exercise_draw_pos_text_h(canvas, text, 32,
-                             size / 2 + Y + 2 * lineSpacing, font, type);
+                             size / 2 + Y + 2 * lineSpacing, type);
 }
 
 // If this GM works correctly, the cyan layer should be lined up with

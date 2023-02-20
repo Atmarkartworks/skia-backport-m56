@@ -5,30 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathEffect.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/private/base/SkTArray.h"
-#include "tools/ToolUtils.h"
-
-#include <initializer_list>
+#include "gm.h"
+#include "SkBlurMaskFilter.h"
+#include "SkDashPathEffect.h"
+#include "SkGradientShader.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkPoint3.h"
 
 constexpr int kNumColumns = 6;
 constexpr int kNumRows = 8;
@@ -41,8 +24,7 @@ static void draw_fins(SkCanvas* canvas, const SkPoint& offset, float angle, cons
     SkScalar cos, sin;
 
     // first fin
-    sin = SkScalarSin(angle + (SK_ScalarPI/4));
-    cos = SkScalarCos(angle + (SK_ScalarPI/4));
+    sin = SkScalarSinCos(angle + (SK_ScalarPI/4), &cos);
     sin *= kRadius / 2.0f;
     cos *= kRadius / 2.0f;
 
@@ -52,8 +34,7 @@ static void draw_fins(SkCanvas* canvas, const SkPoint& offset, float angle, cons
     canvas->drawPath(p, paint);
 
     // second fin
-    sin = SkScalarSin(angle - (SK_ScalarPI/4));
-    cos = SkScalarCos(angle - (SK_ScalarPI/4));
+    sin = SkScalarSinCos(angle - (SK_ScalarPI/4), &cos);
     sin *= kRadius / 2.0f;
     cos *= kRadius / 2.0f;
 
@@ -70,8 +51,7 @@ static void draw_snowflake(SkCanvas* canvas, const SkPaint& paint) {
 
     SkScalar sin, cos, angle = 0.0f;
     for (int i = 0; i < kNumSpokes/2; ++i, angle += SK_ScalarPI/(kNumSpokes/2)) {
-        sin = SkScalarSin(angle);
-        cos = SkScalarCos(angle);
+        sin = SkScalarSinCos(angle, &cos);
         sin *= kRadius;
         cos *= kRadius;
 
@@ -118,7 +98,9 @@ namespace skiagm {
 // Various shaders are applied to ensure the coordinate spaces work out right.
 class StrokedLinesGM : public GM {
 public:
-    StrokedLinesGM() { this->setBGColor(ToolUtils::color_to_565(0xFF1A65D7)); }
+    StrokedLinesGM() {
+        this->setBGColor(sk_tool_utils::color_to_565(0xFF1A65D7));
+    }
 
 protected:
     SkString onShortName() override {
@@ -143,14 +125,15 @@ protected:
             SkPoint pts[] = { {-kRadius-kPad, -kRadius-kPad }, { kRadius+kPad, kRadius+kPad } };
 
             SkPaint p;
-            p.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp));
+            p.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2,
+                                                     SkShader::kClamp_TileMode, 0, nullptr));
 
             fPaints.push_back(p);
         }
         {
             // dashing
             SkScalar intervals[] = { kStrokeWidth, kStrokeWidth };
-            int intervalCount = (int) std::size(intervals);
+            int intervalCount = (int) SK_ARRAY_COUNT(intervals);
             SkPaint p;
             p.setColor(SK_ColorWHITE);
             p.setPathEffect(SkDashPathEffect::Make(intervals, intervalCount, kStrokeWidth));
@@ -166,18 +149,21 @@ protected:
 
             SkMatrix m;
             m.setRotate(12.0f);
-            m.preScale(3.0f, 3.0f);
+            m.preScale(3.0f, 3.0f);;
 
             SkPaint p;
-            p.setShader(bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
-                                      SkSamplingOptions(), m));
+            p.setShader(SkShader::MakeBitmapShader(bm,
+                                                   SkShader::kRepeat_TileMode,
+                                                   SkShader::kRepeat_TileMode,
+                                                   &m));
             fPaints.push_back(p);
         }
         {
             // blur
             SkPaint p;
             p.setColor(SK_ColorWHITE);
-            p.setMaskFilter(SkMaskFilter::MakeBlur(kOuter_SkBlurStyle, 3.0f));
+            p.setMaskFilter(SkBlurMaskFilter::Make(kOuter_SkBlurStyle, 3.0f,
+                                                   SkBlurMaskFilter::kHighQuality_BlurFlag));
             fPaints.push_back(p);
         }
 
@@ -206,13 +192,13 @@ protected:
             fMatrices.push_back(m);
         }
 
-        SkASSERT(kNumRows == fPaints.size() + fMatrices.size());
+        SkASSERT(kNumRows == fPaints.count() + fMatrices.count());
     }
 
     void onDraw(SkCanvas* canvas) override {
         canvas->translate(0, kRadius+kPad);
 
-        for (int i = 0; i < fPaints.size(); ++i) {
+        for (int i = 0; i < fPaints.count(); ++i) {
             int saveCount = canvas->save();
             draw_row(canvas, fPaints[i], SkMatrix::I());
             canvas->restoreToCount(saveCount);
@@ -220,7 +206,7 @@ protected:
             canvas->translate(0, 2*(kRadius+kPad));
         }
 
-        for (int i = 0; i < fMatrices.size(); ++i) {
+        for (int i = 0; i < fMatrices.count(); ++i) {
             int saveCount = canvas->save();
             draw_row(canvas, fPaints[0], fMatrices[i]);
             canvas->restoreToCount(saveCount);
@@ -233,10 +219,10 @@ private:
     SkTArray<SkPaint> fPaints;
     SkTArray<SkMatrix> fMatrices;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new StrokedLinesGM;)
-}  // namespace skiagm
+}

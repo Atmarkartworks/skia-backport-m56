@@ -4,33 +4,29 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkData.h"
-#include "include/core/SkDocument.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTime.h"
-#include "include/docs/SkPDFDocument.h"
-#include "tests/Test.h"
-
-#include <cstdint>
-#include <cstring>
+#include "SkDocument.h"
+#include "SkStream.h"
+#include "SkData.h"
+#include "Test.h"
 
 DEF_TEST(SkPDF_Metadata, r) {
     REQUIRE_PDF_DOCUMENT(SkPDF_Metadata, r);
     SkTime::DateTime now;
     SkTime::GetDateTime(&now);
-    SkPDF::Metadata metadata;
+    SkDocument::PDFMetadata metadata;
     metadata.fTitle = "A1";
     metadata.fAuthor = "A2";
     metadata.fSubject = "A3";
     metadata.fKeywords = "A4";
     metadata.fCreator = "A5";
-    metadata.fCreation = now;
-    metadata.fModified = now;
+    metadata.fCreation.fEnabled = true;
+    metadata.fCreation.fDateTime = now;
+    metadata.fModified.fEnabled = true;
+    metadata.fModified.fDateTime = now;
 
     SkDynamicMemoryWStream pdf;
-    auto doc = SkPDF::MakeDocument(&pdf, metadata);
+    sk_sp<SkDocument> doc = SkDocument::MakePDF(&pdf, SK_ScalarDefaultRasterDPI,
+                                                metadata, nullptr, false);
     doc->beginPage(612.0f, 792.0f);
     doc->close();
     sk_sp<SkData> data = pdf.detachAsData();

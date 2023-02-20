@@ -7,17 +7,10 @@
 #ifndef PathOpsTestCommon_DEFINED
 #define PathOpsTestCommon_DEFINED
 
-#include "include/core/SkScalar.h"
-#include "include/private/base/SkTArray.h"
-#include "src/pathops/SkPathOpsPoint.h"
+#include "SkPathOpsQuad.h"
+#include "SkTArray.h"
 
-class SkPath;
-struct SkDConic;
-struct SkDCubic;
-struct SkDLine;
-struct SkDQuad;
 struct SkPathOpsBounds;
-struct SkPoint;
 
 struct QuadPts {
     static const int kPointCount = 3;

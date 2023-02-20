@@ -8,10 +8,7 @@
 #ifndef SkFontStyle_DEFINED
 #define SkFontStyle_DEFINED
 
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTPin.h"
-
-#include <cstdint>
+#include "SkTypes.h"
 
 class SK_API SkFontStyle {
 public:
@@ -47,37 +44,28 @@ public:
         kOblique_Slant,
     };
 
-    constexpr SkFontStyle(int weight, int width, Slant slant) : fValue(
-        (SkTPin<int>(weight, kInvisible_Weight, kExtraBlack_Weight)) +
-        (SkTPin<int>(width, kUltraCondensed_Width, kUltraExpanded_Width) << 16) +
-        (SkTPin<int>(slant, kUpright_Slant, kOblique_Slant) << 24)
-     ) { }
+    SkFontStyle();
+    SkFontStyle(int weight, int width, Slant);
 
-    constexpr SkFontStyle() : SkFontStyle{kNormal_Weight, kNormal_Width, kUpright_Slant} { }
+    static SkFontStyle FromOldStyle(unsigned oldStyle);
 
     bool operator==(const SkFontStyle& rhs) const {
-        return fValue == rhs.fValue;
+        return fUnion.fU32 == rhs.fUnion.fU32;
     }
 
-    int weight() const { return fValue & 0xFFFF; }
-    int width() const { return (fValue >> 16) & 0xFF; }
-    Slant slant() const { return (Slant)((fValue >> 24) & 0xFF); }
-
-    static constexpr SkFontStyle Normal() {
-        return SkFontStyle(kNormal_Weight, kNormal_Width, kUpright_Slant);
-    }
-    static constexpr SkFontStyle Bold() {
-        return SkFontStyle(kBold_Weight,   kNormal_Width, kUpright_Slant);
-    }
-    static constexpr SkFontStyle Italic() {
-        return SkFontStyle(kNormal_Weight, kNormal_Width, kItalic_Slant );
-    }
-    static constexpr SkFontStyle BoldItalic() {
-        return SkFontStyle(kBold_Weight,   kNormal_Width, kItalic_Slant );
-    }
+    int weight() const { return fUnion.fR.fWeight; }
+    int width() const { return fUnion.fR.fWidth; }
+    Slant slant() const { return (Slant)fUnion.fR.fSlant; }
 
 private:
-    int32_t fValue;
+    union {
+        struct {
+            uint16_t fWeight;   // 100 .. 900
+            uint8_t  fWidth;    // 1 .. 9
+            uint8_t  fSlant;    // 0 .. 2
+        } fR;
+        uint32_t    fU32;
+    } fUnion;
 };
 
 #endif

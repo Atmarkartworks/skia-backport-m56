@@ -4,11 +4,11 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "bench/Benchmark.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkString.h"
-#include "include/private/base/SkFloatBits.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkFloatBits.h"
+#include "SkRandom.h"
+#include "SkRect.h"
+#include "SkString.h"
 
 class ScalarBench : public Benchmark {
     SkString    fName;
@@ -37,11 +37,11 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 // having unknown values in our arrays can throw off the timing a lot, perhaps
-// handling NaN values is a lot slower. Anyway, this is just meant to put
+// handling NaN values is a lot slower. Anyway, this guy is just meant to put
 // reasonable values in our arrays.
 template <typename T> void init9(T array[9]) {
     SkRandom rand;
@@ -56,16 +56,16 @@ public:
         init9(fArray);
     }
 protected:
-    int mulLoopCount() const override { return 4; }
-    void performTest() override {
+    virtual int mulLoopCount() const { return 4; }
+    virtual void performTest() {
         // xoring into a volatile prevents the compiler from optimizing these checks away.
-        [[maybe_unused]] volatile bool junk = false;
+        volatile bool junk = false;
         junk ^= (fArray[6] != 0.0f || fArray[7] != 0.0f || fArray[8] != 1.0f);
         junk ^= (fArray[2] != 0.0f || fArray[5] != 0.0f);
     }
 private:
     float fArray[9];
-    using INHERITED = ScalarBench;
+    typedef ScalarBench INHERITED;
 };
 
 class ForcedIntComparisonBench : public ScalarBench {
@@ -75,10 +75,10 @@ public:
         init9(fArray);
     }
 protected:
-    int mulLoopCount() const override { return 4; }
-    void performTest() override {
+    virtual int mulLoopCount() const { return 4; }
+    virtual void performTest() {
         // xoring into a volatile prevents the compiler from optimizing these checks away.
-        [[maybe_unused]] volatile int32_t junk = 0;
+        volatile int32_t junk = 0;
         junk ^= (SkScalarAs2sCompliment(fArray[6]) |
                  SkScalarAs2sCompliment(fArray[7]) |
                 (SkScalarAs2sCompliment(fArray[8]) - kPersp1Int));
@@ -88,7 +88,7 @@ protected:
 private:
     static const int32_t kPersp1Int = 0x3f800000;
     SkScalar fArray[9];
-    using INHERITED = ScalarBench;
+    typedef ScalarBench INHERITED;
 };
 
 class IsFiniteScalarBench : public ScalarBench {
@@ -119,7 +119,7 @@ private:
     };
     SkScalar fArray[ARRAY_N];
 
-    using INHERITED = ScalarBench;
+    typedef ScalarBench INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -150,15 +150,15 @@ protected:
 
     void onDraw(int loops, SkCanvas* canvas) override {
         SkRect r;
-        for (int loop = 0; loop < loops; ++loop) {
+        for (int i = 0; i < loops; ++i) {
             for (int i = 0; i < 1000; ++i) {
-                r.setBounds(fPts, PTS);
+                r.set(fPts, PTS);
             }
         }
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

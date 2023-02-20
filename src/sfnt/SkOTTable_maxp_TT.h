@@ -8,8 +8,8 @@
 #ifndef SkOTTable_maxp_TT_DEFINED
 #define SkOTTable_maxp_TT_DEFINED
 
-#include "src/core/SkEndian.h"
-#include "src/sfnt/SkOTTableTypes.h"
+#include "SkEndian.h"
+#include "SkOTTableTypes.h"
 
 #pragma pack(push, 1)
 

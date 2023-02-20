@@ -5,16 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathUtils.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSurface.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
+#include "SkSurface.h"
 
 #define ZOOM    32
 #define SMALL_W 9
@@ -27,7 +21,7 @@ static sk_sp<SkSurface> new_surface(int width, int height) {
 
 static void draw_pixel_centers(SkCanvas* canvas) {
     SkPaint paint;
-    paint.setColor(ToolUtils::color_to_565(0xFF0088FF));
+    paint.setColor(sk_tool_utils::color_to_565(0xFF0088FF));
     paint.setAntiAlias(true);
 
     for (int y = 0; y < SMALL_H; ++y) {
@@ -42,7 +36,7 @@ static void draw_fatpath(SkCanvas* canvas, SkSurface* surface, const SkPath& pat
 
     surface->getCanvas()->clear(SK_ColorTRANSPARENT);
     surface->getCanvas()->drawPath(path, paint);
-    surface->draw(canvas, 0, 0);
+    surface->draw(canvas, 0, 0, nullptr);
 
     paint.setAntiAlias(true);
     paint.setColor(SK_ColorRED);
@@ -67,7 +61,7 @@ DEF_SIMPLE_GM(fatpathfill, canvas,
             SkPath line, path;
             line.moveTo(1, 2);
             line.lineTo(SkIntToScalar(4 + i), 1);
-            skpathutils::FillPathWithPaint(line, paint, &path);
+            paint.getFillPath(line, &path);
             draw_fatpath(canvas, surface.get(), path);
 
             canvas->translate(0, SMALL_H);

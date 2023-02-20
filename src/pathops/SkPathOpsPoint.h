@@ -7,10 +7,8 @@
 #ifndef SkPathOpsPoint_DEFINED
 #define SkPathOpsPoint_DEFINED
 
-#include "include/core/SkPoint.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/pathops/SkPathOpsTypes.h"
+#include "SkPathOpsTypes.h"
+#include "SkPoint.h"
 
 inline bool AlmostEqualUlps(const SkPoint& pt1, const SkPoint& pt2) {
     return AlmostEqualUlps(pt1.fX, pt2.fX) && AlmostEqualUlps(pt1.fY, pt2.fY);
@@ -20,10 +18,9 @@ struct SkDVector {
     double fX;
     double fY;
 
-    SkDVector& set(const SkVector& pt) {
+    void set(const SkVector& pt) {
         fX = pt.fX;
         fY = pt.fY;
-        return *this;
     }
 
     // only used by testing
@@ -87,15 +84,10 @@ struct SkDVector {
         return fX * fX + fY * fY;
     }
 
-    SkDVector& normalize() {
-        double inverseLength = sk_ieee_double_divide(1, this->length());
+    void normalize() {
+        double inverseLength = 1 / this->length();
         fX *= inverseLength;
         fY *= inverseLength;
-        return *this;
-    }
-
-    bool isFinite() const {
-        return std::isfinite(fX) && std::isfinite(fY);
     }
 };
 
@@ -108,9 +100,7 @@ struct SkDPoint {
         fY = pt.fY;
     }
 
-    friend SkDVector operator-(const SkDPoint& a, const SkDPoint& b) {
-        return { a.fX - b.fX, a.fY - b.fY };
-    }
+    friend SkDVector operator-(const SkDPoint& a, const SkDPoint& b);
 
     friend bool operator==(const SkDPoint& a, const SkDPoint& b) {
         return a.fX == b.fX && a.fY == b.fY;
@@ -162,9 +152,9 @@ struct SkDPoint {
             return false;
         }
         double dist = distance(a);  // OPTIMIZATION: can we compare against distSq instead ?
-        double tiniest = std::min(std::min(std::min(fX, a.fX), fY), a.fY);
-        double largest = std::max(std::max(std::max(fX, a.fX), fY), a.fY);
-        largest = std::max(largest, -tiniest);
+        double tiniest = SkTMin(SkTMin(SkTMin(fX, a.fX), fY), a.fY);
+        double largest = SkTMax(SkTMax(SkTMax(fX, a.fX), fY), a.fY);
+        largest = SkTMax(largest, -tiniest);
         return AlmostDequalUlps(largest, largest + dist); // is the dist within ULPS tolerance?
     }
 
@@ -182,9 +172,9 @@ struct SkDPoint {
             return false;
         }
         double dist = distance(a);  // OPTIMIZATION: can we compare against distSq instead ?
-        double tiniest = std::min(std::min(std::min(fX, a.fX), fY), a.fY);
-        double largest = std::max(std::max(std::max(fX, a.fX), fY), a.fY);
-        largest = std::max(largest, -tiniest);
+        double tiniest = SkTMin(SkTMin(SkTMin(fX, a.fX), fY), a.fY);
+        double largest = SkTMax(SkTMax(SkTMax(fX, a.fX), fY), a.fY);
+        largest = SkTMax(largest, -tiniest);
         return AlmostPequalUlps(largest, largest + dist); // is the dist within ULPS tolerance?
     }
 
@@ -205,9 +195,9 @@ struct SkDPoint {
         dA.set(a);
         dB.set(b);
         double dist = dA.distance(dB);  // OPTIMIZATION: can we compare against distSq instead ?
-        float tiniest = std::min(std::min(std::min(a.fX, b.fX), a.fY), b.fY);
-        float largest = std::max(std::max(std::max(a.fX, b.fX), a.fY), b.fY);
-        largest = std::max(largest, -tiniest);
+        float tiniest = SkTMin(SkTMin(SkTMin(a.fX, b.fX), a.fY), b.fY);
+        float largest = SkTMax(SkTMax(SkTMax(a.fX, b.fX), a.fY), b.fY);
+        largest = SkTMax(largest, -tiniest);
         return AlmostDequalUlps((double) largest, largest + dist); // is dist within ULPS tolerance?
     }
 
@@ -243,9 +233,9 @@ struct SkDPoint {
             return true;
         }
         double dist = distance(a);  // OPTIMIZATION: can we compare against distSq instead ?
-        double tiniest = std::min(std::min(std::min(fX, a.fX), fY), a.fY);
-        double largest = std::max(std::max(std::max(fX, a.fX), fY), a.fY);
-        largest = std::max(largest, -tiniest);
+        double tiniest = SkTMin(SkTMin(SkTMin(fX, a.fX), fY), a.fY);
+        double largest = SkTMax(SkTMax(SkTMax(fX, a.fX), fY), a.fY);
+        largest = SkTMax(largest, -tiniest);
         return RoughlyEqualUlps(largest, largest + dist); // is the dist within ULPS tolerance?
     }
 
@@ -257,18 +247,18 @@ struct SkDPoint {
         dA.set(a);
         dB.set(b);
         double dist = dA.distance(dB);  // OPTIMIZATION: can we compare against distSq instead ?
-        float tiniest = std::min(std::min(std::min(a.fX, b.fX), a.fY), b.fY);
-        float largest = std::max(std::max(std::max(a.fX, b.fX), a.fY), b.fY);
-        largest = std::max(largest, -tiniest);
+        float tiniest = SkTMin(SkTMin(SkTMin(a.fX, b.fX), a.fY), b.fY);
+        float largest = SkTMax(SkTMax(SkTMax(a.fX, b.fX), a.fY), b.fY);
+        largest = SkTMax(largest, -tiniest);
         return RoughlyEqualUlps((double) largest, largest + dist); // is dist within ULPS tolerance?
     }
 
     // very light weight check, should only be used for inequality check
     static bool WayRoughlyEqual(const SkPoint& a, const SkPoint& b) {
-        float largestNumber = std::max(SkTAbs(a.fX), std::max(SkTAbs(a.fY),
-                std::max(SkTAbs(b.fX), SkTAbs(b.fY))));
+        float largestNumber = SkTMax(SkTAbs(a.fX), SkTMax(SkTAbs(a.fY),
+                SkTMax(SkTAbs(b.fX), SkTAbs(b.fY))));
         SkVector diffs = a - b;
-        float largestDiff = std::max(diffs.fX, diffs.fY);
+        float largestDiff = SkTMax(diffs.fX, diffs.fY);
         return roughly_zero_when_compared_to(largestDiff, largestNumber);
     }
 

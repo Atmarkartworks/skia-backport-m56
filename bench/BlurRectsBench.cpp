@@ -5,14 +5,13 @@
 * found in the LICENSE file.
 */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkString.h"
+#include "Benchmark.h"
+#include "SkBlurMaskFilter.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRect.h"
+#include "SkString.h"
 
 class BlurRectsBench : public Benchmark {
 public:
@@ -32,11 +31,11 @@ public:
 
     void onDraw(int loops, SkCanvas* canvas) override {
         SkPaint paint;
-        paint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, fRadius));
+        paint.setMaskFilter(SkBlurMaskFilter::Make(kNormal_SkBlurStyle, fRadius));
 
         SkPath path;
-        path.addRect(fOuter, SkPathDirection::kCW);
-        path.addRect(fInner, SkPathDirection::kCW);
+        path.addRect(fOuter, SkPath::kCW_Direction);
+        path.addRect(fInner, SkPath::kCW_Direction);
 
         for (int i = 0; i < loops; i++) {
             canvas->drawPath(path, paint);
@@ -49,7 +48,7 @@ private:
     SkRect      fInner;
     SkScalar    fRadius;
 
-    using INHERITED =     Benchmark;
+    typedef     Benchmark INHERITED;
 };
 
 class BlurRectsNinePatchBench: public BlurRectsBench {
@@ -59,7 +58,7 @@ public:
         this->setName(SkString("blurrectsninepatch"));
     }
 private:
-    using INHERITED = BlurRectsBench;
+    typedef BlurRectsBench INHERITED;
 };
 
 class BlurRectsNonNinePatchBench: public BlurRectsBench {
@@ -70,7 +69,7 @@ public:
         this->setName(SkString("blurrectsnonninepatch"));
     }
 private:
-    using INHERITED = BlurRectsBench;
+    typedef BlurRectsBench INHERITED;
 };
 
 DEF_BENCH(return new BlurRectsNinePatchBench(SkRect::MakeXYWH(10, 10, 100, 100),

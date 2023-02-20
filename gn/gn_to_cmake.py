@@ -116,8 +116,6 @@ source_file_types = {
   '.cc': 'cxx',
   '.cpp': 'cxx',
   '.cxx': 'cxx',
-  '.m': 'objc',
-  '.mm': 'objcc',
   '.c': 'c',
   '.s': 'asm',
   '.S': 'asm',
@@ -143,7 +141,7 @@ cmake_target_types = {
   'executable': CMakeTargetType('add_executable', None, 'RUNTIME', True),
   'loadable_module': CMakeTargetType('add_library', 'MODULE', 'LIBRARY', True),
   'shared_library': CMakeTargetType('add_library', 'SHARED', 'LIBRARY', True),
-  'static_library': CMakeTargetType('add_library', 'STATIC', 'ARCHIVE', True),
+  'static_library': CMakeTargetType('add_library', 'STATIC', 'ARCHIVE', False),
   'source_set': CMakeTargetType('add_library', 'OBJECT', None, False),
   'copy': CMakeTargetType.custom,
   'action': CMakeTargetType.custom,
@@ -162,11 +160,12 @@ class Project(object):
     self.targets = project_json['targets']
     build_settings = project_json['build_settings']
     self.root_path = build_settings['root_path']
-    self.build_path = self.GetAbsolutePath(build_settings['build_dir'])
+    self.build_path = posixpath.join(self.root_path,
+                                     build_settings['build_dir'][2:])
 
   def GetAbsolutePath(self, path):
-    if path.startswith('//'):
-      return posixpath.join(self.root_path, path[2:])
+    if path.startswith("//"):
+      return self.root_path + "/" + path[2:]
     else:
       return path
 
@@ -373,15 +372,8 @@ def WriteCopy(out, target, project, sources, synthetic_dependencies):
   out.write('\n')
 
   for src, dst in zip(inputs, outputs):
-    abs_src_path = CMakeStringEscape(project.GetAbsolutePath(src))
-    # CMake distinguishes between copying files and copying directories but
-    # gn does not. We assume if the src has a period in its name then it is
-    # a file and otherwise a directory.
-    if "." in os.path.basename(abs_src_path):
-      out.write('  COMMAND ${CMAKE_COMMAND} -E copy "')
-    else:
-      out.write('  COMMAND ${CMAKE_COMMAND} -E copy_directory "')
-    out.write(abs_src_path)
+    out.write('  COMMAND ${CMAKE_COMMAND} -E copy "')
+    out.write(CMakeStringEscape(project.GetAbsolutePath(src)))
     out.write('" "')
     out.write(CMakeStringEscape(dst))
     out.write('"\n')
@@ -447,19 +439,10 @@ def WriteCompilerFlags(out, target, project, sources):
   cflags_asm = target.properties.get('asmflags', [])
   cflags_c = target.properties.get('cflags_c', [])
   cflags_cxx = target.properties.get('cflags_cc', [])
-  cflags_objc = cflags_c[:]
-  cflags_objc.extend(target.properties.get('cflags_objc', []))
-  cflags_objcc = cflags_cxx[:]
-  cflags_objcc.extend(target.properties.get('cflags_objcc', []))
-
-  if 'c' in sources and not any(k in sources for k in ('asm', 'cxx', 'objc', 'objcc')):
+  if 'c' in sources and not any(k in sources for k in ('asm', 'cxx')):
     flags.extend(cflags_c)
-  elif 'cxx' in sources and not any(k in sources for k in ('asm', 'c', 'objc', 'objcc')):
+  elif 'cxx' in sources and not any(k in sources for k in ('asm', 'c')):
     flags.extend(cflags_cxx)
-  elif 'objc' in sources and not any(k in sources for k in ('asm', 'c', 'cxx', 'objcc')):
-    flags.extend(cflags_objc)
-  elif 'objcc' in sources and not any(k in sources for k in ('asm', 'c', 'cxx', 'objc')):
-    flags.extend(cflags_objcc)
   else:
     # TODO: This is broken, one cannot generally set properties on files,
     # as other targets may require different properties on the same files.
@@ -469,10 +452,6 @@ def WriteCompilerFlags(out, target, project, sources):
       SetFilesProperty(out, sources['c'], 'COMPILE_FLAGS', cflags_c, ' ')
     if 'cxx' in sources and cflags_cxx:
       SetFilesProperty(out, sources['cxx'], 'COMPILE_FLAGS', cflags_cxx, ' ')
-    if 'objc' in sources and cflags_objc:
-      SetFilesProperty(out, sources['objc'], 'COMPILE_FLAGS', cflags_objc, ' ')
-    if 'objcc' in sources and cflags_objcc:
-      SetFilesProperty(out, sources['objcc'], 'COMPILE_FLAGS', cflags_objcc, ' ')
   if flags:
     SetCurrentTargetProperty(out, 'COMPILE_FLAGS', flags, ' ')
 
@@ -493,18 +472,11 @@ gn_target_types_that_absorb_objects = (
 def WriteSourceVariables(out, target, project):
   # gn separates the sheep from the goats based on file extensions.
   # A full separation is done here because of flag handing (see Compile flags).
-  source_types = {'cxx':[], 'c':[], 'asm':[], 'objc':[], 'objcc':[],
+  source_types = {'cxx':[], 'c':[], 'asm':[],
                   'obj':[], 'obj_target':[], 'input':[], 'other':[]}
 
-  all_sources = target.properties.get('sources', [])
-
-  # As of cmake 3.11 add_library must have sources. If there are
-  # no sources, add empty.cpp as the file to compile.
-  if len(all_sources) == 0:
-    all_sources.append(posixpath.join(project.build_path, 'empty.cpp'))
-
   # TODO .def files on Windows
-  for source in all_sources:
+  for source in target.properties.get('sources', []):
     _, ext = posixpath.splitext(source)
     source_abs_path = project.GetAbsolutePath(source)
     source_types[source_file_types.get(ext, 'other')].append(source_abs_path)
@@ -605,8 +577,7 @@ def WriteTarget(out, target, project):
     out.write(')\n')
 
   # Non-OBJECT library dependencies.
-  combined_library_lists = [target.properties.get(key, []) for key in ['libs', 'frameworks']]
-  external_libraries = list(itertools.chain(*combined_library_lists))
+  external_libraries = target.properties.get('libs', [])
   if target.cmake_type.is_linkable and (external_libraries or libraries):
     library_dirs = target.properties.get('lib_dirs', [])
     if library_dirs:
@@ -646,41 +617,25 @@ def WriteTarget(out, target, project):
 
 def WriteProject(project):
   out = open(posixpath.join(project.build_path, 'CMakeLists.txt'), 'w+')
-  extName = posixpath.join(project.build_path, 'CMakeLists.ext')
   out.write('# Generated by gn_to_cmake.py.\n')
-  out.write('cmake_minimum_required(VERSION 3.7 FATAL_ERROR)\n')
-  out.write('cmake_policy(VERSION 3.7)\n')
-  out.write('project(Skia)\n\n')
-
-  out.write('file(WRITE "')
-  out.write(CMakeStringEscape(posixpath.join(project.build_path, "empty.cpp")))
-  out.write('")\n')
+  out.write('cmake_minimum_required(VERSION 2.8.8 FATAL_ERROR)\n')
+  out.write('cmake_policy(VERSION 2.8.8)\n\n')
 
   # Update the gn generated ninja build.
   # If a build file has changed, this will update CMakeLists.ext if
   # gn gen out/config --ide=json --json-ide-script=../../gn/gn_to_cmake.py
   # style was used to create this config.
-  out.write('execute_process(COMMAND\n')
-  out.write('  ninja -C "')
+  out.write('execute_process(COMMAND ninja -C "')
   out.write(CMakeStringEscape(project.build_path))
-  out.write('" build.ninja\n')
-  out.write('  RESULT_VARIABLE ninja_result)\n')
-  out.write('if (ninja_result)\n')
-  out.write('  message(WARNING ')
-  out.write('"Regeneration failed running ninja: ${ninja_result}")\n')
-  out.write('endif()\n')
+  out.write('" build.ninja)\n')
 
-  out.write('include("')
-  out.write(CMakeStringEscape(extName))
-  out.write('")\n')
-  # This lets Clion find the emscripten header files when working with CanvasKit.
-  out.write('include_directories(SYSTEM $ENV{EMSDK}/upstream/emscripten/system/include/)\n')
+  out.write('include(CMakeLists.ext)\n')
   out.close()
 
-  out = open(extName, 'w+')
+  out = open(posixpath.join(project.build_path, 'CMakeLists.ext'), 'w+')
   out.write('# Generated by gn_to_cmake.py.\n')
-  out.write('cmake_minimum_required(VERSION 3.7 FATAL_ERROR)\n')
-  out.write('cmake_policy(VERSION 3.7)\n')
+  out.write('cmake_minimum_required(VERSION 2.8.8 FATAL_ERROR)\n')
+  out.write('cmake_policy(VERSION 2.8.8)\n')
 
   # The following appears to be as-yet undocumented.
   # http://public.kitware.com/Bug/view.php?id=8392
@@ -704,17 +659,8 @@ def WriteProject(project):
   # but gn doesn't escape spaces here (it generates invalid .d files).
   out.write('string(REPLACE " " ";" "gn_deps" ${gn_deps_string})\n')
   out.write('foreach("gn_dep" ${gn_deps})\n')
-  out.write('  configure_file("')
-  out.write(CMakeStringEscape(project.build_path))
-  out.write('${gn_dep}" "CMakeLists.devnull" COPYONLY)\n')
+  out.write('  configure_file(${gn_dep} "CMakeLists.devnull" COPYONLY)\n')
   out.write('endforeach("gn_dep")\n')
-
-  out.write('list(APPEND other_deps "')
-  out.write(CMakeStringEscape(os.path.abspath(__file__)))
-  out.write('")\n')
-  out.write('foreach("other_dep" ${other_deps})\n')
-  out.write('  configure_file("${other_dep}" "CMakeLists.devnull" COPYONLY)\n')
-  out.write('endforeach("other_dep")\n')
 
   for target_name in project.targets.keys():
     out.write('\n')

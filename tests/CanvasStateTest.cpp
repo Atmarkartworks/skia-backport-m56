@@ -5,120 +5,57 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkClipOp.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorType.h"
-#include "include/core/SkData.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPixmap.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkRegion.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTDArray.h"
-#include "include/utils/SkCanvasStateUtils.h"
-#include "src/base/SkTLazy.h"
-#include "tests/Test.h"
+#include "CanvasStateHelpers.h"
+#include "SkCanvas.h"
+#include "SkCanvasStateUtils.h"
+#include "SkCommandLineFlags.h"
+#include "SkDrawFilter.h"
+#include "SkPaint.h"
+#include "SkRRect.h"
+#include "SkRect.h"
+#include "SkTLazy.h"
+#include "Test.h"
 
-#include <array>
-#include <cstdint>
-#include <cstring>
+// dlopen and the library flag are only used for tests which require this flag.
+#ifdef SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
+#include <dlfcn.h>
 
-class SkCanvasState;
+DEFINE_string(library, "", "Support library to use for CanvasState test. If empty (the default), "
+                           "the test will be run without crossing a library boundary. Otherwise, "
+                           "it is expected to be a full path to a shared library file, which will"
+                           " be dynamically loaded. Functions from the library will be called to "
+                           "test SkCanvasState. Instructions for generating the library are in "
+                           "gyp/canvas_state_lib.gyp");
 
-// Uncomment to include tests of CanvasState across a library boundary. This will change how 'dm'
-// is built so that the functions defined in CanvasStateHelpers do not exist inside 'dm', and are
-// instead compiled as part of the 'canvas_state_lib' build target. This produces a shared library
-// that must be passed to 'dm' using the --library flag when running.
-// #define SK_TEST_CANVAS_STATE_CROSS_LIBRARY
 
-// Must be included after SK_TEST_CANVAS_STATE_CROSS_LIBRARY is defined
-#include "tests/CanvasStateHelpers.h"
-
-// dlopen, the library flag and canvas state helpers are only used for tests which require this flag
-#if defined(SK_TEST_CANVAS_STATE_CROSS_LIBRARY)
-
-static DEFINE_string(library, "",
-                     "Support library to use for CanvasState test. Must be provided when"
-                     " SK_TEST_CANVAS_STATE_CROSS_LIBRARY to specify the dynamically loaded library"
-                     " that receives the captured canvas state. Functions from the library will be"
-                     " called to test SkCanvasState. The library is built from the canvas_state_lib"
-                     " target");
-
-#include "src/ports/SkOSLibrary.h"
-
-// Automatically loads library passed to --library flag and closes it when it goes out of scope.
+// This class calls dlopen on the library passed in to the command line flag library, and handles
+// calling dlclose when it goes out of scope.
 class OpenLibResult {
 public:
+    // If the flag library was passed to this run of the test, attempt to open it using dlopen and
+    // report whether it succeeded.
     OpenLibResult(skiatest::Reporter* reporter) {
         if (FLAGS_library.count() == 1) {
-            fLibrary = SkLoadDynamicLibrary(FLAGS_library[0]);
-            REPORTER_ASSERT(reporter, fLibrary != nullptr, "Failed to open library!");
+            fHandle = dlopen(FLAGS_library[0], RTLD_LAZY | RTLD_LOCAL);
+            REPORTER_ASSERT_MESSAGE(reporter, fHandle != nullptr, "Failed to open library!");
         } else {
-            fLibrary = nullptr;
+            fHandle = nullptr;
         }
     }
 
+    // Automatically call dlclose when going out of scope.
     ~OpenLibResult() {
-        if (fLibrary) {
-            SkFreeDynamicLibrary(fLibrary);
+        if (fHandle) {
+            dlclose(fHandle);
         }
     }
 
-    // Load a function address from the library object, or null if the library had failed
-    void* procAddress(const char* funcName) {
-        if (fLibrary) {
-            return SkGetProcedureAddress(fLibrary, funcName);
-        }
-        return nullptr;
-    }
+    // Pointer to the shared library object.
+    void* handle() { return fHandle; }
 
 private:
-    void* fLibrary;
+    void* fHandle;
 };
-
-#endif
-
-static void write_image(const SkImage* img, const char path[]) {
-    auto data = img->encodeToData();
-    SkFILEWStream(path).write(data->data(), data->size());
-}
-
-static void compare(skiatest::Reporter* reporter, SkImage* img0, SkImage* img1) {
-    if ((false)) {
-        static int counter;
-
-        SkDebugf("---- counter %d\n", counter);
-        SkString name;
-        name.printf("no_capture_%d.png", counter);
-        write_image(img0, name.c_str());
-        name.printf("capture_%d.png", counter);
-        write_image(img1, name.c_str());
-        counter++;
-    }
-
-    SkPixmap pm[2];
-    REPORTER_ASSERT(reporter, img0->peekPixels(&pm[0]));
-    REPORTER_ASSERT(reporter, img1->peekPixels(&pm[1]));
-    // now we memcmp the two bitmaps
-    REPORTER_ASSERT(reporter, pm[0].computeByteSize() == pm[1].computeByteSize());
-    REPORTER_ASSERT(reporter, pm[0].rowBytes() == (size_t)pm[0].width() * pm[0].info().bytesPerPixel());
-    REPORTER_ASSERT(reporter, pm[1].rowBytes() == (size_t)pm[1].width() * pm[1].info().bytesPerPixel());
-    if (memcmp(pm[0].addr(0, 0), pm[1].addr(0, 0), pm[0].computeByteSize()) != 0) {
-        REPORTER_ASSERT(reporter, false);
-    }
-}
 
 DEF_TEST(CanvasState_test_complex_layers, reporter) {
     const int WIDTH = 400;
@@ -134,44 +71,52 @@ DEF_TEST(CanvasState_test_complex_layers, reporter) {
     };
 
     const int layerAlpha[] = { 255, 255, 0 };
+    const SkCanvas::SaveLayerFlags flags[] = {
+        static_cast<SkCanvas::SaveLayerFlags>(SkCanvas::kDontClipToLayer_Legacy_SaveLayerFlag),
+        0,
+        static_cast<SkCanvas::SaveLayerFlags>(SkCanvas::kDontClipToLayer_Legacy_SaveLayerFlag),
+    };
+    REPORTER_ASSERT(reporter, sizeof(layerAlpha) == sizeof(flags));
 
     bool (*drawFn)(SkCanvasState* state, float l, float t,
                    float r, float b, int32_t s);
 
-#if defined(SK_TEST_CANVAS_STATE_CROSS_LIBRARY)
     OpenLibResult openLibResult(reporter);
-    *(void**) (&drawFn) = openLibResult.procAddress("complex_layers_draw_from_canvas_state");
-#else
-    drawFn = complex_layers_draw_from_canvas_state;
-#endif
+    if (openLibResult.handle() != nullptr) {
+        *(void**) (&drawFn) = dlsym(openLibResult.handle(),
+                                    "complex_layers_draw_from_canvas_state");
+    } else {
+        drawFn = complex_layers_draw_from_canvas_state;
+    }
 
     REPORTER_ASSERT(reporter, drawFn);
     if (!drawFn) {
         return;
     }
 
-    for (size_t i = 0; i < std::size(colorTypes); ++i) {
-        sk_sp<SkImage> images[2];
+    for (size_t i = 0; i < SK_ARRAY_COUNT(colorTypes); ++i) {
+        SkBitmap bitmaps[2];
         for (int j = 0; j < 2; ++j) {
-            auto surf = SkSurface::MakeRaster(SkImageInfo::Make(WIDTH, HEIGHT,
-                                                                colorTypes[i],
-                                                                kPremul_SkAlphaType));
-            SkCanvas* canvas = surf->getCanvas();
+            bitmaps[j].allocPixels(SkImageInfo::Make(WIDTH, HEIGHT,
+                                                     colorTypes[i],
+                                                     kPremul_SkAlphaType));
 
-            canvas->drawColor(SK_ColorRED);
+            SkCanvas canvas(bitmaps[j]);
 
-            for (size_t k = 0; k < std::size(layerAlpha); ++k) {
+            canvas.drawColor(SK_ColorRED);
+
+            for (size_t k = 0; k < SK_ARRAY_COUNT(layerAlpha); ++k) {
                 SkTLazy<SkPaint> paint;
                 if (layerAlpha[k] != 0xFF) {
                     paint.init()->setAlpha(layerAlpha[k]);
                 }
 
                 // draw a rect within the layer's bounds and again outside the layer's bounds
-                canvas->saveLayer(SkCanvas::SaveLayerRec(&rect, paint.getMaybeNull()));
+                canvas.saveLayer(SkCanvas::SaveLayerRec(&rect, paint.getMaybeNull(), flags[k]));
 
                 if (j) {
                     // Capture from the first Skia.
-                    SkCanvasState* state = SkCanvasStateUtils::CaptureCanvasState(canvas);
+                    SkCanvasState* state = SkCanvasStateUtils::CaptureCanvasState(&canvas);
                     REPORTER_ASSERT(reporter, state);
 
                     // And draw to it in the second Skia.
@@ -183,24 +128,29 @@ DEF_TEST(CanvasState_test_complex_layers, reporter) {
                     SkCanvasStateUtils::ReleaseCanvasState(state);
                 } else {
                     // Draw in the first Skia.
-                    complex_layers_draw(canvas, rect.fLeft, rect.fTop,
+                    complex_layers_draw(&canvas, rect.fLeft, rect.fTop,
                                         rect.fRight, rect.fBottom, SPACER);
                 }
 
-                canvas->restore();
+                canvas.restore();
 
                 // translate the canvas for the next iteration
-                canvas->translate(0, 2*(rect.height() + SPACER));
+                canvas.translate(0, 2*(rect.height() + SPACER));
             }
-            images[j] = surf->makeImageSnapshot();
         }
 
-        compare(reporter, images[0].get(), images[1].get());
+        // now we memcmp the two bitmaps
+        REPORTER_ASSERT(reporter, bitmaps[0].getSize() == bitmaps[1].getSize());
+        REPORTER_ASSERT(reporter, !memcmp(bitmaps[0].getPixels(),
+                                          bitmaps[1].getPixels(),
+                                          bitmaps[0].getSize()));
     }
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#ifdef SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
 DEF_TEST(CanvasState_test_complex_clips, reporter) {
     const int WIDTH = 400;
     const int HEIGHT = 400;
@@ -226,42 +176,50 @@ DEF_TEST(CanvasState_test_complex_clips, reporter) {
 
     const SkRegion::Op clipOps[] = { SkRegion::kIntersect_Op,
                                      SkRegion::kIntersect_Op,
-                                     SkRegion::kDifference_Op,
+                                     SkRegion::kReplace_Op,
     };
+    const SkCanvas::SaveLayerFlags flags[] = {
+        static_cast<SkCanvas::SaveLayerFlags>(SkCanvas::kDontClipToLayer_Legacy_SaveLayerFlag),
+        0,
+        static_cast<SkCanvas::SaveLayerFlags>(SkCanvas::kDontClipToLayer_Legacy_SaveLayerFlag),
+    };
+    REPORTER_ASSERT(reporter, sizeof(clipOps) == sizeof(flags));
 
     bool (*drawFn)(SkCanvasState* state, int32_t l, int32_t t,
                    int32_t r, int32_t b, int32_t clipOp,
                    int32_t regionRects, int32_t* rectCoords);
 
-#if defined(SK_TEST_CANVAS_STATE_CROSS_LIBRARY)
     OpenLibResult openLibResult(reporter);
-    *(void**) (&drawFn) = openLibResult.procAddress("complex_clips_draw_from_canvas_state");
-#else
-    drawFn = complex_clips_draw_from_canvas_state;
-#endif
+    if (openLibResult.handle() != nullptr) {
+        *(void**) (&drawFn) = dlsym(openLibResult.handle(),
+                                    "complex_clips_draw_from_canvas_state");
+    } else {
+        drawFn = complex_clips_draw_from_canvas_state;
+    }
 
     REPORTER_ASSERT(reporter, drawFn);
     if (!drawFn) {
         return;
     }
 
-    sk_sp<SkImage> images[2];
+    SkBitmap bitmaps[2];
     for (int i = 0; i < 2; ++i) {
-        auto surf = SkSurface::MakeRaster(SkImageInfo::MakeN32Premul(WIDTH, HEIGHT));
-        SkCanvas* canvas = surf->getCanvas();
+        bitmaps[i].allocN32Pixels(WIDTH, HEIGHT);
 
-        canvas->drawColor(SK_ColorRED);
+        SkCanvas canvas(bitmaps[i]);
+
+        canvas.drawColor(SK_ColorRED);
 
         SkRegion localRegion = clipRegion;
 
         SkPaint paint;
         paint.setAlpha(128);
-        for (size_t j = 0; j < std::size(clipOps); ++j) {
+        for (size_t j = 0; j < SK_ARRAY_COUNT(flags); ++j) {
             SkRect layerBounds = SkRect::Make(layerRect);
-            canvas->saveLayer(SkCanvas::SaveLayerRec(&layerBounds, &paint));
+            canvas.saveLayer(SkCanvas::SaveLayerRec(&layerBounds, &paint, flags[j]));
 
             if (i) {
-                SkCanvasState* state = SkCanvasStateUtils::CaptureCanvasState(canvas);
+                SkCanvasState* state = SkCanvasStateUtils::CaptureCanvasState(&canvas);
                 REPORTER_ASSERT(reporter, state);
 
                 SkRegion::Iterator iter(localRegion);
@@ -275,27 +233,61 @@ DEF_TEST(CanvasState_test_complex_clips, reporter) {
                 }
                 bool success = drawFn(state, clipRect.fLeft, clipRect.fTop,
                                       clipRect.fRight, clipRect.fBottom, clipOps[j],
-                                      rectCoords.size() / 4, rectCoords.begin());
+                                      rectCoords.count() / 4, rectCoords.begin());
                 REPORTER_ASSERT(reporter, success);
 
                 SkCanvasStateUtils::ReleaseCanvasState(state);
             } else {
-                complex_clips_draw(canvas, clipRect.fLeft, clipRect.fTop,
+                complex_clips_draw(&canvas, clipRect.fLeft, clipRect.fTop,
                                    clipRect.fRight, clipRect.fBottom, clipOps[j],
                                    localRegion);
             }
 
-            canvas->restore();
+            canvas.restore();
 
             // translate the canvas and region for the next iteration
-            canvas->translate(0, SkIntToScalar(2*(layerRect.height() + (SPACER))));
+            canvas.translate(0, SkIntToScalar(2*(layerRect.height() + (SPACER))));
             localRegion.translate(0, 2*(layerRect.height() + SPACER));
         }
-        images[i] = surf->makeImageSnapshot();
     }
 
-    compare(reporter, images[0].get(), images[1].get());
+    // now we memcmp the two bitmaps
+    REPORTER_ASSERT(reporter, bitmaps[0].getSize() == bitmaps[1].getSize());
+    REPORTER_ASSERT(reporter, !memcmp(bitmaps[0].getPixels(),
+                                      bitmaps[1].getPixels(),
+                                      bitmaps[0].getSize()));
 }
+#endif
+
+////////////////////////////////////////////////////////////////////////////////
+
+#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
+
+class TestDrawFilter : public SkDrawFilter {
+public:
+    bool filter(SkPaint*, Type) override { return true; }
+};
+
+DEF_TEST(CanvasState_test_draw_filters, reporter) {
+    TestDrawFilter drawFilter;
+    SkBitmap bitmap;
+    bitmap.allocN32Pixels(10, 10);
+    SkCanvas canvas(bitmap);
+
+    canvas.setDrawFilter(&drawFilter);
+
+    SkCanvasState* state = SkCanvasStateUtils::CaptureCanvasState(&canvas);
+    REPORTER_ASSERT(reporter, state);
+    std::unique_ptr<SkCanvas> tmpCanvas = SkCanvasStateUtils::MakeFromCanvasState(state);
+    REPORTER_ASSERT(reporter, tmpCanvas);
+
+    REPORTER_ASSERT(reporter, canvas.getDrawFilter());
+    REPORTER_ASSERT(reporter, nullptr == tmpCanvas->getDrawFilter());
+
+    SkCanvasStateUtils::ReleaseCanvasState(state);
+}
+
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -307,12 +299,14 @@ DEF_TEST(CanvasState_test_soft_clips, reporter) {
     SkRRect roundRect;
     roundRect.setOval(SkRect::MakeWH(5, 5));
 
-    canvas.clipRRect(roundRect, SkClipOp::kIntersect, true);
+    canvas.clipRRect(roundRect, SkCanvas::kIntersect_Op, true);
 
     SkCanvasState* state = SkCanvasStateUtils::CaptureCanvasState(&canvas);
     REPORTER_ASSERT(reporter, !state);
 }
 
+#ifdef SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
+#include "SkClipStack.h"
 DEF_TEST(CanvasState_test_saveLayer_clip, reporter) {
     const int WIDTH = 100;
     const int HEIGHT = 100;
@@ -326,11 +320,31 @@ DEF_TEST(CanvasState_test_saveLayer_clip, reporter) {
     SkRect bounds = SkRect::MakeWH(SkIntToScalar(LAYER_WIDTH), SkIntToScalar(LAYER_HEIGHT));
     canvas.clipRect(SkRect::MakeWH(SkIntToScalar(WIDTH), SkIntToScalar(HEIGHT)));
 
-    // Check that saveLayer sets the clip stack to the layer bounds.
+    // Check that saveLayer without the kClipToLayer_SaveFlag leaves the
+    // clip stack unchanged.
+    canvas.saveLayer(SkCanvas::SaveLayerRec(&bounds,
+                                            nullptr,
+                                            SkCanvas::kDontClipToLayer_Legacy_SaveLayerFlag));
+    SkRect clipStackBounds;
+    SkClipStack::BoundsType boundsType;
+    canvas.getClipStack()->getBounds(&clipStackBounds, &boundsType);
+    // The clip stack will return its bounds, or it may be "full" : i.e. empty + inside_out.
+    // Either result is consistent with this test, since the canvas' size is WIDTH/HEIGHT
+    if (SkClipStack::kInsideOut_BoundsType == boundsType) {
+        REPORTER_ASSERT(reporter, clipStackBounds.isEmpty());
+    } else {
+        REPORTER_ASSERT(reporter, clipStackBounds.width() == WIDTH);
+        REPORTER_ASSERT(reporter, clipStackBounds.height() == HEIGHT);
+    }
+    canvas.restore();
+
+    // Check that saveLayer with the kClipToLayer_SaveFlag sets the clip
+    // stack to the layer bounds.
     canvas.saveLayer(&bounds, nullptr);
-    SkIRect devClip = canvas.getDeviceClipBounds();
-    REPORTER_ASSERT(reporter, canvas.isClipRect());
-    REPORTER_ASSERT(reporter, devClip.width() == LAYER_WIDTH);
-    REPORTER_ASSERT(reporter, devClip.height() == LAYER_HEIGHT);
+    canvas.getClipStack()->getBounds(&clipStackBounds, &boundsType);
+    REPORTER_ASSERT(reporter, clipStackBounds.width() == LAYER_WIDTH);
+    REPORTER_ASSERT(reporter, clipStackBounds.height() == LAYER_HEIGHT);
+
     canvas.restore();
 }
+#endif

@@ -7,30 +7,19 @@
 #ifndef SkOpSegment_DEFINE
 #define SkOpSegment_DEFINE
 
-#include "include/core/SkPath.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/pathops/SkPathOps.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMath.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/pathops/SkOpAngle.h"
-#include "src/pathops/SkOpSpan.h"
-#include "src/pathops/SkPathOpsBounds.h"
-#include "src/pathops/SkPathOpsConic.h"
-#include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsCurve.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsQuad.h"
-#include "src/pathops/SkPathOpsTypes.h"
+#include "SkOpAngle.h"
+#include "SkOpSpan.h"
+#include "SkOpTAllocator.h"
+#include "SkPathOpsBounds.h"
+#include "SkPathOpsCubic.h"
+#include "SkPathOpsCurve.h"
 
-enum class SkOpRayDir;
+struct SkDCurve;
 class SkOpCoincidence;
 class SkOpContour;
-class SkPathWriter;
+enum class SkOpRayDir;
 struct SkOpRayHit;
-template <typename T> class SkTDArray;
+class SkPathWriter;
 
 class SkOpSegment {
 public:
@@ -71,7 +60,7 @@ public:
     bool addCurveTo(const SkOpSpanBase* start, const SkOpSpanBase* end, SkPathWriter* path) const;
 
     SkOpAngle* addEndSpan() {
-        SkOpAngle* angle = this->globalState()->allocator()->make<SkOpAngle>();
+        SkOpAngle* angle = SkOpTAllocator<SkOpAngle>::Allocate(this->globalState()->allocator());
         angle->set(&fTail, fTail.prev());
         fTail.setFromAngle(angle);
         return angle;
@@ -82,14 +71,14 @@ public:
     SkOpSegment* addLine(SkPoint pts[2], SkOpContour* parent) {
         SkASSERT(pts[0] != pts[1]);
         init(pts, 1, parent, SkPath::kLine_Verb);
-        fBounds.setBounds(pts, 2);
+        fBounds.set(pts, 2);
         return this;
     }
 
     SkOpPtT* addMissing(double t, SkOpSegment* opp, bool* allExist);
 
     SkOpAngle* addStartSpan() {
-        SkOpAngle* angle = this->globalState()->allocator()->make<SkOpAngle>();
+        SkOpAngle* angle = SkOpTAllocator<SkOpAngle>::Allocate(this->globalState()->allocator());
         angle->set(&fHead, fHead.next());
         fHead.setToAngle(angle);
         return angle;
@@ -104,7 +93,10 @@ public:
     }
 
     SkOpPtT* addT(double t);
-    SkOpPtT* addT(double t, const SkPoint& pt);
+
+    template<typename T> T* allocateArray(int count) {
+        return SkOpTAllocator<T>::AllocateArray(this->globalState()->allocator(), count);
+    }
 
     const SkPathOpsBounds& bounds() const {
         return fBounds;
@@ -115,10 +107,10 @@ public:
     }
 
     void calcAngles();
-    SkOpSpanBase::Collapsed collapsed(double startT, double endT) const;
-    static bool ComputeOneSum(const SkOpAngle* baseAngle, SkOpAngle* nextAngle,
+    bool collapsed(double startT, double endT) const;
+    static void ComputeOneSum(const SkOpAngle* baseAngle, SkOpAngle* nextAngle,
                               SkOpAngle::IncludeType );
-    static bool ComputeOneSumReverse(SkOpAngle* baseAngle, SkOpAngle* nextAngle,
+    static void ComputeOneSumReverse(SkOpAngle* baseAngle, SkOpAngle* nextAngle,
                                      SkOpAngle::IncludeType );
     int computeSum(SkOpSpanBase* start, SkOpSpanBase* end, SkOpAngle::IncludeType includeType);
 
@@ -166,7 +158,7 @@ public:
     const SkOpSegment* debugSegment(int id) const;
 
 #if DEBUG_ACTIVE_SPANS
-    void debugShowActiveSpans(SkString* str) const;
+    void debugShowActiveSpans() const;
 #endif
 #if DEBUG_MARK_DONE
     void debugShowNewWinding(const char* fun, const SkOpSpan* span, int winding);
@@ -177,8 +169,8 @@ public:
     void debugValidate() const;
 
 #if DEBUG_COINCIDENCE_ORDER
-    void debugResetCoinT() const;
-    void debugSetCoinT(int, SkScalar ) const;
+    void debugResetCoinT() const; 
+    void debugSetCoinT(int, SkScalar ) const; 
 #endif
 
 #if DEBUG_COIN
@@ -223,8 +215,8 @@ public:
 
     const SkOpPtT* existing(double t, const SkOpSegment* opp) const;
     SkOpSegment* findNextOp(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** nextStart,
-                             SkOpSpanBase** nextEnd, bool* unsortable, bool* simple,
-                             SkPathOp op, int xorMiMask, int xorSuMask);
+                             SkOpSpanBase** nextEnd, bool* unsortable, SkPathOp op,
+                             int xorMiMask, int xorSuMask);
     SkOpSegment* findNextWinding(SkTDArray<SkOpSpanBase*>* chase, SkOpSpanBase** nextStart,
                                   SkOpSpanBase** nextEnd, bool* unsortable);
     SkOpSegment* findNextXor(SkOpSpanBase** nextStart, SkOpSpanBase** nextEnd, bool* unsortable);
@@ -244,7 +236,7 @@ public:
     SkOpSpan* insert(SkOpSpan* prev) {
         SkOpGlobalState* globalState = this->globalState();
         globalState->setAllocatedOpSpan();
-        SkOpSpan* result = globalState->allocator()->make<SkOpSpan>();
+        SkOpSpan* result = SkOpTAllocator<SkOpSpan>::Allocate(globalState->allocator());
         SkOpSpanBase* next = prev->next();
         result->setPrev(prev);
         prev->setNext(result);
@@ -262,7 +254,7 @@ public:
         return fBounds.fTop == fBounds.fBottom;
     }
 
-    SkOpSegment* isSimple(SkOpSpanBase** end, int* step) const {
+    SkOpSegment* isSimple(SkOpSpanBase** end, int* step) {
         return nextChase(end, step, nullptr, nullptr);
     }
 
@@ -285,21 +277,21 @@ public:
     }
 
     void markAllDone();
-    bool markAndChaseDone(SkOpSpanBase* start, SkOpSpanBase* end, SkOpSpanBase** found);
+    SkOpSpanBase* markAndChaseDone(SkOpSpanBase* start, SkOpSpanBase* end);
     bool markAndChaseWinding(SkOpSpanBase* start, SkOpSpanBase* end, int winding,
             SkOpSpanBase** lastPtr);
     bool markAndChaseWinding(SkOpSpanBase* start, SkOpSpanBase* end, int winding,
             int oppWinding, SkOpSpanBase** lastPtr);
-    bool markAngle(int maxWinding, int sumWinding, const SkOpAngle* angle, SkOpSpanBase** result);
-    bool markAngle(int maxWinding, int sumWinding, int oppMaxWinding, int oppSumWinding,
-                         const SkOpAngle* angle, SkOpSpanBase** result);
+    SkOpSpanBase* markAngle(int maxWinding, int sumWinding, const SkOpAngle* angle);
+    SkOpSpanBase* markAngle(int maxWinding, int sumWinding, int oppMaxWinding, int oppSumWinding,
+                         const SkOpAngle* angle);
     void markDone(SkOpSpan* );
     bool markWinding(SkOpSpan* , int winding);
     bool markWinding(SkOpSpan* , int winding, int oppWinding);
     bool match(const SkOpPtT* span, const SkOpSegment* parent, double t, const SkPoint& pt) const;
     bool missingCoincidence();
     bool moveMultiples();
-    bool moveNearby();
+    void moveNearby();
 
     SkOpSegment* next() const {
         return fNext;
@@ -341,7 +333,7 @@ public:
 
     bool ptsDisjoint(double t1, const SkPoint& pt1, double t2, const SkPoint& pt2) const;
 
-    void rayCheck(const SkOpRayHit& base, SkOpRayDir dir, SkOpRayHit** hits, SkArenaAlloc*);
+    void rayCheck(const SkOpRayHit& base, SkOpRayDir dir, SkOpRayHit** hits, SkChunkAlloc*);
     void release(const SkOpSpan* );
 
 #if DEBUG_COIN
@@ -380,7 +372,7 @@ public:
     void setUpWindings(SkOpSpanBase* start, SkOpSpanBase* end, int* sumMiWinding, int* sumSuWinding,
                        int* maxWinding, int* sumWinding, int* oppMaxWinding, int* oppSumWinding);
     bool sortAngles();
-    bool spansNearby(const SkOpSpanBase* ref, const SkOpSpanBase* check, bool* found) const;
+    bool spansNearby(const SkOpSpanBase* ref, const SkOpSpanBase* check) const;
 
     static int SpanSign(const SkOpSpanBase* start, const SkOpSpanBase* end) {
         int result = start->t() < end->t() ? -start->upCast()->windValue()
@@ -406,7 +398,7 @@ public:
     bool testForCoincidence(const SkOpPtT* priorPtT, const SkOpPtT* ptT, const SkOpSpanBase* prior,
             const SkOpSpanBase* spanBase, const SkOpSegment* opp) const;
 
-    SkOpSpan* undoneSpan();
+    void undoneSpan(SkOpSpanBase** start, SkOpSpanBase** end);
     int updateOppWinding(const SkOpSpanBase* start, const SkOpSpanBase* end) const;
     int updateOppWinding(const SkOpAngle* angle) const;
     int updateOppWindingReverse(const SkOpAngle* angle) const;

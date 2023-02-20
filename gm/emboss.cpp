@@ -5,31 +5,22 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypeface.h"
-#include "src/core/SkBlurMask.h"
-#include "src/effects/SkEmbossMaskFilter.h"
+#include "gm.h"
+#include "SkBlurMaskFilter.h"
+#include "SkCanvas.h"
+#include "SkColorFilter.h"
 
-static sk_sp<SkImage> make_bm() {
-    auto surf = SkSurface::MakeRasterN32Premul(100, 100);
+#include "SkColorFilter.h"
+static SkBitmap make_bm() {
+    SkBitmap bm;
+    bm.allocN32Pixels(100, 100);
 
+    SkCanvas canvas(bm);
+    canvas.clear(0);
     SkPaint paint;
     paint.setAntiAlias(true);
-    surf->getCanvas()->drawCircle(50, 50, 50, paint);
-    return surf->makeImageSnapshot();
+    canvas.drawCircle(50, 50, 50, paint);
+    return bm;
 }
 
 class EmbossGM : public skiagm::GM {
@@ -48,45 +39,23 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
-        auto img = make_bm();
-        canvas->drawImage(img, 10, 10);
-        canvas->translate(img->width() + SkIntToScalar(10), 0);
+        SkBitmap bm = make_bm();
+        canvas->drawBitmap(bm, 10, 10, &paint);
 
-        paint.setMaskFilter(SkEmbossMaskFilter::Make(
-            SkBlurMask::ConvertRadiusToSigma(3),
-            { { SK_Scalar1, SK_Scalar1, SK_Scalar1 }, 0, 128, 16*2 }));
-        canvas->drawImage(img, 10, 10, SkSamplingOptions(), &paint);
-        canvas->translate(img->width() + SkIntToScalar(10), 0);
+        const SkScalar dir[] = { 1, 1, 1 };
+        paint.setMaskFilter(SkBlurMaskFilter::MakeEmboss(3, dir, 0.3f, 0.1f));
+        canvas->translate(bm.width() + SkIntToScalar(10), 0);
+        canvas->drawBitmap(bm, 10, 10, &paint);
 
         // this combination of emboss+colorfilter used to crash -- so we exercise it to
         // confirm that we have a fix.
-        paint.setColorFilter(SkColorFilters::Blend(0xFFFF0000, SkBlendMode::kSrcATop));
-        canvas->drawImage(img, 10, 10, SkSamplingOptions(), &paint);
-        canvas->translate(img->width() + SkIntToScalar(10), 0);
-
-        paint.setAntiAlias(true);
-        paint.setStyle(SkPaint::kStroke_Style);
-        paint.setStrokeWidth(SkIntToScalar(10));
-        paint.setMaskFilter(SkEmbossMaskFilter::Make(
-            SkBlurMask::ConvertRadiusToSigma(4),
-            { { SK_Scalar1, SK_Scalar1, SK_Scalar1 }, 0, 128, 16*2 }));
-        paint.setColorFilter(nullptr);
-        paint.setShader(SkShaders::Color(SK_ColorBLUE));
-        paint.setDither(true);
-        canvas->drawCircle(SkIntToScalar(50), SkIntToScalar(50),
-                           SkIntToScalar(30), paint);
-        canvas->translate(SkIntToScalar(100), 0);
-
-        paint.setStyle(SkPaint::kFill_Style);
-        canvas->drawString("Hello", 0, 50, SkFont(nullptr, 50), paint);
-
-        paint.setShader(nullptr);
-        paint.setColor(SK_ColorGREEN);
-        canvas->drawString("World", 0, 100, SkFont(nullptr, 50), paint);
+        paint.setColorFilter(SkColorFilter::MakeModeFilter(0xFFFF0000, SkBlendMode::kSrcATop));
+        canvas->translate(bm.width() + SkIntToScalar(10), 0);
+        canvas->drawBitmap(bm, 10, 10, &paint);
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM(return new EmbossGM;)

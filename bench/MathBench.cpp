@@ -5,14 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkString.h"
-#include "include/private/SkColorData.h"
-#include "include/private/base/SkFixed.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkColorPriv.h"
+#include "SkFixed.h"
+#include "SkMathPriv.h"
+#include "SkMatrix.h"
+#include "SkPaint.h"
+#include "SkRandom.h"
+#include "SkString.h"
 
 static float sk_fsel(float pred, float result_ge, float result_lt) {
     return pred >= 0 ? result_ge : result_lt;
@@ -63,7 +63,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class MathBenchU32 : public MathBench {
@@ -76,12 +76,12 @@ protected:
                               int count) = 0;
 
     void performTest(float* SK_RESTRICT dst, const float* SK_RESTRICT src, int count) override {
-        uint32_t* d = reinterpret_cast<uint32_t*>(dst);
-        const uint32_t* s = reinterpret_cast<const uint32_t*>(src);
+        uint32_t* d = SkTCast<uint32_t*>(dst);
+        const uint32_t* s = SkTCast<const uint32_t*>(src);
         this->performITest(d, s, count);
     }
 private:
-    using INHERITED = MathBench;
+    typedef MathBench INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -96,7 +96,7 @@ protected:
         }
     }
 private:
-    using INHERITED = MathBench;
+    typedef MathBench INHERITED;
 };
 
 class SkRSqrtMathBench : public MathBench {
@@ -109,7 +109,7 @@ protected:
         }
     }
 private:
-    using INHERITED = MathBench;
+    typedef MathBench INHERITED;
 };
 
 
@@ -123,7 +123,7 @@ protected:
         }
     }
 private:
-    using INHERITED = MathBench;
+    typedef MathBench INHERITED;
 };
 
 class FastISqrtMathBench : public MathBench {
@@ -136,7 +136,7 @@ protected:
         }
     }
 private:
-    using INHERITED = MathBench;
+    typedef MathBench INHERITED;
 };
 
 static inline uint32_t QMul64(uint32_t value, U8CPU alpha) {
@@ -161,7 +161,7 @@ protected:
         }
     }
 private:
-    using INHERITED = MathBenchU32;
+    typedef MathBenchU32 INHERITED;
 };
 
 class QMul32Bench : public MathBenchU32 {
@@ -176,7 +176,7 @@ protected:
         }
     }
 private:
-    using INHERITED = MathBenchU32;
+    typedef MathBenchU32 INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -295,7 +295,7 @@ protected:
             for (int j = 0; j < loops; ++j) {
                 for (int i = 0; i < N - 4; ++i) {
                     const SkRect* r = reinterpret_cast<const SkRect*>(&data[i]);
-                    if ((false)) { // avoid bit rot, suppress warning
+                    if (false) { // avoid bit rot, suppress warning
                         isFinite(*r);
                     }
                     counter += r->isFinite();
@@ -317,7 +317,7 @@ private:
     IsFiniteProc    fProc;
     const char*     fName;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class FloorBench : public Benchmark {
@@ -378,7 +378,7 @@ protected:
 private:
     const char*     fName;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class CLZBench : public Benchmark {
@@ -438,67 +438,7 @@ protected:
 private:
     const char* fName;
 
-    using INHERITED = Benchmark;
-};
-
-class CTZBench : public Benchmark {
-    enum {
-        ARRAY = 1000,
-    };
-    uint32_t fData[ARRAY];
-    bool fUsePortable;
-
-public:
-    CTZBench(bool usePortable) : fUsePortable(usePortable) {
-
-        SkRandom rand;
-        for (int i = 0; i < ARRAY; ++i) {
-            fData[i] = rand.nextU();
-        }
-
-        if (fUsePortable) {
-            fName = "ctz_portable";
-        } else {
-            fName = "ctz_intrinsic";
-        }
-    }
-
-    bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
-    }
-
-    // just so the compiler doesn't remove our loops
-    virtual void process(int) {}
-
-protected:
-    void onDraw(int loops, SkCanvas*) override {
-        int accum = 0;
-
-        if (fUsePortable) {
-            for (int j = 0; j < loops; ++j) {
-                for (int i = 0; i < ARRAY; ++i) {
-                    accum += SkCTZ_portable(fData[i]);
-                }
-                this->process(accum);
-            }
-        } else {
-            for (int j = 0; j < loops; ++j) {
-                for (int i = 0; i < ARRAY; ++i) {
-                    accum += SkCTZ(fData[i]);
-                }
-                this->process(accum);
-            }
-        }
-    }
-
-    const char* onGetName() override {
-        return fName;
-    }
-
-private:
-    const char* fName;
-
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -545,7 +485,7 @@ protected:
 private:
     const char* fName;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -589,7 +529,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -654,74 +594,33 @@ DEF_BENCH( return new FloorBench(true); )
 
 DEF_BENCH( return new CLZBench(false); )
 DEF_BENCH( return new CLZBench(true); )
-DEF_BENCH( return new CTZBench(false); )
-DEF_BENCH( return new CTZBench(true); )
 
 DEF_BENCH( return new NormalizeBench(); )
 
 DEF_BENCH( return new FixedMathBench(); )
 
-//////////////////////////////////////////////////////////////
 
-#include "include/private/base/SkFloatBits.h"
-class Floor2IntBench : public Benchmark {
-    enum {
-        ARRAY = 1000,
-    };
-    float fData[ARRAY];
-    const bool fSat;
-public:
+struct FloatToIntBench : public Benchmark {
+    enum { N = 1000000 };
+    float fFloats[N];
+    int   fInts  [N];
 
-    Floor2IntBench(bool sat) : fSat(sat) {
-        SkRandom rand;
+    const char* onGetName() override { return "float_to_int"; }
+    bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
 
-        for (int i = 0; i < ARRAY; ++i) {
-            fData[i] = SkBits2Float(rand.nextU());
-        }
-
-        if (sat) {
-            fName = "floor2int_sat";
-        } else {
-            fName = "floor2int_undef";
+    void onDelayedSetup() override  {
+        const auto f32 = 4294967296.0f;
+        for (int i = 0; i < N; ++i) {
+            fFloats[i] = -f32 + i*(2*f32/N);
         }
     }
 
-    bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
-    }
-
-    // These exist to try to stop the compiler from detecting what we doing, and throwing
-    // parts away (or knowing exactly how big the loop counts are).
-    virtual void process(unsigned) {}
-    virtual int count() { return ARRAY; }
-
-protected:
     void onDraw(int loops, SkCanvas*) override {
-        // used unsigned to avoid undefined behavior if/when the += might overflow
-        unsigned accum = 0;
-
-        for (int j = 0; j < loops; ++j) {
-            int n = this->count();
-            if (fSat) {
-                for (int i = 0; i < n; ++i) {
-                    accum += sk_float_floor2int(fData[i]);
-                }
-            } else {
-                for (int i = 0; i < n; ++i) {
-                    accum += sk_float_floor2int_no_saturate(fData[i]);
-                }
+        while (loops --> 0) {
+            for (int i = 0; i < N; i++) {
+                fInts[i] = SkFloatToIntFloor(fFloats[i]);
             }
-            this->process(accum);
         }
     }
-
-    const char* onGetName() override { return fName; }
-
-private:
-    const char* fName;
-
-    using INHERITED = Benchmark;
 };
-DEF_BENCH( return new Floor2IntBench(false); )
-DEF_BENCH( return new Floor2IntBench(true); )
-
+DEF_BENCH( return new FloatToIntBench; )

@@ -5,25 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-
-#ifdef SK_SUPPORT_PDF
-#include "include/core/SkStream.h"
-#include "include/core/SkString.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkRandom.h"
-#include "src/pdf/SkDeflate.h"
-#include "tests/Test.h"
-
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-
-using namespace skia_private;
+#include "SkDeflate.h"
+#include "SkRandom.h"
+#include "Test.h"
 
 namespace {
 
@@ -41,7 +25,7 @@ void skia_free_func(void*, void* address) { sk_free(address); }
  *  Use the un-deflate compression algorithm to decompress the data in src,
  *  returning the result.  Returns nullptr if an error occurs.
  */
-std::unique_ptr<SkStreamAsset> stream_inflate(skiatest::Reporter* reporter, SkStream* src) {
+SkStreamAsset* stream_inflate(skiatest::Reporter* reporter, SkStream* src) {
     SkDynamicMemoryWStream decompressedDynamicMemoryWStream;
     SkWStream* dst = &decompressedDynamicMemoryWStream;
 
@@ -119,20 +103,20 @@ std::unique_ptr<SkStreamAsset> stream_inflate(skiatest::Reporter* reporter, SkSt
 
 DEF_TEST(SkPDF_DeflateWStream, r) {
     SkRandom random(123456);
-    for (int loop = 0; loop < 50; ++loop) {
+    for (int i = 0; i < 50; ++i) {
         uint32_t size = random.nextULessThan(10000);
-        AutoTMalloc<uint8_t> buffer(size);
+        SkAutoTMalloc<uint8_t> buffer(size);
         for (uint32_t j = 0; j < size; ++j) {
             buffer[j] = random.nextU() & 0xff;
         }
 
         SkDynamicMemoryWStream dynamicMemoryWStream;
         {
-            SkDeflateWStream deflateWStream(&dynamicMemoryWStream, -1);
+            SkDeflateWStream deflateWStream(&dynamicMemoryWStream);
             uint32_t j = 0;
             while (j < size) {
                 uint32_t writeSize =
-                        std::min(size - j, random.nextRangeU(1, 400));
+                        SkTMin(size - j, random.nextRangeU(1, 400));
                 if (!deflateWStream.write(&buffer[j], writeSize)) {
                     ERRORF(r, "something went wrong.");
                     return;
@@ -149,20 +133,22 @@ DEF_TEST(SkPDF_DeflateWStream, r) {
             return;
         }
         if (decompressed->getLength() != size) {
-            ERRORF(r, "Decompression failed to get right size [%d]. %u != %u",
-                   loop, (unsigned)(decompressed->getLength()), (unsigned)size);
-            SkString s = SkStringPrintf("/tmp/deftst_compressed_%d", loop);
+            ERRORF(r, "Decompression failed to get right size [%d]."
+                   " %u != %u", i,  (unsigned)(decompressed->getLength()),
+                   (unsigned)size);
+            SkString s = SkStringPrintf("/tmp/deftst_compressed_%d", i);
             SkFILEWStream o(s.c_str());
             o.writeStream(compressed.get(), compressed->getLength());
             compressed->rewind();
 
-            s = SkStringPrintf("/tmp/deftst_input_%d", loop);
+            s = SkStringPrintf("/tmp/deftst_input_%d", i);
             SkFILEWStream o2(s.c_str());
             o2.write(&buffer[0], size);
 
             continue;
         }
-        uint32_t minLength = std::min(size, (uint32_t)(decompressed->getLength()));
+        uint32_t minLength = SkTMin(size,
+                                    (uint32_t)(decompressed->getLength()));
         for (uint32_t i = 0; i < minLength; ++i) {
             uint8_t c;
             SkDEBUGCODE(size_t rb =)decompressed->read(&c, sizeof(uint8_t));
@@ -173,8 +159,6 @@ DEF_TEST(SkPDF_DeflateWStream, r) {
             }
         }
     }
-    SkDeflateWStream emptyDeflateWStream(nullptr, -1);
+    SkDeflateWStream emptyDeflateWStream(nullptr);
     REPORTER_ASSERT(r, !emptyDeflateWStream.writeText("FOO"));
 }
-
-#endif

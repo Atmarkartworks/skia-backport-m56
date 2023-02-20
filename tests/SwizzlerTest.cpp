@@ -5,32 +5,31 @@
  * found in the LICENSE file.
  */
 
-#include "include/codec/SkCodec.h"
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkColorType.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkSwizzle.h"
-#include "src/codec/SkSampler.h"
-#include "src/core/SkOpts.h"
-#include "tests/Test.h"
+#include "SkSwizzle.h"
+#include "SkSwizzler.h"
+#include "Test.h"
+#include "SkOpts.h"
 
-#include <cstdint>
-#include <cstring>
-#include <memory>
+// These are the values that we will look for to indicate that the fill was successful
+static const uint8_t kFillIndex = 0x11;
+static const uint8_t kFillGray = 0x22;
+static const uint16_t kFill565 = 0x3344;
+static const uint32_t kFillColor = 0x55667788;
 
 static void check_fill(skiatest::Reporter* r,
                        const SkImageInfo& imageInfo,
                        uint32_t startRow,
                        uint32_t endRow,
                        size_t rowBytes,
-                       uint32_t offset) {
+                       uint32_t offset,
+                       uint32_t colorOrIndex) {
 
     // Calculate the total size of the image in bytes.  Use the smallest possible size.
     // The offset value tells us to adjust the pointer from the memory we allocate in order
     // to test on different memory alignments.  If offset is nonzero, we need to increase the
     // size of the memory we allocate in order to make sure that we have enough.  We are
     // still allocating the smallest possible size.
-    const size_t totalBytes = imageInfo.computeByteSize(rowBytes) + offset;
+    const size_t totalBytes = imageInfo.getSafeSize(rowBytes) + offset;
 
     // Create fake image data where every byte has a value of 0
     std::unique_ptr<uint8_t[]> storage(new uint8_t[totalBytes]);
@@ -39,7 +38,7 @@ static void check_fill(skiatest::Reporter* r,
     uint8_t* imageData = storage.get() + offset;
     uint8_t* imageStart = imageData + rowBytes * startRow;
     const SkImageInfo fillInfo = imageInfo.makeWH(imageInfo.width(), endRow - startRow + 1);
-    SkSampler::Fill(fillInfo, imageStart, rowBytes, SkCodec::kNo_ZeroInitialized);
+    SkSampler::Fill(fillInfo, imageStart, rowBytes, colorOrIndex, SkCodec::kNo_ZeroInitialized);
 
     // Ensure that the pixels are filled properly
     // The bots should catch any memory corruption
@@ -50,14 +49,17 @@ static void check_fill(skiatest::Reporter* r,
     for (uint32_t y = startRow; y <= endRow; y++) {
         for (int32_t x = 0; x < imageInfo.width(); x++) {
             switch (imageInfo.colorType()) {
+                case kIndex_8_SkColorType:
+                    REPORTER_ASSERT(r, kFillIndex == indexPtr[x]);
+                    break;
                 case kN32_SkColorType:
-                    REPORTER_ASSERT(r, 0 == colorPtr[x]);
+                    REPORTER_ASSERT(r, kFillColor == colorPtr[x]);
                     break;
                 case kGray_8_SkColorType:
-                    REPORTER_ASSERT(r, 0 == grayPtr[x]);
+                    REPORTER_ASSERT(r, kFillGray == grayPtr[x]);
                     break;
                 case kRGB_565_SkColorType:
-                    REPORTER_ASSERT(r, 0 == color565Ptr[x]);
+                    REPORTER_ASSERT(r, kFill565 == color565Ptr[x]);
                     break;
                 default:
                     REPORTER_ASSERT(r, false);
@@ -88,6 +90,7 @@ DEF_TEST(SwizzlerFill, r) {
             // Create image info objects
             const SkImageInfo colorInfo = SkImageInfo::MakeN32(width, height, kUnknown_SkAlphaType);
             const SkImageInfo grayInfo = colorInfo.makeColorType(kGray_8_SkColorType);
+            const SkImageInfo indexInfo = colorInfo.makeColorType(kIndex_8_SkColorType);
             const SkImageInfo color565Info = colorInfo.makeColorType(kRGB_565_SkColorType);
 
             for (uint32_t padding : paddings) {
@@ -108,9 +111,14 @@ DEF_TEST(SwizzlerFill, r) {
                         for (uint32_t endRow = startRow; endRow < height; endRow++) {
 
                             // Test fill with each color type
-                            check_fill(r, colorInfo, startRow, endRow, colorRowBytes, offset);
-                            check_fill(r, grayInfo, startRow, endRow, grayRowBytes, offset);
-                            check_fill(r, color565Info, startRow, endRow, color565RowBytes, offset);
+                            check_fill(r, colorInfo, startRow, endRow, colorRowBytes, offset,
+                                    kFillColor);
+                            check_fill(r, indexInfo, startRow, endRow, indexRowBytes, offset,
+                                    kFillIndex);
+                            check_fill(r, grayInfo, startRow, endRow, grayRowBytes, offset,
+                                    kFillGray);
+                            check_fill(r, color565Info, startRow, endRow, color565RowBytes, offset,
+                                    kFill565);
                         }
                     }
                 }

@@ -5,18 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "src/core/SkBlurMask.h"
+#include "gm.h"
+#include "SkBlurMask.h"
+#include "SkBlurMaskFilter.h"
+#include "SkCanvas.h"
 
 // This GM tests out the quick reject bounds of the blur mask filter. It draws
 // four blurred rects around a central clip. The blurred rect geometry outset
@@ -55,7 +47,7 @@ protected:
             SK_ColorBLUE,
             SK_ColorYELLOW,
         };
-        SkASSERT(std::size(colors) == std::size(blurRects));
+        SkASSERT(SK_ARRAY_COUNT(colors) == SK_ARRAY_COUNT(blurRects));
 
         SkPaint hairlinePaint;
         hairlinePaint.setStyle(SkPaint::kStroke_Style);
@@ -63,7 +55,8 @@ protected:
         hairlinePaint.setStrokeWidth(0);
 
         SkPaint blurPaint;
-        blurPaint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle,
+        blurPaint.setFilterQuality(kLow_SkFilterQuality);
+        blurPaint.setMaskFilter(SkBlurMaskFilter::Make(kNormal_SkBlurStyle,
                                                     SkBlurMask::ConvertRadiusToSigma(kBlurRadius)));
 
         canvas->clear(SK_ColorBLACK);
@@ -71,7 +64,7 @@ protected:
         canvas->translate(kBoxSize, kBoxSize);
         canvas->drawRect(clipRect, hairlinePaint);
         canvas->clipRect(clipRect);
-        for (size_t i = 0; i < std::size(blurRects); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(blurRects); ++i) {
             blurPaint.setColor(colors[i]);
             canvas->drawRect(blurRects[i], blurPaint);
             canvas->drawRect(blurRects[i], hairlinePaint);
@@ -80,10 +73,10 @@ protected:
     }
 
 private:
-    inline static constexpr int kWidth = 300;
-    inline static constexpr int kHeight = 300;
+    static constexpr int kWidth = 300;
+    static constexpr int kHeight = 300;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 DEF_GM( return new BlurQuickRejectGM(); )

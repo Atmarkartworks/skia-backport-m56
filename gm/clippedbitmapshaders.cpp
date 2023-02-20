@@ -5,21 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
+#include "gm.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkColor.h"
+#include "SkShader.h"
 
-namespace {
+namespace skiagm {
 
 // This GM draws a 3x3 grid (with the center element excluded) of rectangles
 // filled with a bitmap shader. The bitmap shader is transformed so that the
@@ -48,31 +40,30 @@ static SkBitmap create_bitmap() {
 constexpr SkScalar RECT_SIZE = 64;
 constexpr SkScalar SLIDE_SIZE = 300;
 
-class ClippedBitmapShadersGM : public skiagm::GM {
+class ClippedBitmapShadersGM : public GM {
 public:
-    ClippedBitmapShadersGM(SkTileMode mode, bool hq=false)
+    ClippedBitmapShadersGM(SkShader::TileMode mode, bool hq=false)
     : fMode(mode), fHQ(hq) {
     }
 
 protected:
-    SkTileMode fMode;
+    SkShader::TileMode fMode;
     bool fHQ;
 
-    SkString onShortName() override {
+    virtual SkString onShortName() {
         SkString descriptor;
         switch (fMode) {
-            case SkTileMode::kRepeat:
+            case SkShader::kRepeat_TileMode:
                 descriptor = "tile";
             break;
-            case SkTileMode::kMirror:
+            case SkShader::kMirror_TileMode:
                 descriptor = "mirror";
             break;
-            case SkTileMode::kClamp:
+            case SkShader::kClamp_TileMode:
                 descriptor = "clamp";
             break;
-            case SkTileMode::kDecal:
-                descriptor = "decal";
-                break;
+            default:
+                SkASSERT(false);
         }
         descriptor.prepend("clipped-bitmap-shaders-");
         if (fHQ) {
@@ -81,19 +72,22 @@ protected:
         return descriptor;
     }
 
-    SkISize onISize() override { return {300, 300}; }
+    virtual SkISize onISize() {
+        return SkISize::Make(300, 300);
+    }
 
-    void onDraw(SkCanvas* canvas) override {
+    virtual void onDraw(SkCanvas* canvas) {
         SkBitmap bmp = create_bitmap();
         SkMatrix s;
         s.reset();
         s.setScale(8, 8);
         s.postTranslate(SLIDE_SIZE / 2, SLIDE_SIZE / 2);
         SkPaint paint;
-        paint.setShader(bmp.makeShader(fMode, fMode,
-                                       fHQ ? SkSamplingOptions(SkCubicResampler::Mitchell())
-                                           : SkSamplingOptions(),
-                                       s));
+        paint.setShader(SkShader::MakeBitmapShader(bmp, fMode, fMode, &s));
+
+        if (fHQ) {
+            paint.setFilterQuality(kHigh_SkFilterQuality);
+        }
 
         SkScalar margin = (SLIDE_SIZE / 3 - RECT_SIZE) / 2;
         for (int i = 0; i < 3; i++) {
@@ -114,14 +108,18 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
-}  // namespace
 
-DEF_GM( return new ClippedBitmapShadersGM(SkTileMode::kRepeat); )
-DEF_GM( return new ClippedBitmapShadersGM(SkTileMode::kMirror); )
-DEF_GM( return new ClippedBitmapShadersGM(SkTileMode::kClamp); )
+//////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new ClippedBitmapShadersGM(SkTileMode::kRepeat, true); )
-DEF_GM( return new ClippedBitmapShadersGM(SkTileMode::kMirror, true); )
-DEF_GM( return new ClippedBitmapShadersGM(SkTileMode::kClamp, true); )
+DEF_GM( return new ClippedBitmapShadersGM(SkShader::kRepeat_TileMode); )
+DEF_GM( return new ClippedBitmapShadersGM(SkShader::kMirror_TileMode); )
+DEF_GM( return new ClippedBitmapShadersGM(SkShader::kClamp_TileMode); )
+
+DEF_GM( return new ClippedBitmapShadersGM(SkShader::kRepeat_TileMode, true); )
+DEF_GM( return new ClippedBitmapShadersGM(SkShader::kMirror_TileMode, true); )
+DEF_GM( return new ClippedBitmapShadersGM(SkShader::kClamp_TileMode, true); )
+
+
+}

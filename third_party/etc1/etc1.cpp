@@ -20,7 +20,7 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
-#include "third_party/etc1/etc1.h"
+#include "etc1.h"
 
 #include <cstring>
 
@@ -386,31 +386,34 @@ static void etc_encodeBaseColors(etc1_byte* pBaseColors,
         const etc1_byte* pColors, etc_compressed* pCompressed) {
     int r1, g1, b1, r2, g2, b2; // 8 bit base colors for sub-blocks
     bool differential;
+    {
+        int r51 = convert8To5(pColors[0]);
+        int g51 = convert8To5(pColors[1]);
+        int b51 = convert8To5(pColors[2]);
+        int r52 = convert8To5(pColors[3]);
+        int g52 = convert8To5(pColors[4]);
+        int b52 = convert8To5(pColors[5]);
 
-    int r51 = convert8To5(pColors[0]);
-    int g51 = convert8To5(pColors[1]);
-    int b51 = convert8To5(pColors[2]);
-    int r52 = convert8To5(pColors[3]);
-    int g52 = convert8To5(pColors[4]);
-    int b52 = convert8To5(pColors[5]);
+        r1 = convert5To8(r51);
+        g1 = convert5To8(g51);
+        b1 = convert5To8(b51);
 
-    r1 = convert5To8(r51);
-    g1 = convert5To8(g51);
-    b1 = convert5To8(b51);
+        int dr = r52 - r51;
+        int dg = g52 - g51;
+        int db = b52 - b51;
 
-    int dr = r52 - r51;
-    int dg = g52 - g51;
-    int db = b52 - b51;
+        differential = inRange4bitSigned(dr) && inRange4bitSigned(dg)
+                && inRange4bitSigned(db);
+        if (differential) {
+            r2 = convert5To8(r51 + dr);
+            g2 = convert5To8(g51 + dg);
+            b2 = convert5To8(b51 + db);
+            pCompressed->high |= (r51 << 27) | ((7 & dr) << 24) | (g51 << 19)
+                    | ((7 & dg) << 16) | (b51 << 11) | ((7 & db) << 8) | 2;
+        }
+    }
 
-    differential = inRange4bitSigned(dr) && inRange4bitSigned(dg)
-            && inRange4bitSigned(db);
-    if (differential) {
-        r2 = convert5To8(r51 + dr);
-        g2 = convert5To8(g51 + dg);
-        b2 = convert5To8(b51 + db);
-        pCompressed->high |= (r51 << 27) | ((7 & dr) << 24) | (g51 << 19)
-                | ((7 & dg) << 16) | (b51 << 11) | ((7 & db) << 8) | 2;
-    } else {
+    if (!differential) {
         int r41 = convert8To4(pColors[0]);
         int g41 = convert8To4(pColors[1]);
         int b41 = convert8To4(pColors[2]);
@@ -475,10 +478,10 @@ void etc_encode_block_helper(const etc1_byte* pIn, etc1_uint32 inMask,
 }
 
 static void writeBigEndian(etc1_byte* pOut, etc1_uint32 d) {
-    pOut[0] = (etc1_byte) (d >> 24);
-    pOut[1] = (etc1_byte)((d >> 16) & 0xFF);
-    pOut[2] = (etc1_byte)((d >>  8) & 0xFF);
-    pOut[3] = (etc1_byte)((d >>  0) & 0xFF);
+    pOut[0] = (etc1_byte)(d >> 24);
+    pOut[1] = (etc1_byte)(d >> 16);
+    pOut[2] = (etc1_byte)(d >> 8);
+    pOut[3] = (etc1_byte) d;
 }
 
 // Input is a 4 x 4 square of 3-byte pixels in form R, G, B

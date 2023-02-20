@@ -5,68 +5,27 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkColorType.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkSurfaceProps.h"
-#include "include/core/SkTypes.h"
-#include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/private/SkColorData.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkAutoPixmapStorage.h"
-#include "src/gpu/SkBackingFit.h"
-#include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/GrColor.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/SurfaceDrawContext.h"
-#include "src/gpu/ganesh/ops/ClearOp.h"
-#include "src/gpu/ganesh/ops/GrOp.h"
-#include "src/gpu/ganesh/ops/OpsTask.h"
-#include "tests/CtsEnforcement.h"
-#include "tests/Test.h"
+#include "Test.h"
 
-#include <array>
-#include <cstdint>
-#include <memory>
+#if SK_SUPPORT_GPU
+#include "GrContext.h"
+#include "GrRenderTargetContext.h"
+#include "GrGpu.h"
+#include "GrRenderTarget.h"
+#include "GrTexture.h"
+#include "GrTextureProvider.h"
 
-class GrRecordingContext;
-
-using SurfaceDrawContext = skgpu::v1::SurfaceDrawContext;
-using ClearOp = skgpu::v1::ClearOp;
-
-static bool check_rect(GrDirectContext* dContext,
-                       SurfaceDrawContext* sdc,
-                       const SkIRect& rect,
-                       uint32_t expectedValue,
-                       uint32_t* actualValue,
-                       int* failX,
-                       int* failY) {
+static bool check_rect(GrRenderTargetContext* rtc, const SkIRect& rect, uint32_t expectedValue,
+                       uint32_t* actualValue, int* failX, int* failY) {
+    GrRenderTarget* rt = rtc->accessRenderTarget();
     int w = rect.width();
     int h = rect.height();
-
-    SkImageInfo dstInfo = SkImageInfo::Make(w, h, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-
-    SkAutoPixmapStorage readback;
-    readback.alloc(dstInfo);
-
-    readback.erase(~expectedValue);
-    if (!sdc->readPixels(dContext, readback, {rect.fLeft, rect.fTop})) {
-        return false;
-    }
-
+    std::unique_ptr<uint32_t[]> pixels(new uint32_t[w * h]);
+    memset(pixels.get(), ~expectedValue, sizeof(uint32_t) * w * h);
+    rt->readPixels(rect.fLeft, rect.fTop, w, h, kRGBA_8888_GrPixelConfig, pixels.get());
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            uint32_t pixel = readback.addr32()[y * w + x];
+            uint32_t pixel = pixels.get()[y * w + x];
             if (pixel != expectedValue) {
                 *actualValue = pixel;
                 *failX = x + rect.fLeft;
@@ -78,18 +37,36 @@ static bool check_rect(GrDirectContext* dContext,
     return true;
 }
 
-std::unique_ptr<SurfaceDrawContext> newSDC(GrRecordingContext* rContext, int w, int h) {
-    return SurfaceDrawContext::Make(rContext, GrColorType::kRGBA_8888, nullptr,
-                                    SkBackingFit::kExact, {w, h}, SkSurfaceProps(),
-                                    /*label=*/{});
+// TODO: this test does this thorough purging of the rendertargets b.c. right now
+// the clear optimizations rely on the rendertarget's uniqueID. It can be
+// relaxed when we switch that over to using rendertargetcontext ids (although
+// we probably will want to have more clear values then too)
+static bool reset_rtc(sk_sp<GrRenderTargetContext>* rtc, GrContext* context, int w, int h) {
+#ifdef SK_DEBUG
+    GrGpuResource::UniqueID oldID = GrGpuResource::UniqueID::InvalidID();
+#endif
+
+    if (*rtc) {
+        SkDEBUGCODE(oldID = (*rtc)->accessRenderTarget()->uniqueID();)
+        rtc->reset(nullptr);
+    }
+    context->freeGpuResources();
+
+    *rtc = context->makeRenderTargetContext(SkBackingFit::kExact, w, h, kRGBA_8888_GrPixelConfig,
+                                            nullptr);
+
+    SkASSERT((*rtc)->accessRenderTarget()->uniqueID() != oldID);
+
+    return *rtc != nullptr;
 }
 
-static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ClearBatch, reporter, ctxInfo) {
+    GrContext* context = ctxInfo.grContext();
     static const int kW = 10;
     static const int kH = 10;
 
     SkIRect fullRect = SkIRect::MakeWH(kW, kH);
-    std::unique_ptr<SurfaceDrawContext> sdc;
+    sk_sp<GrRenderTargetContext> rtContext;
 
     // A rectangle that is inset by one on all sides and the 1-pixel wide rectangles that surround
     // it.
@@ -112,273 +89,143 @@ static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContex
 
     static const GrColor kColor1 = 0xABCDEF01;
     static const GrColor kColor2 = ~kColor1;
-    static const SkPMColor4f kColor1f = SkPMColor4f::FromBytes_RGBA(kColor1);
-    static const SkPMColor4f kColor2f = SkPMColor4f::FromBytes_RGBA(kColor2);
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Check a full clear
-    sdc->clear(fullRect, kColor1f);
-    if (!check_rect(dContext, sdc.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
+    rtContext->clear(&fullRect, kColor1, false);
+    if (!check_rect(rtContext.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Check two full clears, same color
-    sdc->clear(fullRect, kColor1f);
-    sdc->clear(fullRect, kColor1f);
-    if (!check_rect(dContext, sdc.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
+    rtContext->clear(&fullRect, kColor1, false);
+    rtContext->clear(&fullRect, kColor1, false);
+    if (!check_rect(rtContext.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Check two full clears, different colors
-    sdc->clear(fullRect, kColor1f);
-    sdc->clear(fullRect, kColor2f);
-    if (!check_rect(dContext, sdc.get(), fullRect, kColor2, &actualValue, &failX, &failY)) {
+    rtContext->clear(&fullRect, kColor1, false);
+    rtContext->clear(&fullRect, kColor2, false);
+    if (!check_rect(rtContext.get(), fullRect, kColor2, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor2, actualValue,
                failX, failY);
     }
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Test a full clear followed by a same color inset clear
-    sdc->clear(fullRect, kColor1f);
-    sdc->clear(mid1Rect, kColor1f);
-    if (!check_rect(dContext, sdc.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
+    rtContext->clear(&fullRect, kColor1, false);
+    rtContext->clear(&mid1Rect, kColor1, false);
+    if (!check_rect(rtContext.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Test a inset clear followed by same color full clear
-    sdc->clear(mid1Rect, kColor1f);
-    sdc->clear(fullRect, kColor1f);
-    if (!check_rect(dContext, sdc.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
+    rtContext->clear(&mid1Rect, kColor1, false);
+    rtContext->clear(&fullRect, kColor1, false);
+    if (!check_rect(rtContext.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Test a full clear followed by a different color inset clear
-    sdc->clear(fullRect, kColor1f);
-    sdc->clear(mid1Rect, kColor2f);
-    if (!check_rect(dContext, sdc.get(), mid1Rect, kColor2, &actualValue, &failX, &failY)) {
+    rtContext->clear(&fullRect, kColor1, false);
+    rtContext->clear(&mid1Rect, kColor2, false);
+    if (!check_rect(rtContext.get(), mid1Rect, kColor2, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor2, actualValue,
                failX, failY);
     }
-    if (!check_rect(dContext, sdc.get(), outerLeftEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerTopEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerRightEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerBottomEdge, kColor1, &actualValue, &failX, &failY)) {
+    if (!check_rect(rtContext.get(), outerLeftEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerTopEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerRightEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerBottomEdge, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Test a inset clear followed by a different full clear
-    sdc->clear(mid1Rect, kColor2f);
-    sdc->clear(fullRect, kColor1f);
-    if (!check_rect(dContext, sdc.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
+    rtContext->clear(&mid1Rect, kColor2, false);
+    rtContext->clear(&fullRect, kColor1, false);
+    if (!check_rect(rtContext.get(), fullRect, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Check three nested clears from largest to smallest where outermost and innermost are same
     // color.
-    sdc->clear(fullRect, kColor1f);
-    sdc->clear(mid1Rect, kColor2f);
-    sdc->clear(mid2Rect, kColor1f);
-    if (!check_rect(dContext, sdc.get(), mid2Rect, kColor1, &actualValue, &failX, &failY)) {
+    rtContext->clear(&fullRect, kColor1, false);
+    rtContext->clear(&mid1Rect, kColor2, false);
+    rtContext->clear(&mid2Rect, kColor1, false);
+    if (!check_rect(rtContext.get(), mid2Rect, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
-    if (!check_rect(dContext, sdc.get(), innerLeftEdge, kColor2, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), innerTopEdge, kColor2, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), innerRightEdge, kColor2, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), innerBottomEdge, kColor2, &actualValue, &failX, &failY)) {
+    if (!check_rect(rtContext.get(), innerLeftEdge, kColor2, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), innerTopEdge, kColor2, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), innerRightEdge, kColor2, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), innerBottomEdge, kColor2, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor2, actualValue,
                failX, failY);
     }
-    if (!check_rect(dContext, sdc.get(), outerLeftEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerTopEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerRightEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerBottomEdge, kColor1, &actualValue, &failX, &failY)) {
+    if (!check_rect(rtContext.get(), outerLeftEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerTopEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerRightEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerBottomEdge, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
 
-    sdc = newSDC(dContext, kW, kH);
-    SkASSERT(sdc);
-
+    if (!reset_rtc(&rtContext, context, kW, kH)) {
+        ERRORF(reporter, "Could not create render target context.");
+        return;
+    }
     // Swap the order of the second two clears in the above test.
-    sdc->clear(fullRect, kColor1f);
-    sdc->clear(mid2Rect, kColor1f);
-    sdc->clear(mid1Rect, kColor2f);
-    if (!check_rect(dContext, sdc.get(), mid1Rect, kColor2, &actualValue, &failX, &failY)) {
+    rtContext->clear(&fullRect, kColor1, false);
+    rtContext->clear(&mid2Rect, kColor1, false);
+    rtContext->clear(&mid1Rect, kColor2, false);
+    if (!check_rect(rtContext.get(), mid1Rect, kColor2, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor2, actualValue,
                failX, failY);
     }
-    if (!check_rect(dContext, sdc.get(), outerLeftEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerTopEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerRightEdge, kColor1, &actualValue, &failX, &failY) ||
-        !check_rect(dContext, sdc.get(), outerBottomEdge, kColor1, &actualValue, &failX, &failY)) {
+    if (!check_rect(rtContext.get(), outerLeftEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerTopEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerRightEdge, kColor1, &actualValue, &failX, &failY) ||
+        !check_rect(rtContext.get(), outerBottomEdge, kColor1, &actualValue, &failX, &failY)) {
         ERRORF(reporter, "Expected 0x%08x but got 0x%08x at (%d, %d).", kColor1, actualValue,
                failX, failY);
     }
-
-    // Clear calls need to remain ClearOps for the following combining-tests to work as expected
-    if (!dContext->priv().caps()->performColorClearsAsDraws() &&
-        !dContext->priv().caps()->performStencilClearsAsDraws() &&
-        !dContext->priv().caps()->performPartialClearsAsDraws()) {
-        static constexpr SkIRect kScissorRect = SkIRect::MakeXYWH(1, 1, kW-1, kH-1);
-
-        // Try combining a pure-color clear w/ a combined stencil & color clear
-        // (re skbug.com/10963)
-        {
-            sdc = newSDC(dContext, kW, kH);
-            SkASSERT(sdc);
-
-            sdc->clearStencilClip(kScissorRect, true);
-            // This color clear can combine w/ the preceding stencil clear
-            sdc->clear(kScissorRect, SK_PMColor4fWHITE);
-
-            // This should combine w/ the prior combined clear and overwrite the color
-            sdc->clear(kScissorRect, SK_PMColor4fBLACK);
-
-            auto opsTask = sdc->getOpsTask();
-            REPORTER_ASSERT(reporter, opsTask->numOpChains() == 1);
-
-            const ClearOp& clearOp = opsTask->getChain(0)->cast<ClearOp>();
-
-            constexpr std::array<float, 4> kExpected { 0, 0, 0, 1 };
-            REPORTER_ASSERT(reporter, clearOp.color() == kExpected);
-            REPORTER_ASSERT(reporter, clearOp.stencilInsideMask());
-
-            dContext->flushAndSubmit();
-        }
-
-        // Try combining a pure-stencil clear w/ a combined stencil & color clear
-        // (re skbug.com/10963)
-        {
-            sdc = newSDC(dContext, kW, kH);
-            SkASSERT(sdc);
-
-            sdc->clearStencilClip(kScissorRect, true);
-            // This color clear can combine w/ the preceding stencil clear
-            sdc->clear(kScissorRect, SK_PMColor4fWHITE);
-
-            // This should combine w/ the prior combined clear and overwrite the 'insideStencilMask'
-            // field
-            sdc->clearStencilClip(kScissorRect, false);
-
-            auto opsTask = sdc->getOpsTask();
-            REPORTER_ASSERT(reporter, opsTask->numOpChains() == 1);
-
-            const ClearOp& clearOp = opsTask->getChain(0)->cast<ClearOp>();
-
-            constexpr std::array<float, 4> kExpected { 1, 1, 1, 1 };
-            REPORTER_ASSERT(reporter, clearOp.color() == kExpected);
-            REPORTER_ASSERT(reporter, !clearOp.stencilInsideMask());
-
-            dContext->flushAndSubmit();
-        }
-    }
 }
-
-DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ClearOp, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
-    // Regular clear
-    clear_op_test(reporter, ctxInfo.directContext());
-
-    // Force drawing for clears
-    GrContextOptions options(ctxInfo.options());
-    options.fUseDrawInsteadOfClear = GrContextOptions::Enable::kYes;
-    sk_gpu_test::GrContextFactory workaroundFactory(options);
-    clear_op_test(reporter, workaroundFactory.get(ctxInfo.type()));
-}
-
-void fullscreen_clear_with_layer_test(skiatest::Reporter* reporter, GrRecordingContext* rContext) {
-    const SkImageInfo ii = SkImageInfo::Make(400, 77, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-
-    sk_sp<SkSurface> surf = SkSurface::MakeRenderTarget(rContext, skgpu::Budgeted::kYes, ii);
-    SkCanvas* canvas = surf->getCanvas();
-
-    SkPaint paints[2];
-    paints[0].setColor(SK_ColorGREEN);
-    paints[1].setColor(SK_ColorGRAY);
-
-    static const int kLeftX = 158;
-    static const int kMidX = 258;
-    static const int kRightX = 383;
-    static const int kTopY = 26;
-    static const int kBotY = 51;
-
-    const SkRect rects[2] = {
-        { kLeftX, kTopY, kMidX, kBotY },
-        { kMidX, kTopY, kRightX, kBotY },
-    };
-
-    for (int i = 0; i < 2; ++i) {
-        // the bounds parameter is required to cause a full screen clear
-        canvas->saveLayer(&rects[i], nullptr);
-            canvas->drawRect(rects[i], paints[i]);
-        canvas->restore();
-    }
-
-    SkBitmap bm;
-    bm.allocPixels(ii, 0);
-
-    SkAssertResult(surf->readPixels(bm, 0, 0));
-
-    bool isCorrect = true;
-    for (int y = kTopY; isCorrect && y < kBotY; ++y) {
-        const uint32_t* sl = bm.getAddr32(0, y);
-
-        for (int x = kLeftX; x < kMidX; ++x) {
-            if (SK_ColorGREEN != sl[x]) {
-                isCorrect = false;
-                break;
-            }
-        }
-
-        for (int x = kMidX; x < kRightX; ++x) {
-            if (SK_ColorGRAY != sl[x]) {
-                isCorrect = false;
-                break;
-            }
-        }
-    }
-
-    REPORTER_ASSERT(reporter, isCorrect);
-}
-// From crbug.com/768134
-DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(FullScreenClearWithLayers,
-                                       reporter,
-                                       ctxInfo,
-                                       CtsEnforcement::kApiLevel_T) {
-    // Regular clear
-    fullscreen_clear_with_layer_test(reporter, ctxInfo.directContext());
-
-    // Use draws for clears
-    GrContextOptions options(ctxInfo.options());
-    options.fUseDrawInsteadOfClear = GrContextOptions::Enable::kYes;
-    sk_gpu_test::GrContextFactory workaroundFactory(options);
-    fullscreen_clear_with_layer_test(reporter, workaroundFactory.get(ctxInfo.type()));
-}
+#endif

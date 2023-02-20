@@ -5,16 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkString.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkRandom.h"
-#include "src/base/SkTSort.h"
+#include "Benchmark.h"
+#include "SkRandom.h"
+#include "SkString.h"
+#include "SkTSort.h"
 
-#include <algorithm>
 #include <stdlib.h>
-
-using namespace skia_private;
 
 static const int N = 1000;
 
@@ -69,7 +65,8 @@ static const struct {
 };
 
 static void skqsort_sort(int array[N]) {
-    SkTQSort<int>(array, array + N);
+    // End is inclusive for SkTQSort!
+    SkTQSort<int>(array, array + N - 1);
 }
 
 static void skheap_sort(int array[N]) {
@@ -88,12 +85,8 @@ static void qsort_sort(int array[N]) {
     qsort(array, N, sizeof(int), int_compare);
 }
 
-static void stdsort_sort(int array[N]) {
-    std::sort(array, array+N);
-}
-
 enum SortType {
-    kSKQSort, kSKHeap, kQSort, kStdSort,
+    kSKQSort, kSKHeap, kQSort
 };
 
 static const struct {
@@ -101,16 +94,15 @@ static const struct {
     SortProc    fProc;
 } gSorts[] = {
     { "skqsort", skqsort_sort },
-    { "skheap",   skheap_sort },
-    { "qsort",     qsort_sort },
-    { "stdsort", stdsort_sort },
+    { "skheap", skheap_sort },
+    { "qsort", qsort_sort },
 };
 
 class SortBench : public Benchmark {
     SkString           fName;
     const Type         fType;
     const SortProc     fSortProc;
-    AutoTMalloc<int> fUnsorted;
+    SkAutoTMalloc<int> fUnsorted;
 
 public:
     SortBench(Type t, SortType s) : fType(t), fSortProc(gSorts[s].fProc) {
@@ -133,7 +125,7 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas*) override {
-        AutoTMalloc<int> sorted(N);
+        SkAutoTMalloc<int> sorted(N);
         for (int i = 0; i < loops; i++) {
             memcpy(sorted.get(), fUnsorted.get(), N*sizeof(int));
             fSortProc(sorted.get());
@@ -146,7 +138,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -160,31 +152,23 @@ static Benchmark* NewSkHeap(Type t) {
 static Benchmark* NewQSort(Type t) {
     return new SortBench(t, kQSort);
 }
-static Benchmark* NewStdSort(Type t) {
-    return new SortBench(t, kStdSort);
-}
 
 DEF_BENCH( return NewSkQSort(kRand); )
 DEF_BENCH( return NewSkHeap(kRand); )
 DEF_BENCH( return NewQSort(kRand); )
-DEF_BENCH( return NewStdSort(kRand); )
 
 DEF_BENCH( return NewSkQSort(kRandN); )
 DEF_BENCH( return NewSkHeap(kRandN); )
 DEF_BENCH( return NewQSort(kRandN); )
-DEF_BENCH( return NewStdSort(kRandN); )
 
 DEF_BENCH( return NewSkQSort(kFore); )
 DEF_BENCH( return NewSkHeap(kFore); )
 DEF_BENCH( return NewQSort(kFore); )
-DEF_BENCH( return NewStdSort(kFore); )
 
 DEF_BENCH( return NewSkQSort(kBack); )
 DEF_BENCH( return NewSkHeap(kBack); )
 DEF_BENCH( return NewQSort(kBack); )
-DEF_BENCH( return NewStdSort(kBack); )
 
 DEF_BENCH( return NewSkQSort(kSame); )
 DEF_BENCH( return NewSkHeap(kSame); )
 DEF_BENCH( return NewQSort(kSame); )
-DEF_BENCH( return NewStdSort(kSame); )

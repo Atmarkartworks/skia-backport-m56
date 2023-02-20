@@ -7,7 +7,19 @@
 #ifndef Timer_DEFINED
 #define Timer_DEFINED
 
-#include "include/core/SkString.h"
+#include "SkString.h"
+#include "SkTime.h"
+#include "SkTypes.h"
+
+class WallTimer {
+public:
+    WallTimer() : fWall(-1) {}
+
+    void start() { fWall = SkTime::GetNSecs(); }
+    void end()   { fWall = (SkTime::GetNSecs() - fWall) * 1e-6; }
+
+    double fWall;  // Milliseconds.
+};
 
 SkString HumanizeMs(double);
 

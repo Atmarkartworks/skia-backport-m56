@@ -5,23 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
 
-#include <string.h>
+#include "Resources.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkStream.h"
+#include "SkTextBlob.h"
+#include "SkTypeface.h"
 
 namespace skiagm {
 class TextBlobColorTrans : public GM {
@@ -37,21 +28,24 @@ protected:
 
         // make textblob
         // Large text is used to trigger atlas eviction
-        SkFont font(ToolUtils::create_portable_typeface(), 256);
-        font.setEdging(SkFont::Edging::kAlias);
+        SkPaint paint;
+        paint.setTextSize(256);
         const char* text = "AB";
+        sk_tool_utils::set_portable_typeface(&paint);
 
         SkRect bounds;
-        font.measureText(text, strlen(text), SkTextEncoding::kUTF8, &bounds);
+        paint.measureText(text, strlen(text), &bounds);
 
         SkScalar yOffset = bounds.height();
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, yOffset - 30);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, yOffset - 30);
 
         // A8
-        font.setSize(28);
+        paint.setTextSize(28);
         text = "The quick brown fox jumps over the lazy dog.";
-        font.measureText(text, strlen(text), SkTextEncoding::kUTF8, &bounds);
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, yOffset - 8);
+        paint.setSubpixelText(false);
+        paint.setLCDRenderText(false);
+        paint.measureText(text, strlen(text), &bounds);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, yOffset - 8);
 
         // build
         fBlob = builder.make();
@@ -67,7 +61,7 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
 
-        canvas->drawColor(SK_ColorGRAY);
+        canvas->drawColor(sk_tool_utils::color_to_565(SK_ColorGRAY));
 
         SkPaint paint;
         canvas->translate(10, 40);
@@ -77,9 +71,10 @@ protected:
         // Colors were chosen to map to pairs of canonical colors.  The GPU Backend will cache A8
         // Texture Blobs based on the canonical color they map to.  Canonical colors are used to
         // create masks.  For A8 there are 8 of them.
-        SkColor colors[] = {SK_ColorCYAN, SK_ColorLTGRAY, SK_ColorYELLOW, SK_ColorWHITE};
+        SkColor colors[] = {SK_ColorCYAN, sk_tool_utils::color_to_565(SK_ColorLTGRAY),
+                SK_ColorYELLOW, SK_ColorWHITE};
 
-        size_t count = std::size(colors);
+        size_t count = SK_ARRAY_COUNT(colors);
         size_t colorIndex = 0;
         for (int y = 0; y + SkScalarFloorToInt(bounds.height()) < kHeight;
              y += SkScalarFloorToInt(bounds.height())) {
@@ -94,13 +89,13 @@ protected:
 private:
     sk_sp<SkTextBlob> fBlob;
 
-    inline static constexpr int kWidth = 675;
-    inline static constexpr int kHeight = 1600;
+    static constexpr int kWidth = 675;
+    static constexpr int kHeight = 1600;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new TextBlobColorTrans;)
-}  // namespace skiagm
+}

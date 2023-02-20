@@ -5,13 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkString.h"
-#include "include/private/SkColorData.h"
-#include "include/private/base/SkFixed.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkColorPriv.h"
+#include "SkFixed.h"
+#include "SkMatrix.h"
+#include "SkPaint.h"
+#include "SkRandom.h"
+#include "SkString.h"
 
 #define TILE(x, width)  (((x) & 0xFFFF) * width >> 16)
 
@@ -51,7 +51,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class Fixed16D16Interp : public InterpBench {
@@ -70,7 +70,7 @@ protected:
         }
     }
 private:
-    using INHERITED = InterpBench;
+    typedef InterpBench INHERITED;
 };
 
 class Fixed32D32Interp : public InterpBench {
@@ -101,7 +101,7 @@ protected:
         }
     }
 private:
-    using INHERITED = InterpBench;
+    typedef InterpBench INHERITED;
 };
 
 class Fixed16D48Interp : public InterpBench {
@@ -121,7 +121,7 @@ protected:
         }
     }
 private:
-    using INHERITED = InterpBench;
+    typedef InterpBench INHERITED;
 };
 
 class FloatInterp : public InterpBench {
@@ -139,7 +139,7 @@ protected:
         }
     }
 private:
-    using INHERITED = InterpBench;
+    typedef InterpBench INHERITED;
 };
 
 class DoubleInterp : public InterpBench {
@@ -159,7 +159,7 @@ protected:
         }
     }
 private:
-    using INHERITED = InterpBench;
+    typedef InterpBench INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

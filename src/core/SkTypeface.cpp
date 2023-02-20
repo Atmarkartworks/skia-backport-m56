@@ -5,41 +5,34 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkFontMetrics.h"
-#include "include/core/SkFontMgr.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkTypeface.h"
-#include "include/private/base/SkMutex.h"
-#include "include/private/base/SkOnce.h"
-#include "include/utils/SkCustomTypeface.h"
-#include "src/base/SkUTF.h"
-#include "src/core/SkAdvancedTypefaceMetrics.h"
-#include "src/core/SkEndian.h"
-#include "src/core/SkFontDescriptor.h"
-#include "src/core/SkFontPriv.h"
-#include "src/core/SkScalerContext.h"
-#include "src/core/SkSurfacePriv.h"
-#include "src/core/SkTypefaceCache.h"
-#include "src/sfnt/SkOTTable_OS_2.h"
-
-#ifdef SK_TYPEFACE_FACTORY_FREETYPE
-#include "src/ports/SkFontHost_FreeType_common.h"
-#endif
-
-#ifdef SK_TYPEFACE_FACTORY_CORETEXT
-#include "src/ports/SkTypeface_mac_ct.h"
-#endif
-
-#ifdef SK_TYPEFACE_FACTORY_DIRECTWRITE
-#include "src/ports/SkTypeface_win_dw.h"
-#endif
-
-using namespace skia_private;
+#include "SkAdvancedTypefaceMetrics.h"
+#include "SkEndian.h"
+#include "SkFontDescriptor.h"
+#include "SkFontMgr.h"
+#include "SkMakeUnique.h"
+#include "SkMutex.h"
+#include "SkOTTable_OS_2.h"
+#include "SkOnce.h"
+#include "SkStream.h"
+#include "SkTypeface.h"
+#include "SkTypefaceCache.h"
 
 SkTypeface::SkTypeface(const SkFontStyle& style, bool isFixedPitch)
-    : fUniqueID(SkTypefaceCache::NewTypefaceID()), fStyle(style), fIsFixedPitch(isFixedPitch) { }
+    : fUniqueID(SkTypefaceCache::NewFontID()), fStyle(style), fIsFixedPitch(isFixedPitch) { }
 
 SkTypeface::~SkTypeface() { }
+
+#ifdef SK_WHITELIST_SERIALIZED_TYPEFACES
+extern void WhitelistSerializeTypeface(const SkTypeface*, SkWStream* );
+#define SK_TYPEFACE_DELEGATE WhitelistSerializeTypeface
+#else
+#define SK_TYPEFACE_DELEGATE nullptr
+#endif
+
+sk_sp<SkTypeface> (*gCreateTypefaceDelegate)(const char[], SkFontStyle) = nullptr;
+
+void (*gSerializeTypefaceDelegate)(const SkTypeface*, SkWStream* ) = SK_TYPEFACE_DELEGATE;
+sk_sp<SkTypeface> (*gDeserializeTypefaceDelegate)(SkStream* ) = nullptr;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -47,43 +40,28 @@ namespace {
 
 class SkEmptyTypeface : public SkTypeface {
 public:
-    static sk_sp<SkTypeface> Make() { return sk_sp<SkTypeface>(new SkEmptyTypeface); }
-
-    static constexpr SkTypeface::FactoryId FactoryId = SkSetFourByteTag('e','m','t','y');
-    static sk_sp<SkTypeface> MakeFromStream(std::unique_ptr<SkStreamAsset> stream,
-                                            const SkFontArguments&) {
-        if (stream->getLength() == 0) {
-            return SkEmptyTypeface::Make();
-        }
-        return nullptr;
-    }
+    static SkEmptyTypeface* Create() { return new SkEmptyTypeface; }
 protected:
     SkEmptyTypeface() : SkTypeface(SkFontStyle(), true) { }
 
-    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override { return nullptr; }
-    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override {
-        return sk_ref_sp(this);
-    }
-    std::unique_ptr<SkScalerContext> onCreateScalerContext(
-        const SkScalerContextEffects& effects, const SkDescriptor* desc) const override
-    {
-        return SkScalerContext::MakeEmpty(
-                sk_ref_sp(const_cast<SkEmptyTypeface*>(this)), effects, desc);
-    }
-    void onFilterRec(SkScalerContextRec*) const override { }
-    std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override {
+    SkStreamAsset* onOpenStream(int* ttcIndex) const override { return nullptr; }
+    SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
+                                           const SkDescriptor*) const override {
         return nullptr;
     }
-    void onGetFontDescriptor(SkFontDescriptor* desc, bool* serialize) const override {
-        desc->setFactoryId(FactoryId);
-        *serialize = false;
-    }
-    void onCharsToGlyphs(const SkUnichar* chars, int count, SkGlyphID glyphs[]) const override {
-        sk_bzero(glyphs, count * sizeof(glyphs[0]));
+    void onFilterRec(SkScalerContextRec*) const override { }
+    virtual SkAdvancedTypefaceMetrics* onGetAdvancedTypefaceMetrics(
+                                PerGlyphInfo,
+                                const uint32_t*, uint32_t) const override { return nullptr; }
+    void onGetFontDescriptor(SkFontDescriptor*, bool*) const override { }
+    virtual int onCharsToGlyphs(const void* chars, Encoding encoding,
+                                uint16_t glyphs[], int glyphCount) const override {
+        if (glyphs && glyphCount > 0) {
+            sk_bzero(glyphs, glyphCount * sizeof(glyphs[0]));
+        }
+        return 0;
     }
     int onCountGlyphs() const override { return 0; }
-    void getPostScriptGlyphNames(SkString*) const override {}
-    void getGlyphToUnicodeMap(SkUnichar*) const override {}
     int onGetUPEM() const override { return 0; }
     class EmptyLocalizedStrings : public SkTypeface::LocalizedStrings {
     public:
@@ -92,24 +70,8 @@ protected:
     void onGetFamilyName(SkString* familyName) const override {
         familyName->reset();
     }
-    bool onGetPostScriptName(SkString*) const override {
-        return false;
-    }
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override {
         return new EmptyLocalizedStrings;
-    }
-    bool onGlyphMaskNeedsCurrentColor() const override {
-        return false;
-    }
-    int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
-                                     int coordinateCount) const override
-    {
-        return 0;
-    }
-    int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
-                                       int parameterCount) const override
-    {
-        return 0;
     }
     int onGetTableTags(SkFontTableTag tags[]) const override { return 0; }
     size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const override {
@@ -117,31 +79,23 @@ protected:
     }
 };
 
-}  // namespace
-
-SkFontStyle SkTypeface::FromOldStyle(Style oldStyle) {
-    return SkFontStyle((oldStyle & SkTypeface::kBold) ? SkFontStyle::kBold_Weight
-                                                      : SkFontStyle::kNormal_Weight,
-                       SkFontStyle::kNormal_Width,
-                       (oldStyle & SkTypeface::kItalic) ? SkFontStyle::kItalic_Slant
-                                                        : SkFontStyle::kUpright_Slant);
 }
 
 SkTypeface* SkTypeface::GetDefaultTypeface(Style style) {
     static SkOnce once[4];
-    static sk_sp<SkTypeface> defaults[4];
+    static SkTypeface* defaults[4];
 
     SkASSERT((int)style < 4);
     once[style]([style] {
         sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
-        auto t = fm->legacyMakeTypeface(nullptr, FromOldStyle(style));
-        defaults[style] = t ? t : SkEmptyTypeface::Make();
+        SkTypeface* t = fm->legacyCreateTypeface(nullptr, SkFontStyle::FromOldStyle(style));
+        defaults[style] = t ? t : SkEmptyTypeface::Create();
     });
-    return defaults[style].get();
+    return defaults[style];
 }
 
-sk_sp<SkTypeface> SkTypeface::MakeDefault() {
-    return sk_ref_sp(GetDefaultTypeface());
+sk_sp<SkTypeface> SkTypeface::MakeDefault(Style style) {
+    return sk_ref_sp(GetDefaultTypeface(style));
 }
 
 uint32_t SkTypeface::UniqueID(const SkTypeface* face) {
@@ -157,148 +111,87 @@ bool SkTypeface::Equal(const SkTypeface* facea, const SkTypeface* faceb) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-namespace {
-
-    struct DecoderProc {
-        SkFourByteTag id;
-        sk_sp<SkTypeface> (*makeFromStream)(std::unique_ptr<SkStreamAsset>, const SkFontArguments&);
-    };
-
-    std::vector<DecoderProc>* decoders() {
-        static auto* decoders = new std::vector<DecoderProc> {
-            { SkEmptyTypeface::FactoryId, SkEmptyTypeface::MakeFromStream },
-            { SkCustomTypefaceBuilder::FactoryId, SkCustomTypefaceBuilder::MakeFromStream },
-#ifdef SK_TYPEFACE_FACTORY_CORETEXT
-            { SkTypeface_Mac::FactoryId, SkTypeface_Mac::MakeFromStream },
-#endif
-#ifdef SK_TYPEFACE_FACTORY_DIRECTWRITE
-            { DWriteFontTypeface::FactoryId, DWriteFontTypeface::MakeFromStream },
-#endif
-#ifdef SK_TYPEFACE_FACTORY_FREETYPE
-            { SkTypeface_FreeType::FactoryId, SkTypeface_FreeType::MakeFromStream },
-#endif
-        };
-        return decoders;
-    }
-
-}  // namespace
-
 sk_sp<SkTypeface> SkTypeface::MakeFromName(const char name[],
                                            SkFontStyle fontStyle) {
+    if (gCreateTypefaceDelegate) {
+        sk_sp<SkTypeface> result = (*gCreateTypefaceDelegate)(name, fontStyle);
+        if (result) {
+            return result;
+        }
+    }
     if (nullptr == name && (fontStyle.slant() == SkFontStyle::kItalic_Slant ||
                             fontStyle.slant() == SkFontStyle::kUpright_Slant) &&
                            (fontStyle.weight() == SkFontStyle::kBold_Weight ||
                             fontStyle.weight() == SkFontStyle::kNormal_Weight)) {
-        return sk_ref_sp(GetDefaultTypeface(static_cast<SkTypeface::Style>(
+        return MakeDefault(static_cast<SkTypeface::Style>(
             (fontStyle.slant() == SkFontStyle::kItalic_Slant ? SkTypeface::kItalic :
                                                                SkTypeface::kNormal) |
             (fontStyle.weight() == SkFontStyle::kBold_Weight ? SkTypeface::kBold :
-                                                               SkTypeface::kNormal))));
+                                                               SkTypeface::kNormal)));
     }
-    return SkFontMgr::RefDefault()->legacyMakeTypeface(name, fontStyle);
+    sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
+    return sk_sp<SkTypeface>(fm->legacyCreateTypeface(name, fontStyle));
 }
 
-sk_sp<SkTypeface> SkTypeface::MakeFromStream(std::unique_ptr<SkStreamAsset> stream, int index) {
-    if (!stream) {
-        return nullptr;
+sk_sp<SkTypeface> SkTypeface::MakeFromTypeface(SkTypeface* family, Style s) {
+    if (!family) {
+        return SkTypeface::MakeDefault(s);
     }
-    // TODO: Enable this while updating tests (FontHostStream), expectations, and nonativeFonts.
-#if 0
-    SkFontArguments args;
-    args.setCollectionIndex(index);
-    for (const DecoderProc& proc : *decoders()) {
-        sk_sp<SkTypeface> typeface = proc.makeFromStream(stream->duplicate(), args);
-        if (typeface) {
-            return typeface;
-        }
+
+    if (family->style() == s) {
+        return sk_ref_sp(family);
     }
-#endif
-    return SkFontMgr::RefDefault()->makeFromStream(std::move(stream), index);
+
+    sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
+    return sk_sp<SkTypeface>(fm->matchFaceStyle(family, SkFontStyle::FromOldStyle(s)));
 }
 
-sk_sp<SkTypeface> SkTypeface::MakeFromData(sk_sp<SkData> data, int index) {
-    if (!data) {
-        return nullptr;
-    }
-    return SkFontMgr::RefDefault()->makeFromData(std::move(data), index);
+sk_sp<SkTypeface> SkTypeface::MakeFromStream(SkStreamAsset* stream, int index) {
+    sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
+    return sk_sp<SkTypeface>(fm->createFromStream(stream, index));
+}
+
+sk_sp<SkTypeface> SkTypeface::MakeFromFontData(std::unique_ptr<SkFontData> data) {
+    sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
+    return sk_sp<SkTypeface>(fm->createFromFontData(std::move(data)));
 }
 
 sk_sp<SkTypeface> SkTypeface::MakeFromFile(const char path[], int index) {
-    return SkFontMgr::RefDefault()->makeFromFile(path, index);
-}
-
-sk_sp<SkTypeface> SkTypeface::makeClone(const SkFontArguments& args) const {
-    return this->onMakeClone(args);
+    sk_sp<SkFontMgr> fm(SkFontMgr::RefDefault());
+    return sk_sp<SkTypeface>(fm->createFromFile(path, index));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void SkTypeface::Register(
-            FactoryId id,
-            sk_sp<SkTypeface> (*make)(std::unique_ptr<SkStreamAsset>, const SkFontArguments&)) {
-    decoders()->push_back(DecoderProc{id, make});
-}
-
-void SkTypeface::serialize(SkWStream* wstream, SerializeBehavior behavior) const {
-    bool isLocalData = false;
+void SkTypeface::serialize(SkWStream* wstream) const {
+    if (gSerializeTypefaceDelegate) {
+        (*gSerializeTypefaceDelegate)(this, wstream);
+        return;
+    }
+    bool isLocal = false;
     SkFontDescriptor desc;
-    this->onGetFontDescriptor(&desc, &isLocalData);
-    if (desc.getFactoryId() == 0) {
-        SkDEBUGF("Factory was not set for %s.\n", desc.getFamilyName());
-    }
+    this->onGetFontDescriptor(&desc, &isLocal);
 
-    bool shouldSerializeData = false;
-    switch (behavior) {
-        case SerializeBehavior::kDoIncludeData:      shouldSerializeData = true;        break;
-        case SerializeBehavior::kDontIncludeData:    shouldSerializeData = false;       break;
-        case SerializeBehavior::kIncludeDataIfLocal: shouldSerializeData = isLocalData; break;
-    }
-
-    if (shouldSerializeData) {
-        int index;
-        desc.setStream(this->openStream(&index));
-        if (desc.hasStream()) {
-            desc.setCollectionIndex(index);
-        }
-
-        int numAxes = this->getVariationDesignPosition(nullptr, 0);
-        if (0 < numAxes) {
-            numAxes = this->getVariationDesignPosition(desc.setVariationCoordinates(numAxes), numAxes);
-            if (numAxes <= 0) {
-                desc.setVariationCoordinates(0);
-            }
-        }
+    // Embed font data if it's a local font.
+    if (isLocal && !desc.hasFontData()) {
+        desc.setFontData(this->onMakeFontData());
     }
     desc.serialize(wstream);
 }
 
-sk_sp<SkData> SkTypeface::serialize(SerializeBehavior behavior) const {
-    SkDynamicMemoryWStream stream;
-    this->serialize(&stream, behavior);
-    return stream.detachAsData();
-}
-
 sk_sp<SkTypeface> SkTypeface::MakeDeserialize(SkStream* stream) {
+    if (gDeserializeTypefaceDelegate) {
+        return (*gDeserializeTypefaceDelegate)(stream);
+    }
+
     SkFontDescriptor desc;
     if (!SkFontDescriptor::Deserialize(stream, &desc)) {
         return nullptr;
     }
 
-    if (desc.hasStream()) {
-        for (const DecoderProc& proc : *decoders()) {
-            if (proc.id == desc.getFactoryId()) {
-                return proc.makeFromStream(desc.detachStream(), desc.getFontArguments());
-            }
-        }
-
-        SkDEBUGCODE(FactoryId id = desc.getFactoryId();)
-        SkDEBUGF("Could not find factory %c%c%c%c for %s.\n",
-                 (id >> 24) & 0xFF, (id >> 16) & 0xFF, (id >> 8) & 0xFF, (id >> 0) & 0xFF,
-                 desc.getFamilyName());
-
-        sk_sp<SkFontMgr> defaultFm = SkFontMgr::RefDefault();
-        sk_sp<SkTypeface> typeface = defaultFm->makeFromStream(desc.detachStream(),
-                                                               desc.getFontArguments());
+    std::unique_ptr<SkFontData> data = desc.detachFontData();
+    if (data) {
+        sk_sp<SkTypeface> typeface(SkTypeface::MakeFromFontData(std::move(data)));
         if (typeface) {
             return typeface;
         }
@@ -308,22 +201,6 @@ sk_sp<SkTypeface> SkTypeface::MakeDeserialize(SkStream* stream) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-bool SkTypeface::glyphMaskNeedsCurrentColor() const {
-    return this->onGlyphMaskNeedsCurrentColor();
-}
-
-int SkTypeface::getVariationDesignPosition(
-        SkFontArguments::VariationPosition::Coordinate coordinates[], int coordinateCount) const
-{
-    return this->onGetVariationDesignPosition(coordinates, coordinateCount);
-}
-
-int SkTypeface::getVariationDesignParameters(
-        SkFontParameters::Variation::Axis parameters[], int parameterCount) const
-{
-    return this->onGetVariationDesignParameters(parameters, parameterCount);
-}
 
 int SkTypeface::countTables() const {
     return this->onGetTableTags(nullptr);
@@ -342,21 +219,7 @@ size_t SkTypeface::getTableData(SkFontTableTag tag, size_t offset, size_t length
     return this->onGetTableData(tag, offset, length, data);
 }
 
-sk_sp<SkData> SkTypeface::copyTableData(SkFontTableTag tag) const {
-    return this->onCopyTableData(tag);
-}
-
-sk_sp<SkData> SkTypeface::onCopyTableData(SkFontTableTag tag) const {
-    size_t size = this->getTableSize(tag);
-    if (size) {
-        sk_sp<SkData> data = SkData::MakeUninitialized(size);
-        (void)this->getTableData(tag, 0, size, data->writable_data());
-        return data;
-    }
-    return nullptr;
-}
-
-std::unique_ptr<SkStreamAsset> SkTypeface::openStream(int* ttcIndex) const {
+SkStreamAsset* SkTypeface::openStream(int* ttcIndex) const {
     int ttcIndexStorage;
     if (nullptr == ttcIndex) {
         // So our subclasses don't need to check for null param
@@ -365,95 +228,29 @@ std::unique_ptr<SkStreamAsset> SkTypeface::openStream(int* ttcIndex) const {
     return this->onOpenStream(ttcIndex);
 }
 
-std::unique_ptr<SkStreamAsset> SkTypeface::openExistingStream(int* ttcIndex) const {
-    int ttcIndexStorage;
-    if (nullptr == ttcIndex) {
-        // So our subclasses don't need to check for null param
-        ttcIndex = &ttcIndexStorage;
-    }
-    return this->onOpenExistingStream(ttcIndex);
+std::unique_ptr<SkFontData> SkTypeface::makeFontData() const {
+    return this->onMakeFontData();
 }
 
-std::unique_ptr<SkScalerContext> SkTypeface::createScalerContext(
-        const SkScalerContextEffects& effects, const SkDescriptor* desc) const {
-    std::unique_ptr<SkScalerContext> scalerContext = this->onCreateScalerContext(effects, desc);
-    SkASSERT(scalerContext);
-    return scalerContext;
-}
-
-void SkTypeface::unicharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID glyphs[]) const {
-    if (count > 0 && glyphs && uni) {
-        this->onCharsToGlyphs(uni, count, glyphs);
-    }
-}
-
-SkGlyphID SkTypeface::unicharToGlyph(SkUnichar uni) const {
-    SkGlyphID glyphs[1] = { 0 };
-    this->onCharsToGlyphs(&uni, 1, glyphs);
-    return glyphs[0];
-}
-
-namespace {
-class SkConvertToUTF32 {
-public:
-    SkConvertToUTF32() {}
-
-    const SkUnichar* convert(const void* text, size_t byteLength, SkTextEncoding encoding) {
-        const SkUnichar* uni;
-        switch (encoding) {
-            case SkTextEncoding::kUTF8: {
-                uni = fStorage.reset(byteLength);
-                const char* ptr = (const char*)text;
-                const char* end = ptr + byteLength;
-                for (int i = 0; ptr < end; ++i) {
-                    fStorage[i] = SkUTF::NextUTF8(&ptr, end);
-                }
-            } break;
-            case SkTextEncoding::kUTF16: {
-                uni = fStorage.reset(byteLength);
-                const uint16_t* ptr = (const uint16_t*)text;
-                const uint16_t* end = ptr + (byteLength >> 1);
-                for (int i = 0; ptr < end; ++i) {
-                    fStorage[i] = SkUTF::NextUTF16(&ptr, end);
-                }
-            } break;
-            case SkTextEncoding::kUTF32:
-                uni = (const SkUnichar*)text;
-                break;
-            default:
-                SK_ABORT("unexpected enum");
-        }
-        return uni;
-    }
-
-private:
-    AutoSTMalloc<256, SkUnichar> fStorage;
+// This implementation is temporary until this method can be made pure virtual.
+std::unique_ptr<SkFontData> SkTypeface::onMakeFontData() const {
+    int index;
+    std::unique_ptr<SkStreamAsset> stream(this->onOpenStream(&index));
+    return skstd::make_unique<SkFontData>(std::move(stream), index, nullptr, 0);
 };
-}
 
-int SkTypeface::textToGlyphs(const void* text, size_t byteLength, SkTextEncoding encoding,
-                             SkGlyphID glyphs[], int maxGlyphCount) const {
-    if (0 == byteLength) {
+int SkTypeface::charsToGlyphs(const void* chars, Encoding encoding,
+                              uint16_t glyphs[], int glyphCount) const {
+    if (glyphCount <= 0) {
         return 0;
     }
-
-    SkASSERT(text);
-
-    int count = SkFontPriv::CountTextElements(text, byteLength, encoding);
-    if (!glyphs || count > maxGlyphCount) {
-        return count;
+    if (nullptr == chars || (unsigned)encoding > kUTF32_Encoding) {
+        if (glyphs) {
+            sk_bzero(glyphs, glyphCount * sizeof(glyphs[0]));
+        }
+        return 0;
     }
-
-    if (encoding == SkTextEncoding::kGlyphID) {
-        memcpy(glyphs, text, count << 1);
-        return count;
-    }
-
-    SkConvertToUTF32 storage;
-    const SkUnichar* uni = storage.convert(text, byteLength, encoding);
-
-    this->unicharsToGlyphs(uni, count, glyphs);
-    return count;
+    return this->onCharsToGlyphs(chars, encoding, glyphs, glyphCount);
 }
 
 int SkTypeface::countGlyphs() const {
@@ -488,19 +285,12 @@ void SkTypeface::getFamilyName(SkString* name) const {
     this->onGetFamilyName(name);
 }
 
-bool SkTypeface::getPostScriptName(SkString* name) const {
-    return this->onGetPostScriptName(name);
-}
-
-void SkTypeface::getGlyphToUnicodeMap(SkUnichar* dst) const {
-    sk_bzero(dst, sizeof(SkUnichar) * this->countGlyphs());
-}
-
-std::unique_ptr<SkAdvancedTypefaceMetrics> SkTypeface::getAdvancedMetrics() const {
-    std::unique_ptr<SkAdvancedTypefaceMetrics> result = this->onGetAdvancedMetrics();
-    if (result && result->fPostScriptName.isEmpty()) {
-        result->fPostScriptName = result->fFontName;
-    }
+SkAdvancedTypefaceMetrics* SkTypeface::getAdvancedTypefaceMetrics(
+                                PerGlyphInfo info,
+                                const uint32_t* glyphIDs,
+                                uint32_t glyphIDsCount) const {
+    SkAdvancedTypefaceMetrics* result =
+            this->onGetAdvancedTypefaceMetrics(info, glyphIDs, glyphIDsCount);
     if (result && result->fType == SkAdvancedTypefaceMetrics::kTrueType_Font) {
         SkOTTableOS2::Version::V2::Type::Field fsType;
         constexpr SkFontTableTag os2Tag = SkTEndian_SwapBE32(SkOTTableOS2::TAG);
@@ -522,14 +312,10 @@ bool SkTypeface::onGetKerningPairAdjustments(const uint16_t glyphs[], int count,
     return false;
 }
 
-std::unique_ptr<SkStreamAsset> SkTypeface::onOpenExistingStream(int* ttcIndex) const {
-    return this->onOpenStream(ttcIndex);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
-#include "include/core/SkPaint.h"
-#include "src/core/SkDescriptor.h"
+#include "SkDescriptor.h"
+#include "SkPaint.h"
 
 SkRect SkTypeface::getBounds() const {
     fBoundsOnce([this] {
@@ -546,33 +332,28 @@ bool SkTypeface::onComputeBounds(SkRect* bounds) const {
     const SkScalar textSize = 2048;
     const SkScalar invTextSize = 1 / textSize;
 
-    SkFont font;
-    font.setTypeface(sk_ref_sp(const_cast<SkTypeface*>(this)));
-    font.setSize(textSize);
-    font.setLinearMetrics(true);
+    SkPaint paint;
+    paint.setTypeface(sk_ref_sp(const_cast<SkTypeface*>(this)));
+    paint.setTextSize(textSize);
+    paint.setLinearText(true);
 
-    SkScalerContextRec rec;
-    SkScalerContextEffects effects;
+    SkScalerContext::Rec rec;
+    SkScalerContext::MakeRec(paint, nullptr, nullptr, &rec);
 
-    SkScalerContext::MakeRecAndEffectsFromFont(font, &rec, &effects);
+    SkAutoDescriptor ad(sizeof(rec) + SkDescriptor::ComputeOverhead(1));
+    SkDescriptor*    desc = ad.getDesc();
+    desc->init();
+    desc->addEntry(kRec_SkDescriptorTag, sizeof(rec), &rec);
 
-    SkAutoDescriptor ad;
     SkScalerContextEffects noeffects;
-    SkScalerContext::AutoDescriptorGivenRecAndEffects(rec, noeffects, &ad);
-
-    std::unique_ptr<SkScalerContext> ctx = this->createScalerContext(noeffects, ad.getDesc());
-
-    SkFontMetrics fm;
-    ctx->getFontMetrics(&fm);
-    if (!fm.hasBounds()) {
+    std::unique_ptr<SkScalerContext> ctx = this->createScalerContext(noeffects, desc, true);
+    if (!ctx) {
         return false;
     }
-    bounds->setLTRB(fm.fXMin * invTextSize, fm.fTop * invTextSize,
-                    fm.fXMax * invTextSize, fm.fBottom * invTextSize);
-    return true;
-}
 
-std::unique_ptr<SkAdvancedTypefaceMetrics> SkTypeface::onGetAdvancedMetrics() const {
-    SkDEBUGFAIL("Typefaces that need to work with PDF backend must override this.");
-    return nullptr;
+    SkPaint::FontMetrics fm;
+    ctx->getFontMetrics(&fm);
+    bounds->set(fm.fXMin * invTextSize, fm.fTop * invTextSize,
+                fm.fXMax * invTextSize, fm.fBottom * invTextSize);
+    return true;
 }

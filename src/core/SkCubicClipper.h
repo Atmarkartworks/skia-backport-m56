@@ -9,11 +9,8 @@
 #ifndef SkCubicClipper_DEFINED
 #define SkCubicClipper_DEFINED
 
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-
-struct SkPoint;
+#include "SkPoint.h"
+#include "SkRect.h"
 
 /** This class is initialized with a clip rectangle, and then can be fed cubics,
     which must already be monotonic in Y.

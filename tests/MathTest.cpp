@@ -5,32 +5,23 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPoint.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkFixed.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkFloatingPoint.h"
-#include "include/private/base/SkMath.h"
-#include "include/private/base/SkTPin.h"
-#include "src/base/SkHalf.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkEndian.h"
-#include "tests/Test.h"
+#include "float.h"
 
-#include <array>
-#include <cinttypes>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <limits>
+#include "SkColorPriv.h"
+#include "SkEndian.h"
+#include "SkFixed.h"
+#include "SkFloatBits.h"
+#include "SkFloatingPoint.h"
+#include "SkHalf.h"
+#include "SkMathPriv.h"
+#include "SkPoint.h"
+#include "SkRandom.h"
+#include "Test.h"
 
 static void test_clz(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 32 == SkCLZ(0));
     REPORTER_ASSERT(reporter, 31 == SkCLZ(1));
     REPORTER_ASSERT(reporter, 1 == SkCLZ(1 << 30));
-    REPORTER_ASSERT(reporter, 1 == SkCLZ((1 << 30) | (1 << 24) | 1));
     REPORTER_ASSERT(reporter, 0 == SkCLZ(~0U));
 
     SkRandom rand;
@@ -41,26 +32,7 @@ static void test_clz(skiatest::Reporter* reporter) {
         mask >>= (mask & 31);
         int intri = SkCLZ(mask);
         int porta = SkCLZ_portable(mask);
-        REPORTER_ASSERT(reporter, intri == porta, "mask:%d intri:%d porta:%d", mask, intri, porta);
-    }
-}
-
-static void test_ctz(skiatest::Reporter* reporter) {
-    REPORTER_ASSERT(reporter, 32 == SkCTZ(0));
-    REPORTER_ASSERT(reporter, 0 == SkCTZ(1));
-    REPORTER_ASSERT(reporter, 30 == SkCTZ(1 << 30));
-    REPORTER_ASSERT(reporter, 2 == SkCTZ((1 << 30) | (1 << 24) | (1 << 2)));
-    REPORTER_ASSERT(reporter, 0 == SkCTZ(~0U));
-
-    SkRandom rand;
-    for (int i = 0; i < 1000; ++i) {
-        uint32_t mask = rand.nextU();
-        // need to get some zeros for testing, but in some obscure way so the
-        // compiler won't "see" that, and work-around calling the functions.
-        mask >>= (mask & 31);
-        int intri = SkCTZ(mask);
-        int porta = SkCTZ_portable(mask);
-        REPORTER_ASSERT(reporter, intri == porta, "mask:%d intri:%d porta:%d", mask, intri, porta);
+        REPORTER_ASSERT(reporter, intri == porta);
     }
 }
 
@@ -94,13 +66,39 @@ static void test_floor(skiatest::Reporter* reporter) {
         0, 1, 1.1f, 1.01f, 1.001f, 1.0001f, 1.00001f, 1.000001f, 1.0000001f
     };
 
-    for (size_t i = 0; i < std::size(gVals); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(gVals); ++i) {
         test_floor_value(reporter, gVals[i]);
 //        test_floor_value(reporter, -gVals[i]);
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+// test that SkMul16ShiftRound and SkMulDiv255Round return the same result
+static void test_muldivround(skiatest::Reporter* reporter) {
+#if 0
+    // this "complete" test is too slow, so we test a random sampling of it
+
+    for (int a = 0; a <= 32767; ++a) {
+        for (int b = 0; b <= 32767; ++b) {
+            unsigned prod0 = SkMul16ShiftRound(a, b, 8);
+            unsigned prod1 = SkMulDiv255Round(a, b);
+            SkASSERT(prod0 == prod1);
+        }
+    }
+#endif
+
+    SkRandom rand;
+    for (int i = 0; i < 10000; ++i) {
+        unsigned a = rand.nextU() & 0x7FFF;
+        unsigned b = rand.nextU() & 0x7FFF;
+
+        unsigned prod0 = SkMul16ShiftRound(a, b, 8);
+        unsigned prod1 = SkMulDiv255Round(a, b);
+
+        REPORTER_ASSERT(reporter, prod0 == prod1);
+    }
+}
 
 static float float_blend(int src, int dst, float unit) {
     return dst + (src - dst) * unit;
@@ -139,7 +137,7 @@ static int (*blend_functions[])(int, int, int) = {
 static void test_blend31() {
     int failed = 0;
     int death = 0;
-    if ((false)) { // avoid bit rot, suppress warning
+    if (false) { // avoid bit rot, suppress warning
         failed = (*blend_functions[0])(0,0,0);
     }
     for (int src = 0; src <= 255; src++) {
@@ -170,6 +168,27 @@ static void test_blend31() {
     SkDebugf("---- failed %d death %d\n", failed, death);
 }
 
+static void test_blend(skiatest::Reporter* reporter) {
+    for (int src = 0; src <= 255; src++) {
+        for (int dst = 0; dst <= 255; dst++) {
+            for (int a = 0; a <= 255; a++) {
+                int r0 = SkAlphaBlend255(src, dst, a);
+                float f1 = float_blend(src, dst, a / 255.f);
+                int r1 = SkScalarRoundToInt(f1);
+
+                if (r0 != r1) {
+                    float diff = sk_float_abs(f1 - r1);
+                    diff = sk_float_abs(diff - 0.5f);
+                    if (diff > (1 / 255.f)) {
+                        ERRORF(reporter, "src:%d dst:%d a:%d "
+                               "result:%d float:%g\n", src, dst, a, r0, f1);
+                    }
+                }
+            }
+        }
+    }
+}
+
 static void check_length(skiatest::Reporter* reporter,
                          const SkPoint& p, SkScalar targetLen) {
     float x = SkScalarToFloat(p.fX);
@@ -181,9 +200,94 @@ static void check_length(skiatest::Reporter* reporter,
     REPORTER_ASSERT(reporter, len > 0.999f && len < 1.001f);
 }
 
+static float nextFloat(SkRandom& rand) {
+    SkFloatIntUnion data;
+    data.fSignBitInt = rand.nextU();
+    return data.fFloat;
+}
+
+/*  returns true if a == b as resulting from (int)x. Since it is undefined
+ what to do if the float exceeds 2^32-1, we check for that explicitly.
+ */
+static bool equal_float_native_skia(float x, int32_t ni, int32_t si) {
+    // When the float is out of integer range (NaN, above, below),
+    // the C cast is undefined, but Skia's methods should have clamped.
+    if (!(x == x)) {    // NaN
+        return si == SK_MaxS32 || si == SK_MinS32;
+    }
+    if (x > SK_MaxS32) {
+        return si == SK_MaxS32;
+    }
+    if (x < SK_MinS32) {
+        return si == SK_MinS32;
+    }
+    return si == ni;
+}
+
+static void assert_float_equal(skiatest::Reporter* reporter, const char op[],
+                               float x, int32_t ni, int32_t si) {
+    if (!equal_float_native_skia(x, ni, si)) {
+        ERRORF(reporter, "%s float %g bits %x native %x skia %x\n",
+               op, x, SkFloat2Bits(x), ni, si);
+    }
+}
+
+static void test_float_floor(skiatest::Reporter* reporter, float x) {
+    int ix = (int)floor(x);
+    int iix = SkFloatToIntFloor(x);
+    assert_float_equal(reporter, "floor", x, ix, iix);
+}
+
+static void test_float_round(skiatest::Reporter* reporter, float x) {
+    double xx = x + 0.5;    // need intermediate double to avoid temp loss
+    int ix = (int)floor(xx);
+    int iix = SkFloatToIntRound(x);
+    assert_float_equal(reporter, "round", x, ix, iix);
+}
+
+static void test_float_ceil(skiatest::Reporter* reporter, float x) {
+    int ix = (int)ceil(x);
+    int iix = SkFloatToIntCeil(x);
+    assert_float_equal(reporter, "ceil", x, ix, iix);
+}
+
+static void test_float_conversions(skiatest::Reporter* reporter, float x) {
+    test_float_floor(reporter, x);
+    test_float_round(reporter, x);
+    test_float_ceil(reporter, x);
+}
+
+static void unittest_fastfloat(skiatest::Reporter* reporter) {
+    SkRandom rand;
+    size_t i;
+
+    static const float gFloats[] = {
+        0.f/0.f, -0.f/0.f, 1.f/0.f, -1.f/0.f,
+        0.f, 1.f, 0.5f, 0.499999f, 0.5000001f, 1.f/3,
+        0.000000001f, 1000000000.f,     // doesn't overflow
+        0.0000000001f, 10000000000.f    // does overflow
+    };
+    for (i = 0; i < SK_ARRAY_COUNT(gFloats); i++) {
+        test_float_conversions(reporter, gFloats[i]);
+        test_float_conversions(reporter, -gFloats[i]);
+    }
+
+    for (int outer = 0; outer < 100; outer++) {
+        rand.setSeed(outer);
+        for (i = 0; i < 100000; i++) {
+            float x = nextFloat(rand);
+            test_float_conversions(reporter, x);
+        }
+    }
+}
+
+static float make_zero() {
+    return sk_float_sin(0);
+}
+
 static void unittest_isfinite(skiatest::Reporter* reporter) {
     float nan = sk_float_asin(2);
-    float inf = SK_ScalarInfinity;
+    float inf = 1.0f / make_zero();
     float big = 3.40282e+038f;
 
     REPORTER_ASSERT(reporter, !SkScalarIsNaN(inf));
@@ -208,7 +312,7 @@ static void unittest_half(skiatest::Reporter* reporter) {
         -0.f, -1.f, -0.5f, -0.499999f, -0.5000001f, -1.f/3
     };
 
-    for (size_t i = 0; i < std::size(gFloats); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(gFloats); ++i) {
         SkHalf h = SkFloatToHalf(gFloats[i]);
         float f = SkHalfToFloat(h);
         REPORTER_ASSERT(reporter, SkScalarNearlyEqual(f, gFloats[i]));
@@ -292,48 +396,6 @@ static void test_rsqrt(skiatest::Reporter* reporter, RSqrtFn rsqrt) {
     }
 }
 
-static void test_nextlog2(skiatest::Reporter* r) {
-    REPORTER_ASSERT(r, sk_float_nextlog2(-std::numeric_limits<float>::infinity()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-std::numeric_limits<float>::max()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-1000.0f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-0.1f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-std::numeric_limits<float>::min()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(-std::numeric_limits<float>::denorm_min()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(0.0f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::denorm_min()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::min()) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(0.1f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(1.0f) == 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(1.1f) == 1);
-    REPORTER_ASSERT(r, sk_float_nextlog2(2.0f) == 1);
-    REPORTER_ASSERT(r, sk_float_nextlog2(2.1f) == 2);
-    REPORTER_ASSERT(r, sk_float_nextlog2(3.0f) == 2);
-    REPORTER_ASSERT(r, sk_float_nextlog2(3.1f) == 2);
-    REPORTER_ASSERT(r, sk_float_nextlog2(4.0f) == 2);
-    REPORTER_ASSERT(r, sk_float_nextlog2(4.1f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(5.0f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(5.1f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(6.0f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(6.1f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(7.0f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(7.1f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(8.0f) == 3);
-    REPORTER_ASSERT(r, sk_float_nextlog2(8.1f) == 4);
-    REPORTER_ASSERT(r, sk_float_nextlog2(9.0f) == 4);
-    REPORTER_ASSERT(r, sk_float_nextlog2(9.1f) == 4);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::max()) == 128);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::infinity()) > 0);
-    REPORTER_ASSERT(r, sk_float_nextlog2(std::numeric_limits<float>::quiet_NaN()) >= 0);
-
-    for (int i = 0; i < 100; ++i) {
-        float pow2 = std::ldexp(1, i);
-        float epsilon = std::ldexp(SK_ScalarNearlyZero, i);
-        REPORTER_ASSERT(r, sk_float_nextlog2(pow2) == i);
-        REPORTER_ASSERT(r, sk_float_nextlog2(pow2 + epsilon) == i + 1);
-        REPORTER_ASSERT(r, sk_float_nextlog2(pow2 - epsilon) == i);
-    }
-}
-
 static void test_muldiv255(skiatest::Reporter* reporter) {
     for (int a = 0; a <= 255; a++) {
         for (int b = 0; b <= 255; b++) {
@@ -381,7 +443,7 @@ static void test_copysign(skiatest::Reporter* reporter) {
         -1, 1, 1,
         -1, -1, -1,
     };
-    for (size_t i = 0; i < std::size(gTriples); i += 3) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(gTriples); i += 3) {
         REPORTER_ASSERT(reporter,
                         SkCopySign32(gTriples[i], gTriples[i+1]) == gTriples[i+2]);
         float x = (float)gTriples[i];
@@ -403,118 +465,6 @@ static void test_copysign(skiatest::Reporter* reporter) {
         REPORTER_ASSERT(reporter, SkScalarCopySign(sx, -sx) == -sx);
         REPORTER_ASSERT(reporter, SkScalarCopySign(-sx, sx) == sx);
         REPORTER_ASSERT(reporter, SkScalarCopySign(-sx, -sx) == -sx);
-    }
-}
-
-static void huge_vector_normalize(skiatest::Reporter* reporter) {
-    // these values should fail (overflow/underflow) trying to normalize
-    const SkVector fail[] = {
-        { 0, 0 },
-        { SK_ScalarInfinity, 0 }, { 0, SK_ScalarInfinity },
-        { 0, SK_ScalarNaN }, { SK_ScalarNaN, 0 },
-    };
-    for (SkVector v : fail) {
-        SkVector v2 = v;
-        if (v2.setLength(1.0f)) {
-            REPORTER_ASSERT(reporter, !v.setLength(1.0f));
-        }
-    }
-}
-
-DEF_TEST(PopCount, reporter) {
-    {
-        uint32_t testVal = 0;
-        REPORTER_ASSERT(reporter, SkPopCount(testVal) == 0);
-    }
-
-    for (int i = 0; i < 32; ++i) {
-        uint32_t testVal = 0x1 << i;
-        REPORTER_ASSERT(reporter, SkPopCount(testVal) == 1);
-
-        testVal ^= 0xFFFFFFFF;
-        REPORTER_ASSERT(reporter, SkPopCount(testVal) == 31);
-    }
-
-    {
-        uint32_t testVal = 0xFFFFFFFF;
-        REPORTER_ASSERT(reporter, SkPopCount(testVal) == 32);
-    }
-
-    SkRandom rand;
-    for (int i = 0; i < 100; ++i) {
-        int expectedNumSetBits = 0;
-        uint32_t testVal = 0;
-
-        int numTries = rand.nextULessThan(33);
-        for (int j = 0; j < numTries; ++j) {
-            int bit = rand.nextRangeU(0, 31);
-
-            if (testVal & (0x1 << bit)) {
-                continue;
-            }
-
-            ++expectedNumSetBits;
-            testVal |= 0x1 << bit;
-        }
-
-        REPORTER_ASSERT(reporter, SkPopCount(testVal) == expectedNumSetBits);
-    }
-}
-
-DEF_TEST(NthSet, reporter) {
-    {
-        uint32_t testVal = 0x1;
-        uint32_t recreated = 0;
-        int result = SkNthSet(testVal, 0);
-        recreated |= (0x1 << result);
-        REPORTER_ASSERT(reporter, testVal == recreated);
-    }
-
-    {
-        uint32_t testVal = 0x80000000;
-        uint32_t recreated = 0;
-        int result = SkNthSet(testVal, 0);
-        recreated |= (0x1 << result);
-        REPORTER_ASSERT(reporter, testVal == recreated);
-    }
-
-    {
-        uint32_t testVal = 0x55555555;
-        uint32_t recreated = 0;
-        for (int i = 0; i < 16; ++i) {
-            int result = SkNthSet(testVal, i);
-            REPORTER_ASSERT(reporter, result == 2*i);
-            recreated |= (0x1 << result);
-        }
-        REPORTER_ASSERT(reporter, testVal == recreated);
-    }
-
-    SkRandom rand;
-    for (int i = 0; i < 100; ++i) {
-        int expectedNumSetBits = 0;
-        uint32_t testVal = 0;
-
-        int numTries = rand.nextULessThan(33);
-        for (int j = 0; j < numTries; ++j) {
-            int bit = rand.nextRangeU(0, 31);
-
-            if (testVal & (0x1 << bit)) {
-                continue;
-            }
-
-            ++expectedNumSetBits;
-            testVal |= 0x1 << bit;
-        }
-
-        REPORTER_ASSERT(reporter, SkPopCount(testVal) == expectedNumSetBits);
-        uint32_t recreated = 0;
-
-        for (int j = 0; j < expectedNumSetBits; ++j) {
-            int index = SkNthSet(testVal, j);
-            recreated |= (0x1 << index);
-        }
-
-        REPORTER_ASSERT(reporter, recreated == testVal);
     }
 }
 
@@ -551,6 +501,15 @@ DEF_TEST(Math, reporter) {
         REPORTER_ASSERT(reporter, SkScalarIsNaN(x));
     }
 
+    for (i = 0; i < 1000; i++) {
+        int value = rand.nextS16();
+        int max = rand.nextU16();
+
+        int clamp = SkClampMax(value, max);
+        int clamp2 = value < 0 ? 0 : (value > max ? max : value);
+        REPORTER_ASSERT(reporter, clamp == clamp2);
+    }
+
     for (i = 0; i < 10000; i++) {
         SkPoint p;
 
@@ -581,12 +540,11 @@ DEF_TEST(Math, reporter) {
         REPORTER_ASSERT(reporter, (SkFixedCeilToFixed(-SK_Fixed1 * 10) >> 1) == -SK_Fixed1 * 5);
     }
 
-    huge_vector_normalize(reporter);
+    unittest_fastfloat(reporter);
     unittest_isfinite(reporter);
     unittest_half(reporter);
     test_rsqrt(reporter, sk_float_rsqrt);
     test_rsqrt(reporter, sk_float_rsqrt_portable);
-    test_nextlog2(reporter);
 
     for (i = 0; i < 10000; i++) {
         SkFixed numer = rand.nextS();
@@ -604,19 +562,20 @@ DEF_TEST(Math, reporter) {
             check = SK_MinS32;
         }
         if (result != (int32_t)check) {
-            ERRORF(reporter, "\nFixed Divide: %8x / %8x -> %8x %8" PRIx64 "\n", numer, denom,
-                   result, check);
+            ERRORF(reporter, "\nFixed Divide: %8x / %8x -> %8x %8x\n", numer, denom, result, check);
         }
         REPORTER_ASSERT(reporter, result == (int32_t)check);
     }
 
-    if ((false)) test_floor(reporter);
+    test_blend(reporter);
+
+    if (false) test_floor(reporter);
 
     // disable for now
-    if ((false)) test_blend31();  // avoid bit rot, suppress warning
+    if (false) test_blend31();  // avoid bit rot, suppress warning
 
+    test_muldivround(reporter);
     test_clz(reporter);
-    test_ctz(reporter);
 }
 
 template <typename T> struct PairRec {
@@ -645,20 +604,19 @@ DEF_TEST(TestEndian, reporter) {
     REPORTER_ASSERT(reporter, 0x11223344 == SkTEndianSwap32<0x44332211>::value);
     REPORTER_ASSERT(reporter, 0x1122334455667788ULL == SkTEndianSwap64<0x8877665544332211ULL>::value);
 
-    for (size_t i = 0; i < std::size(g16); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(g16); ++i) {
         REPORTER_ASSERT(reporter, g16[i].fYang == SkEndianSwap16(g16[i].fYin));
     }
-    for (size_t i = 0; i < std::size(g32); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(g32); ++i) {
         REPORTER_ASSERT(reporter, g32[i].fYang == SkEndianSwap32(g32[i].fYin));
     }
-    for (size_t i = 0; i < std::size(g64); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(g64); ++i) {
         REPORTER_ASSERT(reporter, g64[i].fYang == SkEndianSwap64(g64[i].fYin));
     }
 }
 
 template <typename T>
 static void test_divmod(skiatest::Reporter* r) {
-#if !defined(__MSVC_RUNTIME_CHECKS)
     const struct {
         T numer;
         T denom;
@@ -673,7 +631,7 @@ static void test_divmod(skiatest::Reporter* r) {
         {(T)-17, (T)-4},
     };
 
-    for (size_t i = 0; i < std::size(kEdgeCases); i++) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(kEdgeCases); i++) {
         const T numer = kEdgeCases[i].numer;
         const T denom = kEdgeCases[i].denom;
         T div, mod;
@@ -694,7 +652,6 @@ static void test_divmod(skiatest::Reporter* r) {
         REPORTER_ASSERT(r, numer/denom == div);
         REPORTER_ASSERT(r, numer%denom == mod);
     }
-#endif
 }
 
 DEF_TEST(divmod_u8, r) {
@@ -765,131 +722,4 @@ DEF_TEST(GrNextSizePow2, reporter) {
     test_nextsizepow2(reporter, test, test);
 
     test_nextsizepow2(reporter, SIZE_MAX, SIZE_MAX);
-}
-
-DEF_TEST(FloatSaturate32, reporter) {
-    const struct {
-        float   fFloat;
-        int     fExpectedInt;
-    } recs[] = {
-        { 0, 0 },
-        { 100.5f, 100 },
-        { (float)SK_MaxS32, SK_MaxS32FitsInFloat },
-        { (float)SK_MinS32, SK_MinS32FitsInFloat },
-        { SK_MaxS32 * 100.0f, SK_MaxS32FitsInFloat },
-        { SK_MinS32 * 100.0f, SK_MinS32FitsInFloat },
-        { SK_ScalarInfinity, SK_MaxS32FitsInFloat },
-        { SK_ScalarNegativeInfinity, SK_MinS32FitsInFloat },
-        { SK_ScalarNaN, SK_MaxS32FitsInFloat },
-    };
-
-    for (auto r : recs) {
-        int i = sk_float_saturate2int(r.fFloat);
-        REPORTER_ASSERT(reporter, r.fExpectedInt == i);
-
-        // Ensure that SkTPin bounds even non-finite values (including NaN)
-        SkScalar p = SkTPin<SkScalar>(r.fFloat, 0, 100);
-        REPORTER_ASSERT(reporter, p >= 0 && p <= 100);
-    }
-}
-
-DEF_TEST(FloatSaturate64, reporter) {
-    const struct {
-        float   fFloat;
-        int64_t fExpected64;
-    } recs[] = {
-        { 0, 0 },
-        { 100.5f, 100 },
-        { (float)SK_MaxS64, SK_MaxS64FitsInFloat },
-        { (float)SK_MinS64, SK_MinS64FitsInFloat },
-        { SK_MaxS64 * 100.0f, SK_MaxS64FitsInFloat },
-        { SK_MinS64 * 100.0f, SK_MinS64FitsInFloat },
-        { SK_ScalarInfinity, SK_MaxS64FitsInFloat },
-        { SK_ScalarNegativeInfinity, SK_MinS64FitsInFloat },
-        { SK_ScalarNaN, SK_MaxS64FitsInFloat },
-    };
-
-    for (auto r : recs) {
-        int64_t i = sk_float_saturate2int64(r.fFloat);
-        REPORTER_ASSERT(reporter, r.fExpected64 == i);
-    }
-}
-
-DEF_TEST(DoubleSaturate32, reporter) {
-    const struct {
-        double  fDouble;
-        int     fExpectedInt;
-    } recs[] = {
-        { 0, 0 },
-        { 100.5, 100 },
-        { SK_MaxS32, SK_MaxS32 },
-        { SK_MinS32, SK_MinS32 },
-        { SK_MaxS32 - 1, SK_MaxS32 - 1 },
-        { SK_MinS32 + 1, SK_MinS32 + 1 },
-        { SK_MaxS32 * 100.0, SK_MaxS32 },
-        { SK_MinS32 * 100.0, SK_MinS32 },
-        { SK_ScalarInfinity, SK_MaxS32 },
-        { SK_ScalarNegativeInfinity, SK_MinS32 },
-        { SK_ScalarNaN, SK_MaxS32 },
-    };
-
-    for (auto r : recs) {
-        int i = sk_double_saturate2int(r.fDouble);
-        REPORTER_ASSERT(reporter, r.fExpectedInt == i);
-    }
-}
-
-#if defined(__ARM_NEON)
-    #include <arm_neon.h>
-
-    DEF_TEST(NeonU16Div255, r) {
-
-        for (int v = 0; v <= 255*255; v++) {
-            int want = (v + 127)/255;
-
-            uint16x8_t V = vdupq_n_u16(v);
-            int got = vrshrq_n_u16(vrsraq_n_u16(V, V, 8), 8)[0];
-
-            if (got != want) {
-                SkDebugf("%d -> %d, want %d\n", v, got, want);
-            }
-            REPORTER_ASSERT(r, got == want);
-        }
-    }
-
-#endif
-
-DEF_TEST(unit_floats, r) {
-    // pick a non-trivial, non-pow-2 value, to test the loop
-    float v[13];
-    constexpr int N = std::size(v);
-
-    // empty array reports true
-    REPORTER_ASSERT(r, sk_floats_are_unit(v, 0));
-
-    SkRandom rand;
-    for (int outer = 0; outer < 1000; ++outer) {
-        // check some good values
-        for (int i = 0; i < N; ++i) {
-            v[i] = rand.nextUScalar1();
-        }
-        const int index = rand.nextU() % N;
-
-        REPORTER_ASSERT(r, sk_floats_are_unit(v, N));
-        v[index] = -0.f;
-        REPORTER_ASSERT(r, sk_floats_are_unit(v, N));
-        v[index] = 1.0f;
-        REPORTER_ASSERT(r, sk_floats_are_unit(v, N));
-
-        // check some bad values
-        const float non_norms[] = {
-            1.0000001f, 2, SK_ScalarInfinity, SK_ScalarNaN
-        };
-        for (float bad : non_norms) {
-            v[index] = bad;
-            REPORTER_ASSERT(r, !sk_floats_are_unit(v, N));
-            v[index] = -bad;
-            REPORTER_ASSERT(r, !sk_floats_are_unit(v, N));
-        }
-    }
 }

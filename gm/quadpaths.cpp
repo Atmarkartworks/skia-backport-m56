@@ -5,20 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "src/base/SkRandom.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRandom.h"
 
 namespace skiagm {
 
@@ -36,7 +27,7 @@ protected:
 
     void drawPath(SkPath& path,SkCanvas* canvas,SkColor color,
                   const SkRect& clip,SkPaint::Cap cap, SkPaint::Join join,
-                  SkPaint::Style style, SkPathFillType fill,
+                  SkPaint::Style style, SkPath::FillType fill,
                   SkScalar strokeWidth) {
         path.setFillType(fill);
         SkPaint paint;
@@ -53,14 +44,14 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         struct FillAndName {
-            SkPathFillType fFill;
+            SkPath::FillType fFill;
             const char*      fName;
         };
         constexpr FillAndName gFills[] = {
-            {SkPathFillType::kWinding, "Winding"},
-            {SkPathFillType::kEvenOdd, "Even / Odd"},
-            {SkPathFillType::kInverseWinding, "Inverse Winding"},
-            {SkPathFillType::kInverseEvenOdd, "Inverse Even / Odd"},
+            {SkPath::kWinding_FillType, "Winding"},
+            {SkPath::kEvenOdd_FillType, "Even / Odd"},
+            {SkPath::kInverseWinding_FillType, "Inverse Winding"},
+            {SkPath::kInverseEvenOdd_FillType, "Inverse Even / Odd"},
         };
         struct StyleAndName {
             SkPaint::Style fStyle;
@@ -92,34 +83,38 @@ protected:
         path.fName = "moveTo-quad";
 
         SkPaint titlePaint;
-        SkFont  font(ToolUtils::create_portable_typeface(), 15);
-        SkFont  labelFont(ToolUtils::create_portable_typeface(), 10);
-
+        titlePaint.setColor(SK_ColorBLACK);
+        titlePaint.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&titlePaint);
+        titlePaint.setTextSize(15 * SK_Scalar1);
         const char title[] = "Quad Drawn Into Rectangle Clips With "
                              "Indicated Style, Fill and Linecaps, with stroke width 10";
-        canvas->drawString(title, 20.0f, 20.0f, font, titlePaint);
+        canvas->drawText(title, strlen(title),
+                            20 * SK_Scalar1,
+                            20 * SK_Scalar1,
+                            titlePaint);
 
         SkRandom rand;
         SkRect rect = SkRect::MakeWH(100*SK_Scalar1, 30*SK_Scalar1);
         canvas->save();
         canvas->translate(10 * SK_Scalar1, 30 * SK_Scalar1);
         canvas->save();
-        for (size_t cap = 0; cap < std::size(gCaps); ++cap) {
+        for (size_t cap = 0; cap < SK_ARRAY_COUNT(gCaps); ++cap) {
             if (0 < cap) {
-                canvas->translate((rect.width() + 40 * SK_Scalar1) * std::size(gStyles), 0);
+                canvas->translate((rect.width() + 40 * SK_Scalar1) * SK_ARRAY_COUNT(gStyles), 0);
             }
             canvas->save();
-            for (size_t fill = 0; fill < std::size(gFills); ++fill) {
+            for (size_t fill = 0; fill < SK_ARRAY_COUNT(gFills); ++fill) {
                 if (0 < fill) {
                     canvas->translate(0, rect.height() + 40 * SK_Scalar1);
                 }
                 canvas->save();
-                for (size_t style = 0; style < std::size(gStyles); ++style) {
+                for (size_t style = 0; style < SK_ARRAY_COUNT(gStyles); ++style) {
                     if (0 < style) {
                         canvas->translate(rect.width() + 40 * SK_Scalar1, 0);
                     }
 
-                    SkColor color = ToolUtils::color_to_565(0xff007000);
+                    SkColor color = sk_tool_utils::color_to_565(0xff007000);
                     this->drawPath(path.fPath, canvas, color, rect,
                                     gCaps[cap].fCap, gCaps[cap].fJoin, gStyles[style].fStyle,
                                     gFills[fill].fFill, SK_Scalar1*10);
@@ -133,12 +128,21 @@ protected:
 
                     SkPaint labelPaint;
                     labelPaint.setColor(color);
-                    canvas->drawString(gStyles[style].fName, 0, rect.height() + 12.0f,
-                                       labelFont, labelPaint);
-                    canvas->drawString(gFills[fill].fName, 0, rect.height() + 24.0f,
-                                       labelFont, labelPaint);
-                    canvas->drawString(gCaps[cap].fName, 0, rect.height() + 36.0f,
-                                       labelFont, labelPaint);
+                    labelPaint.setAntiAlias(true);
+                    sk_tool_utils::set_portable_typeface(&labelPaint);
+                    labelPaint.setTextSize(10 * SK_Scalar1);
+                    canvas->drawText(gStyles[style].fName,
+                                        strlen(gStyles[style].fName),
+                                        0, rect.height() + 12 * SK_Scalar1,
+                                        labelPaint);
+                    canvas->drawText(gFills[fill].fName,
+                                        strlen(gFills[fill].fName),
+                                        0, rect.height() + 24 * SK_Scalar1,
+                                        labelPaint);
+                    canvas->drawText(gCaps[cap].fName,
+                                        strlen(gCaps[cap].fName),
+                                        0, rect.height() + 36 * SK_Scalar1,
+                                        labelPaint);
                 }
                 canvas->restore();
             }
@@ -149,7 +153,7 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 class QuadClosePathGM : public GM {
@@ -166,7 +170,7 @@ protected:
 
     void drawPath(SkPath& path,SkCanvas* canvas,SkColor color,
                   const SkRect& clip,SkPaint::Cap cap, SkPaint::Join join,
-                  SkPaint::Style style, SkPathFillType fill,
+                  SkPaint::Style style, SkPath::FillType fill,
                   SkScalar strokeWidth) {
         path.setFillType(fill);
         SkPaint paint;
@@ -183,14 +187,14 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         struct FillAndName {
-            SkPathFillType fFill;
+            SkPath::FillType fFill;
             const char*      fName;
         };
         constexpr FillAndName gFills[] = {
-            {SkPathFillType::kWinding, "Winding"},
-            {SkPathFillType::kEvenOdd, "Even / Odd"},
-            {SkPathFillType::kInverseWinding, "Inverse Winding"},
-            {SkPathFillType::kInverseEvenOdd, "Inverse Even / Odd"},
+            {SkPath::kWinding_FillType, "Winding"},
+            {SkPath::kEvenOdd_FillType, "Even / Odd"},
+            {SkPath::kInverseWinding_FillType, "Inverse Winding"},
+            {SkPath::kInverseEvenOdd_FillType, "Inverse Even / Odd"},
         };
         struct StyleAndName {
             SkPaint::Style fStyle;
@@ -223,33 +227,38 @@ protected:
         path.fName = "moveTo-quad-close";
 
         SkPaint titlePaint;
-        SkFont     font(ToolUtils::create_portable_typeface(), 15);
-        SkFont     labelFont(ToolUtils::create_portable_typeface(), 10);
+        titlePaint.setColor(SK_ColorBLACK);
+        titlePaint.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&titlePaint);
+        titlePaint.setTextSize(15 * SK_Scalar1);
         const char title[] = "Quad Closed Drawn Into Rectangle Clips With "
                              "Indicated Style, Fill and Linecaps, with stroke width 10";
-        canvas->drawString(title, 20.0f, 20.0f, font, titlePaint);
+        canvas->drawText(title, strlen(title),
+                            20 * SK_Scalar1,
+                            20 * SK_Scalar1,
+                            titlePaint);
 
         SkRandom rand;
         SkRect rect = SkRect::MakeWH(100*SK_Scalar1, 30*SK_Scalar1);
         canvas->save();
         canvas->translate(10 * SK_Scalar1, 30 * SK_Scalar1);
         canvas->save();
-        for (size_t cap = 0; cap < std::size(gCaps); ++cap) {
+        for (size_t cap = 0; cap < SK_ARRAY_COUNT(gCaps); ++cap) {
             if (0 < cap) {
-                canvas->translate((rect.width() + 40 * SK_Scalar1) * std::size(gStyles), 0);
+                canvas->translate((rect.width() + 40 * SK_Scalar1) * SK_ARRAY_COUNT(gStyles), 0);
             }
             canvas->save();
-            for (size_t fill = 0; fill < std::size(gFills); ++fill) {
+            for (size_t fill = 0; fill < SK_ARRAY_COUNT(gFills); ++fill) {
                 if (0 < fill) {
                     canvas->translate(0, rect.height() + 40 * SK_Scalar1);
                 }
                 canvas->save();
-                for (size_t style = 0; style < std::size(gStyles); ++style) {
+                for (size_t style = 0; style < SK_ARRAY_COUNT(gStyles); ++style) {
                     if (0 < style) {
                         canvas->translate(rect.width() + 40 * SK_Scalar1, 0);
                     }
 
-                    SkColor color = ToolUtils::color_to_565(0xff007000);
+                    SkColor color = sk_tool_utils::color_to_565(0xff007000);
                     this->drawPath(path.fPath, canvas, color, rect,
                                     gCaps[cap].fCap, gCaps[cap].fJoin, gStyles[style].fStyle,
                                     gFills[fill].fFill, SK_Scalar1*10);
@@ -263,12 +272,21 @@ protected:
 
                     SkPaint labelPaint;
                     labelPaint.setColor(color);
-                    canvas->drawString(gStyles[style].fName, 0, rect.height() + 12.0f,
-                                       labelFont, labelPaint);
-                    canvas->drawString(gFills[fill].fName, 0, rect.height() + 24.0f,
-                                       labelFont, labelPaint);
-                    canvas->drawString(gCaps[cap].fName, 0, rect.height() + 36.0f,
-                                       labelFont, labelPaint);
+                    labelPaint.setAntiAlias(true);
+                    sk_tool_utils::set_portable_typeface(&labelPaint);
+                    labelPaint.setTextSize(10 * SK_Scalar1);
+                    canvas->drawText(gStyles[style].fName,
+                                        strlen(gStyles[style].fName),
+                                        0, rect.height() + 12 * SK_Scalar1,
+                                        labelPaint);
+                    canvas->drawText(gFills[fill].fName,
+                                        strlen(gFills[fill].fName),
+                                        0, rect.height() + 24 * SK_Scalar1,
+                                        labelPaint);
+                    canvas->drawText(gCaps[cap].fName,
+                                        strlen(gCaps[cap].fName),
+                                        0, rect.height() + 36 * SK_Scalar1,
+                                        labelPaint);
                 }
                 canvas->restore();
             }
@@ -279,13 +297,15 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new QuadPathGM; )
+static GM* QuadPathFactory(void*) { return new QuadPathGM; }
+static GMRegistry regQuadPath(QuadPathFactory);
 
-DEF_GM( return new QuadClosePathGM; )
+static GM* QuadClosePathFactory(void*) { return new QuadClosePathGM; }
+static GMRegistry regQuadClosePath(QuadClosePathFactory);
 
-}  // namespace skiagm
+}

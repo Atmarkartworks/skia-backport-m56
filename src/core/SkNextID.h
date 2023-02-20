@@ -8,7 +8,7 @@
 #ifndef SkNextID_DEFINED
 #define SkNextID_DEFINED
 
-#include "include/core/SkTypes.h"
+#include "SkTypes.h"
 
 class SkNextID {
 public:

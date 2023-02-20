@@ -8,14 +8,12 @@
 #ifndef SkSharedLock_DEFINED
 #define SkSharedLock_DEFINED
 
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkMacros.h"
-#include "include/private/base/SkSemaphore.h"
-#include "include/private/base/SkThreadAnnotations.h"
-#include <atomic>
+#include "SkAtomics.h"
+#include "SkSemaphore.h"
+#include "SkTypes.h"
 
 #ifdef SK_DEBUG
-    #include "include/private/base/SkMutex.h"
+    #include "SkMutex.h"
     #include <memory>
 #endif  // SK_DEBUG
 
@@ -27,27 +25,27 @@
 //
 // This lock does not obey strict queue ordering. It will always alternate between readers and
 // a single writer.
-class SK_CAPABILITY("mutex") SkSharedMutex {
+class SkSharedMutex {
 public:
     SkSharedMutex();
     ~SkSharedMutex();
     // Acquire lock for exclusive use.
-    void acquire() SK_ACQUIRE();
+    void acquire();
 
     // Release lock for exclusive use.
-    void release() SK_RELEASE_CAPABILITY();
+    void release();
 
     // Fail if exclusive is not held.
-    void assertHeld() const SK_ASSERT_CAPABILITY(this);
+    void assertHeld() const;
 
     // Acquire lock for shared use.
-    void acquireShared() SK_ACQUIRE_SHARED();
+    void acquireShared();
 
     // Release lock for shared use.
-    void releaseShared() SK_RELEASE_SHARED_CAPABILITY();
+    void releaseShared();
 
     // Fail if shared lock not held.
-    void assertHeldShared() const SK_ASSERT_SHARED_CAPABILITY(this);
+    void assertHeldShared() const;
 
 private:
 #ifdef SK_DEBUG
@@ -60,43 +58,25 @@ private:
     SkSemaphore fSharedQueue[2];
     SkSemaphore fExclusiveQueue;
 #else
-    std::atomic<int32_t> fQueueCounts;
-    SkSemaphore          fSharedQueue;
-    SkSemaphore          fExclusiveQueue;
+    SkAtomic<int32_t> fQueueCounts;
+    SkSemaphore       fSharedQueue;
+    SkSemaphore       fExclusiveQueue;
 #endif  // SK_DEBUG
 };
 
 #ifndef SK_DEBUG
-inline void SkSharedMutex::assertHeld() const {}
-inline void SkSharedMutex::assertHeldShared() const {}
+inline void SkSharedMutex::assertHeld() const {};
+inline void SkSharedMutex::assertHeldShared() const {};
 #endif  // SK_DEBUG
 
-class SK_SCOPED_CAPABILITY SkAutoSharedMutexExclusive {
+class SkAutoSharedMutexShared {
 public:
-    explicit SkAutoSharedMutexExclusive(SkSharedMutex& lock) SK_ACQUIRE(lock)
-            : fLock(lock) {
-        lock.acquire();
-    }
-    ~SkAutoSharedMutexExclusive() SK_RELEASE_CAPABILITY() { fLock.release(); }
-
+    SkAutoSharedMutexShared(SkSharedMutex& lock) : fLock(lock) { lock.acquireShared(); }
+    ~SkAutoSharedMutexShared() { fLock.releaseShared(); }
 private:
     SkSharedMutex& fLock;
 };
 
-class SK_SCOPED_CAPABILITY SkAutoSharedMutexShared {
-public:
-    explicit SkAutoSharedMutexShared(SkSharedMutex& lock) SK_ACQUIRE_SHARED(lock)
-            : fLock(lock)  {
-        lock.acquireShared();
-    }
-
-    // You would think this should be SK_RELEASE_SHARED_CAPABILITY, but SK_SCOPED_CAPABILITY
-    // doesn't fully understand the difference between shared and exclusive.
-    // Please review https://reviews.llvm.org/D52578 for more information.
-    ~SkAutoSharedMutexShared() SK_RELEASE_CAPABILITY() { fLock.releaseShared(); }
-
-private:
-    SkSharedMutex& fLock;
-};
+#define SkAutoSharedMutexShared(...) SK_REQUIRE_LOCAL_VAR(SkAutoSharedMutexShared)
 
 #endif // SkSharedLock_DEFINED

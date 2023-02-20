@@ -20,59 +20,54 @@ BUILDER_NAME_SCHEMA = None
 BUILDER_NAME_SEP = None
 
 # Builder roles.
-BUILDER_ROLE_BAZELBUILD = 'BazelBuild'
-BUILDER_ROLE_BAZELTEST = 'BazelTest'
-BUILDER_ROLE_BUILD = 'Build'
-BUILDER_ROLE_BUILDSTATS = 'BuildStats'
 BUILDER_ROLE_CANARY = 'Canary'
-BUILDER_ROLE_CODESIZE = 'CodeSize'
+BUILDER_ROLE_BUILD = 'Build'
 BUILDER_ROLE_HOUSEKEEPER = 'Housekeeper'
 BUILDER_ROLE_INFRA = 'Infra'
 BUILDER_ROLE_PERF = 'Perf'
 BUILDER_ROLE_TEST = 'Test'
-BUILDER_ROLE_FM = 'FM'
-BUILDER_ROLE_UPLOAD = 'Upload'
-BUILDER_ROLES = (BUILDER_ROLE_BAZELBUILD,
-                 BUILDER_ROLE_BAZELTEST,
+BUILDER_ROLES = (BUILDER_ROLE_CANARY,
                  BUILDER_ROLE_BUILD,
-                 BUILDER_ROLE_BUILDSTATS,
-                 BUILDER_ROLE_CANARY,
-                 BUILDER_ROLE_CODESIZE,
                  BUILDER_ROLE_HOUSEKEEPER,
                  BUILDER_ROLE_INFRA,
                  BUILDER_ROLE_PERF,
-                 BUILDER_ROLE_TEST,
-                 BUILDER_ROLE_FM,
-                 BUILDER_ROLE_UPLOAD)
+                 BUILDER_ROLE_TEST)
+
+# Suffix which distinguishes trybots from normal bots.
+TRYBOT_NAME_SUFFIX = None
 
 
 def _LoadSchema():
   """ Load the builder naming schema from the JSON file. """
 
-  def ToStr(obj):
+  def _UnicodeToStr(obj):
     """ Convert all unicode strings in obj to Python strings. """
-    if isinstance(obj, str):
-      return obj  # pragma: nocover
+    if isinstance(obj, unicode):
+      return str(obj)
     elif isinstance(obj, dict):
-      return dict(map(ToStr, obj.items()))
+      return dict(map(_UnicodeToStr, obj.iteritems()))
     elif isinstance(obj, list):
-      return list(map(ToStr, obj))
+      return list(map(_UnicodeToStr, obj))
     elif isinstance(obj, tuple):
-      return tuple(map(ToStr, obj))
+      return tuple(map(_UnicodeToStr, obj))
     else:
-      return obj.decode('utf-8')
+      return obj  # pragma: no cover
 
   builder_name_json_filename = os.path.join(
       os.path.dirname(__file__), 'builder_name_schema.json')
   builder_name_schema_json = json.load(open(builder_name_json_filename))
 
   global BUILDER_NAME_SCHEMA
-  BUILDER_NAME_SCHEMA = ToStr(
+  BUILDER_NAME_SCHEMA = _UnicodeToStr(
       builder_name_schema_json['builder_name_schema'])
 
   global BUILDER_NAME_SEP
-  BUILDER_NAME_SEP = ToStr(
+  BUILDER_NAME_SEP = _UnicodeToStr(
       builder_name_schema_json['builder_name_sep'])
+
+  global TRYBOT_NAME_SUFFIX
+  TRYBOT_NAME_SUFFIX = _UnicodeToStr(
+      builder_name_schema_json['trybot_name_suffix'])
 
   # Since the builder roles are dictionary keys, just assert that the global
   # variables above account for all of them.
@@ -84,99 +79,89 @@ def _LoadSchema():
 _LoadSchema()
 
 
-def MakeBuilderName(**parts):
-  for v in parts.values():
-    if BUILDER_NAME_SEP in v:
-      raise ValueError('Parts cannot contain "%s"' % BUILDER_NAME_SEP)
+def MakeBuilderName(role, extra_config=None, is_trybot=False, **kwargs):
+  schema = BUILDER_NAME_SCHEMA.get(role)
+  if not schema:  # pragma: no cover
+    raise ValueError('%s is not a recognized role.' % role)
+  for k, v in kwargs.iteritems():
+    if BUILDER_NAME_SEP in v:  # pragma: no cover
+      raise ValueError('%s not allowed in %s.' % (BUILDER_NAME_SEP, v))
+    if not k in schema:  # pragma: no cover
+      raise ValueError('Schema does not contain "%s": %s' %(k, schema))
+  if extra_config and BUILDER_NAME_SEP in extra_config:  # pragma: no cover
+    raise ValueError('%s not allowed in %s.' % (BUILDER_NAME_SEP,
+                                                extra_config))
+  name_parts = [role]
+  name_parts.extend([kwargs[attribute] for attribute in schema])
+  if extra_config:
+    name_parts.append(extra_config)
+  if is_trybot:
+    name_parts.append(TRYBOT_NAME_SUFFIX)
+  return BUILDER_NAME_SEP.join(name_parts)
 
-  rv_parts = []
 
-  def process(depth, parts):
-    role_key = 'role'
-    if depth != 0:
-      role_key = 'sub-role-%d' % depth
-    role = parts.get(role_key)
-    if not role:
-      raise ValueError('Invalid parts; missing key %s' % role_key)
-    s = BUILDER_NAME_SCHEMA.get(role)
-    if not s:
-      raise ValueError('Invalid parts; unknown role %s' % role)
-    rv_parts.append(role)
-    del parts[role_key]
+def IsTrybot(builder_name):
+  """ Returns true if builder_name refers to a trybot (as opposed to a
+  waterfall bot). """
+  return builder_name.endswith(TRYBOT_NAME_SUFFIX)
 
-    for key in s.get('keys', []):
-      value = parts.get(key)
-      if not value:
-        raise ValueError('Invalid parts; missing %s' % key)
-      rv_parts.append(value)
-      del parts[key]
 
-    recurse_roles = s.get('recurse_roles', [])
-    if len(recurse_roles) > 0:
-      sub_role_key = 'sub-role-%d' % (depth+1)
-      sub_role = parts.get(sub_role_key)
-      if not sub_role:
-        raise ValueError('Invalid parts; missing %s' % sub_role_key)
+def GetWaterfallBot(builder_name):  # pragma: no cover
+  """Returns the name of the waterfall bot for this builder. If it is not a
+  trybot, builder_name is returned unchanged. If it is a trybot the name is
+  returned without the trybot suffix."""
+  if not IsTrybot(builder_name):
+    return builder_name
+  return _WithoutSuffix(builder_name, BUILDER_NAME_SEP + TRYBOT_NAME_SUFFIX)
 
-      found = False
-      for recurse_role in recurse_roles:
-        if recurse_role == sub_role:
-          found = True
-          parts = process(depth+1, parts)
-          break
-      if not found:
-        raise ValueError('Invalid parts; unknown sub-role %s' % sub_role)
 
-    for key in s.get('optional_keys', []):
-      if parts.get(key):
-        rv_parts.append(parts[key])
-        del parts[key]
+def TrybotName(builder_name):  # pragma: no cover
+  """Returns the name of the trybot clone of this builder.
 
-    if len(parts) > 0:
-      raise ValueError('Invalid parts; too many parts: %s' % parts)
+  If the given builder is a trybot, the name is returned unchanged. If not, the
+  TRYBOT_NAME_SUFFIX is appended.
+  """
+  if builder_name.endswith(TRYBOT_NAME_SUFFIX):
+    return builder_name
+  return builder_name + BUILDER_NAME_SEP + TRYBOT_NAME_SUFFIX
 
-    return parts
 
-  process(0, parts)
-
-  return BUILDER_NAME_SEP.join(rv_parts)
+def _WithoutSuffix(string, suffix):  # pragma: no cover
+  """ Returns a copy of string 'string', but with suffix 'suffix' removed.
+  Raises ValueError if string does not end with suffix. """
+  if not string.endswith(suffix):
+    raise ValueError('_WithoutSuffix: string %s does not end with suffix %s' % (
+        string, suffix))
+  return string[:-len(suffix)]
 
 
 def DictForBuilderName(builder_name):
   """Makes a dictionary containing details about the builder from its name."""
-  split = builder_name.split(BUILDER_NAME_SEP)
+  split_name = builder_name.split(BUILDER_NAME_SEP)
 
-  def pop_front(items):
+  def pop_front():
     try:
-      return items.pop(0), items
-    except:
-      raise ValueError(
-          'Invalid builder name: %s (not enough parts)' % builder_name)
-
-  result = {}
-
-  def _parse(depth, role, parts):
-    schema = BUILDER_NAME_SCHEMA.get(role)
-    if not schema:
+      return split_name.pop(0)
+    except:  # pragma: no cover
       raise ValueError('Invalid builder name: %s' % builder_name)
-    if depth == 0:
-      result['role'] = str(role)
-    else:
-      result['sub-role-%d' % depth] = str(role)
-    for key in schema.get('keys', []):
-      value, parts = pop_front(parts)
-      result[key] = str(value)
-    for sub_role in schema.get('recurse_roles', []):
-      if len(parts) > 0 and sub_role == parts[0]:
-        parts = _parse(depth+1, parts[0], parts[1:])
-    for key in schema.get('optional_keys', []):
-      if parts:
-        value, parts = pop_front(parts)
-        result[key] = str(value)
-    if parts:
+
+  result = {'is_trybot': False}
+
+  if split_name[-1] == TRYBOT_NAME_SUFFIX:
+    result['is_trybot'] = True
+    split_name.pop()
+
+  if split_name[0] in BUILDER_NAME_SCHEMA.keys():
+    key_list = BUILDER_NAME_SCHEMA[split_name[0]]
+    result['role'] = pop_front()
+    for key in key_list:
+      result[key] = pop_front()
+    if split_name:
+      result['extra_config'] = pop_front()
+    if split_name:  # pragma: no cover
       raise ValueError('Invalid builder name: %s' % builder_name)
-    return parts
-
-  _parse(0, split[0], split[1:])
-
+  else:  # pragma: no cover
+    raise ValueError('Invalid builder name: %s' % builder_name)
   return result
+
+

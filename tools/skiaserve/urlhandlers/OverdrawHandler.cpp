@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "tools/skiaserve/urlhandlers/UrlHandler.h"
+#include "UrlHandler.h"
 
 #include "microhttpd.h"
-#include "tools/skiaserve/Request.h"
-#include "tools/skiaserve/Response.h"
+#include "../Request.h"
+#include "../Response.h"
 
 using namespace Response;
 
@@ -25,7 +25,7 @@ int OverdrawHandler::handle(Request* request, MHD_Connection* connection,
     SkTArray<SkString> commands;
     SkStrSplit(url, "/", &commands);
 
-    if (commands.size() != 2) {
+    if (commands.count() != 2) {
         return MHD_NO;
     }
 

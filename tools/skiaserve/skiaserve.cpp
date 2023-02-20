@@ -5,15 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "tools/skiaserve/Request.h"
-#include "tools/skiaserve/Response.h"
+#include "Request.h"
+#include "Response.h"
 
-#include "include/core/SkGraphics.h"
-#include "tools/flags/CommandLineFlags.h"
-
-#include "tools/skiaserve/urlhandlers/UrlHandler.h"
+#include "SkCommandLineFlags.h"
+#include "SkGraphics.h"
 
 #include "microhttpd.h"
+
+#include "urlhandlers/UrlHandler.h"
 
 #include <errno.h>
 
@@ -24,9 +24,9 @@
 
 using namespace Response;
 
-static DEFINE_int(port, 8888, "The port to listen on.");
-static DEFINE_string(address, "127.0.0.1", "The address to bind to.");
-static DEFINE_bool(hosted, false, "Running in hosted mode on debugger.skia.org.");
+DEFINE_int32(port, 8888, "The port to listen on.");
+DEFINE_string(address, "127.0.0.1", "The address to bind to.");
+DEFINE_bool(hosted, false, "Running in hosted mode on debugger.skia.org.");
 
 class UrlManager {
 public:
@@ -42,20 +42,20 @@ public:
         fHandlers.push_back(new DownloadHandler);
         fHandlers.push_back(new DataHandler);
         fHandlers.push_back(new BreakHandler);
-        fHandlers.push_back(new OpsHandler);
-        fHandlers.push_back(new OpBoundsHandler);
+        fHandlers.push_back(new BatchesHandler);
+        fHandlers.push_back(new BatchBoundsHandler);
         fHandlers.push_back(new ColorModeHandler);
         fHandlers.push_back(new QuitHandler);
     }
 
     ~UrlManager() {
-        for (int i = 0; i < fHandlers.size(); i++) { delete fHandlers[i]; }
+        for (int i = 0; i < fHandlers.count(); i++) { delete fHandlers[i]; }
     }
 
     // This is clearly not efficient for a large number of urls and handlers
     int invoke(Request* request, MHD_Connection* connection, const char* url, const char* method,
                const char* upload_data, size_t* upload_data_size) const {
-        for (int i = 0; i < fHandlers.size(); i++) {
+        for (int i = 0; i < fHandlers.count(); i++) {
             if (fHandlers[i]->canHandle(method, url)) {
                 return fHandlers[i]->handle(request, connection, url, method, upload_data,
                                             upload_data_size);
@@ -110,7 +110,7 @@ int skiaserve_main() {
                               &answer_to_connection, &request,
                               MHD_OPTION_SOCK_ADDR, &address,
                               MHD_OPTION_END);
-    if (nullptr == daemon) {
+    if (NULL == daemon) {
         SkDebugf("Could not initialize daemon\n");
         return 1;
     }
@@ -133,7 +133,7 @@ int skiaserve_main() {
 
 #if !defined SK_BUILD_FOR_IOS
 int main(int argc, char** argv) {
-    CommandLineFlags::Parse(argc, argv);
+    SkCommandLineFlags::Parse(argc, argv);
     return skiaserve_main();
 }
 #endif

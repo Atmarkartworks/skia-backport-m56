@@ -5,35 +5,21 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
-#include "tools/Resources.h"
+#include "gm.h"
+#include "Resources.h"
+#include "SkCanvas.h"
+#include "SkString.h"
+#include "SkSurfaceProps.h"
+#include "SkTypeface.h"
+#include "SkTypes.h"
 
-#include <string.h>
-#include <utility>
-
-using namespace skia_private;
-
-static void getGlyphPositions(const SkFont& font, const uint16_t glyphs[],
+static void getGlyphPositions(const SkPaint& paint, const uint16_t glyphs[],
                              int count, SkScalar x, SkScalar y, SkPoint pos[]) {
-    AutoSTMalloc<128, SkScalar> widthStorage(count);
+    SkASSERT(SkPaint::kGlyphID_TextEncoding == paint.getTextEncoding());
+
+    SkAutoSTMalloc<128, SkScalar> widthStorage(count);
     SkScalar* widths = widthStorage.get();
-    font.getWidths(glyphs, count, widths);
+    paint.getTextWidths(glyphs, count * sizeof(uint16_t), widths);
 
     for (int i = 0; i < count; ++i) {
         pos[i].set(x, y);
@@ -42,8 +28,8 @@ static void getGlyphPositions(const SkFont& font, const uint16_t glyphs[],
 }
 
 static void applyKerning(SkPoint pos[], const int32_t adjustments[], int count,
-                         const SkFont& font) {
-    SkScalar scale = font.getSize() / font.getTypefaceOrDefault()->getUnitsPerEm();
+                         const SkPaint& paint) {
+    SkScalar scale = paint.getTextSize() / paint.getTypeface()->getUnitsPerEm();
 
     SkScalar globalAdj = 0;
     for (int i = 0; i < count - 1; ++i) {
@@ -53,57 +39,74 @@ static void applyKerning(SkPoint pos[], const int32_t adjustments[], int count,
 }
 
 static void drawKernText(SkCanvas* canvas, const void* text, size_t len,
-                         SkScalar x, SkScalar y, const SkFont& font, const SkPaint& paint) {
-    SkTypeface* face = font.getTypefaceOrDefault();
+                         SkScalar x, SkScalar y, const SkPaint& paint) {
+    SkTypeface* face = paint.getTypeface();
     if (!face) {
-        canvas->drawSimpleText(text, len, SkTextEncoding::kUTF8, x, y, font, paint);
+        canvas->drawText(text, len, x, y, paint);
         return;
     }
 
-    AutoSTMalloc<128, uint16_t> glyphStorage(len);
+    SkAutoSTMalloc<128, uint16_t> glyphStorage(len);
     uint16_t* glyphs = glyphStorage.get();
-    int glyphCount = font.textToGlyphs(text, len, SkTextEncoding::kUTF8, glyphs, len);
+    int glyphCount = paint.textToGlyphs(text, len, glyphs);
     if (glyphCount < 1) {
         return;
     }
 
-    AutoSTMalloc<128, int32_t> adjustmentStorage(glyphCount - 1);
+    SkAutoSTMalloc<128, int32_t> adjustmentStorage(glyphCount - 1);
     int32_t* adjustments = adjustmentStorage.get();
     if (!face->getKerningPairAdjustments(glyphs, glyphCount, adjustments)) {
-        canvas->drawSimpleText(text, len, SkTextEncoding::kUTF8, x, y, font, paint);
+        canvas->drawText(text, len, x, y, paint);
         return;
     }
 
+    SkPaint glyphPaint(paint);
+    glyphPaint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
-    SkTextBlobBuilder builder;
-    auto rec = builder.allocRunPos(font, glyphCount);
-    memcpy(rec.glyphs, glyphs, glyphCount * sizeof(SkGlyphID));
-    getGlyphPositions(font, glyphs, glyphCount, x, y, rec.points());
-    applyKerning(rec.points(), adjustments, glyphCount, font);
+    SkAutoSTMalloc<128, SkPoint> posStorage(glyphCount);
+    SkPoint* pos = posStorage.get();
+    getGlyphPositions(glyphPaint, glyphs, glyphCount, x, y, pos);
 
-    canvas->drawTextBlob(builder.make(), 0, 0, paint);
+    applyKerning(pos, adjustments, glyphCount, glyphPaint);
+    canvas->drawPosText(glyphs, glyphCount * sizeof(uint16_t), pos, glyphPaint);
 }
 
-static constexpr SkFontStyle gStyles[] = {
-    SkFontStyle::Normal(),
-    SkFontStyle::Bold(),
-    SkFontStyle::Italic(),
-    SkFontStyle::BoldItalic(),
+constexpr struct {
+    const char* fName;
+    SkTypeface::Style   fStyle;
+} gFaceStyles[] = {
+    { "sans-serif", SkTypeface::kNormal },
+    { "sans-serif", SkTypeface::kBold },
+    { "sans-serif", SkTypeface::kItalic },
+    { "sans-serif", SkTypeface::kBoldItalic },
+    { "serif", SkTypeface::kNormal },
+    { "serif", SkTypeface::kBold },
+    { "serif", SkTypeface::kItalic },
+    { "serif", SkTypeface::kBoldItalic },
+    { "monospace", SkTypeface::kNormal },
+    { "monospace", SkTypeface::kBold },
+    { "monospace", SkTypeface::kItalic },
+    { "monospace", SkTypeface::kBoldItalic },
 };
 
-constexpr int gStylesCount = std::size(gStyles);
+constexpr int gFaceStylesCount = SK_ARRAY_COUNT(gFaceStyles);
 
 class TypefaceStylesGM : public skiagm::GM {
-    sk_sp<SkTypeface> fFaces[gStylesCount];
+    sk_sp<SkTypeface> fFaces[gFaceStylesCount];
     bool fApplyKerning;
 
 public:
-    TypefaceStylesGM(bool applyKerning) : fApplyKerning(applyKerning) {}
+    TypefaceStylesGM(bool applyKerning)
+        : fApplyKerning(applyKerning) {
+        memset(fFaces, 0, sizeof(fFaces));
+    }
 
 protected:
     void onOnceBeforeDraw() override {
-        for (int i = 0; i < gStylesCount; i++) {
-            fFaces[i] = SkTypeface::MakeFromName(nullptr, gStyles[i]);
+        for (int i = 0; i < gFaceStylesCount; i++) {
+            fFaces[i] = SkTypeface::MakeFromName(
+                    sk_tool_utils::platform_font_name(
+                        gFaceStyles[i].fName), SkFontStyle::FromOldStyle(gFaceStyles[i].fStyle));
         }
     }
 
@@ -112,6 +115,7 @@ protected:
         if (fApplyKerning) {
             name.append("_kerning");
         }
+        name.append(sk_tool_utils::major_platform_os_name());
         return name;
     }
 
@@ -120,35 +124,34 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        SkFont font;
-        font.setSize(30);
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        paint.setTextSize(SkIntToScalar(30));
 
         const char* text = fApplyKerning ? "Type AWAY" : "Hamburgefons";
         const size_t textLen = strlen(text);
 
         SkScalar x = SkIntToScalar(10);
-        SkScalar dy = font.getMetrics(nullptr);
+        SkScalar dy = paint.getFontMetrics(nullptr);
         SkScalar y = dy;
 
         if (fApplyKerning) {
-            font.setSubpixel(true);
+            paint.setSubpixelText(true);
         } else {
-            font.setLinearMetrics(true);
+            paint.setLinearText(true);
         }
-
-        SkPaint paint;
-        for (int i = 0; i < gStylesCount; i++) {
-            font.setTypeface(fFaces[i]);
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, x, y, font, paint);
+        for (int i = 0; i < gFaceStylesCount; i++) {
+            paint.setTypeface(fFaces[i]);
+            canvas->drawText(text, textLen, x, y, paint);
             if (fApplyKerning) {
-                drawKernText(canvas, text, textLen, x + 240, y, font, paint);
+                drawKernText(canvas, text, textLen, x + 240, y, paint);
             }
             y += dy;
         }
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM( return new TypefaceStylesGM(false); )
@@ -156,104 +159,103 @@ DEF_GM( return new TypefaceStylesGM(true); )
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face, SkGlyphID glyph) {
-    struct AliasType {
-        SkFont::Edging edging;
-        bool inLayer;
-    } constexpr aliasTypes[] {
+static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
+                                       char character = 'A') {
+        struct AliasType {
+            bool antiAlias;
+            bool subpixelAntitalias;
+            bool inLayer;
+        } constexpr aliasTypes[] {
 #ifndef SK_BUILD_FOR_IOS
-        // This gm crashes on iOS when drawing an embedded bitmap when requesting aliased rendering.
-        // The crash looks like
-        //   libTrueTypeScaler.dylib`<redacted> + 80
-        //   stop reason = EXC_BAD_ACCESS (code=EXC_ARM_DA_ALIGN, address=...)
-        //   ->  0x330b19d0 <+80>: strd   r2, r3, [r5, #36]
-        //       0x330b19d4 <+84>: movs   r3, #0x0
-        //       0x330b19d6 <+86>: add    r2, sp, #0x28
-        //       0x330b19d8 <+88>: ldr    r0, [r4, #0x4]
-        // Disable testing embedded bitmaps on iOS for now.
-        // See https://bug.skia.org/5530 .
-        { SkFont::Edging::kAlias            , false },
+            // This gm crashes on iOS when drawing an embedded bitmap when requesting aliased rendering.
+            // The crash looks like
+            //   libTrueTypeScaler.dylib`<redacted> + 80
+            //   stop reason = EXC_BAD_ACCESS (code=EXC_ARM_DA_ALIGN, address=...)
+            //   ->  0x330b19d0 <+80>: strd   r2, r3, [r5, #36]
+            //       0x330b19d4 <+84>: movs   r3, #0x0
+            //       0x330b19d6 <+86>: add    r2, sp, #0x28
+            //       0x330b19d8 <+88>: ldr    r0, [r4, #0x4]
+            // Disable testing embedded bitmaps on iOS for now.
+            // See https://bug.skia.org/5530 .
+            { false, false, false },  // aliased
 #endif
-        { SkFont::Edging::kAntiAlias        , false },
-        { SkFont::Edging::kSubpixelAntiAlias, false },
-        { SkFont::Edging::kAntiAlias        , true  },
-        { SkFont::Edging::kSubpixelAntiAlias, true  },
-    };
+            { true,  false, false },  // anti-aliased
+            { true,  true , false },  // subpixel anti-aliased
+            { true,  false, true  },  // anti-aliased in layer (flat pixel geometry)
+            { true,  true , true  },  // subpixel anti-aliased in layer (flat pixel geometry)
+        };
 
-    // The hintgasp.ttf is designed for the following sizes to be different.
-    // GASP_DOGRAY                                      0x0002   0<=ppem<=10
-    // GASP_SYMMETRIC_SMOOTHING                         0x0008   0<=ppem<=10
-    // GASP_GRIDFIT                                     0x0001  11<=ppem<=12
-    // GASP_SYMMETRIC_GRIDFIT                           0x0004  11<=ppem<=12
-    // GASP_DOGRAY|GASP_GRIDFIT                         0x0003  13<=ppem<=14
-    // GASP_SYMMETRIC_SMOOTHING|GASP_SYMMETRIC_GRIDFIT  0x000C  13<=ppem<=14
-    // (neither)                                        0x0000  15<=ppem
-    // Odd sizes have embedded bitmaps.
-    constexpr SkScalar textSizes[] = { 9, 10, 11, 12, 13, 14, 15, 16 };
+        // The hintgasp.ttf is designed for the following sizes to be different.
+        // GASP_DOGRAY                                      0x0002   0<=ppem<=10
+        // GASP_SYMMETRIC_SMOOTHING                         0x0008   0<=ppem<=10
+        // GASP_GRIDFIT                                     0x0001  11<=ppem<=12
+        // GASP_SYMMETRIC_GRIDFIT                           0x0004  11<=ppem<=12
+        // GASP_DOGRAY|GASP_GRIDFIT                         0x0003  13<=ppem<=14
+        // GASP_SYMMETRIC_SMOOTHING|GASP_SYMMETRIC_GRIDFIT  0x000C  13<=ppem<=14
+        // (neither)                                        0x0000  15<=ppem
+        // Odd sizes have embedded bitmaps.
+        constexpr SkScalar textSizes[] = { 9, 10, 11, 12, 13, 14, 15, 16 };
 
-    constexpr SkFontHinting hintingTypes[] = {
-        SkFontHinting::kNone,
-        SkFontHinting::kSlight,
-        SkFontHinting::kNormal,
-        SkFontHinting::kFull
-    };
+        constexpr SkPaint::Hinting hintingTypes[] = { SkPaint::kNo_Hinting,
+                                                      SkPaint::kSlight_Hinting,
+                                                      SkPaint::kNormal_Hinting,
+                                                      SkPaint::kFull_Hinting };
 
-    struct SubpixelType {
-        bool requested;
-        SkVector offset;
-    } constexpr subpixelTypes[] = {
-        { false, { 0.00, 0.00 } },
-        { true , { 0.00, 0.00 } },
-        { true , { 0.25, 0.00 } },
-        { true , { 0.25, 0.25 } },
-    };
+        struct SubpixelType {
+            bool requested;
+            SkVector offset;
+        } constexpr subpixelTypes[] = {
+            { false, { 0.00, 0.00 } },
+            { true , { 0.00, 0.00 } },
+            { true , { 0.25, 0.00 } },
+            { true , { 0.25, 0.25 } },
+        };
 
-    constexpr bool rotateABitTypes[] = { false, true };
+        constexpr bool rotateABitTypes[] = { false, true };
 
-    SkScalar y = 0;  // The baseline of the previous output
-    {
         SkPaint paint;
-
-        SkFont font(face);
-        font.setEmbeddedBitmaps(true);
+        paint.setTypeface(face);
+        paint.setEmbeddedBitmapText(true);
 
         SkScalar x = 0;
         SkScalar xMax = x;
         SkScalar xBase = 0;
+        SkScalar y = 0;  // The baseline of the previous output
         for (const SubpixelType subpixel : subpixelTypes) {
             y = 0;
-            font.setSubpixel(subpixel.requested);
+            paint.setSubpixelText(subpixel.requested);
 
             for (const AliasType& alias : aliasTypes) {
-                font.setEdging(alias.edging);
-                SkAutoCanvasRestore acr1(canvas, false);
+                paint.setAntiAlias(alias.antiAlias);
+                paint.setLCDRenderText(alias.subpixelAntitalias);
+                SkAutoCanvasRestore acr(canvas, false);
                 if (alias.inLayer) {
                     canvas->saveLayer(nullptr, &paint);
                 }
 
                 for (const SkScalar& textSize : textSizes) {
                     x = xBase + 5;
-                    font.setSize(textSize);
+                    paint.setTextSize(textSize);
 
-                    SkScalar dy = SkScalarCeilToScalar(font.getMetrics(nullptr));
+                    SkScalar dy = SkScalarCeilToScalar(paint.getFontMetrics(nullptr));
                     y += dy;
-                    for (const SkFontHinting& hinting : hintingTypes) {
-                        font.setHinting(hinting);
+                    for (const SkPaint::Hinting& hinting : hintingTypes) {
+                        paint.setHinting(hinting);
 
                         for (const bool& rotateABit : rotateABitTypes) {
-                            SkAutoCanvasRestore acr2(canvas, true);
+                            SkAutoCanvasRestore acr(canvas, true);
                             if (rotateABit) {
                                 canvas->rotate(2, x + subpixel.offset.x(),
                                                   y + subpixel.offset.y());
                             }
-                            canvas->drawSimpleText(&glyph, sizeof(glyph), SkTextEncoding::kGlyphID,
-                                                   x + subpixel.offset.x(),
-                                                   y + subpixel.offset.y(), font, paint);
+                            canvas->drawText(&character, 1,
+                                             x + subpixel.offset.x(),
+                                             y + subpixel.offset.y(), paint);
 
-                            SkScalar dx = SkScalarCeilToScalar(font.measureText(
-                                    &glyph, sizeof(glyph), SkTextEncoding::kGlyphID)) + 5;
+                            SkScalar dx = SkScalarCeilToScalar(
+                                    paint.measureText(&character, 1)) + 5;
                             x += dx;
-                            xMax = std::max(x, xMax);
+                            xMax = SkTMax(x, xMax);
                         }
                     }
                 }
@@ -261,195 +263,34 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
             }
             xBase = xMax;
         }
-    }
-
-    constexpr struct StyleTests {
-        SkPaint::Style style;
-        SkScalar strokeWidth;
-    } styleTypes[] = {
-        { SkPaint::kFill_Style, 0.0f},
-        { SkPaint::kStroke_Style, 0.0f},
-        { SkPaint::kStroke_Style, 0.5f},
-        { SkPaint::kStrokeAndFill_Style, 1.0f},
-    };
-
-    constexpr bool fakeBoldTypes[] = { false, true };
-
-    {
-        SkPaint paint;
-
-        SkFont font(face, 16);
-
-        SkScalar x = 0;
-        for (const bool& fakeBold : fakeBoldTypes) {
-            SkScalar dy = SkScalarCeilToScalar(font.getMetrics(nullptr));
-            y += dy;
-            x = 5;
-
-            font.setEmbolden(fakeBold);
-            for (const AliasType& alias : aliasTypes) {
-                font.setEdging(alias.edging);
-                SkAutoCanvasRestore acr(canvas, false);
-                if (alias.inLayer) {
-                    canvas->saveLayer(nullptr, &paint);
-                }
-                for (const StyleTests& style : styleTypes) {
-                    paint.setStyle(style.style);
-                    paint.setStrokeWidth(style.strokeWidth);
-                    canvas->drawSimpleText(&glyph, sizeof(glyph), SkTextEncoding::kGlyphID,
-                                           x, y, font, paint);
-
-                    SkScalar dx = SkScalarCeilToScalar(font.measureText(
-                            &glyph, sizeof(glyph), SkTextEncoding::kGlyphID)) + 5;
-                    x += dx;
-                }
-            }
-            y += 10;
-        }
-    }
-
-    constexpr struct MaskTests {
-        SkBlurStyle style;
-        SkScalar sigma;
-    } maskTypes[] = {
-        { SkBlurStyle::kNormal_SkBlurStyle, 0.0f},
-        { SkBlurStyle::kSolid_SkBlurStyle, 0.0f},
-        { SkBlurStyle::kOuter_SkBlurStyle, 0.0f},
-        { SkBlurStyle::kInner_SkBlurStyle, 0.0f},
-
-        { SkBlurStyle::kNormal_SkBlurStyle, 0.5f},
-        { SkBlurStyle::kSolid_SkBlurStyle, 0.5f},
-        { SkBlurStyle::kOuter_SkBlurStyle, 0.5f},
-        { SkBlurStyle::kInner_SkBlurStyle, 0.5f},
-
-        { SkBlurStyle::kNormal_SkBlurStyle, 2.0f},
-        { SkBlurStyle::kSolid_SkBlurStyle, 2.0f},
-        { SkBlurStyle::kOuter_SkBlurStyle, 2.0f},
-        { SkBlurStyle::kInner_SkBlurStyle, 2.0f},
-    };
-
-    {
-        SkPaint paint;
-
-        SkFont font(face, 16);
-
-        SkScalar x = 0;
-        {
-            for (const AliasType& alias : aliasTypes) {
-                SkScalar dy = SkScalarCeilToScalar(font.getMetrics(nullptr));
-                y += dy;
-                x = 5;
-
-                font.setEdging(alias.edging);
-                SkAutoCanvasRestore acr(canvas, false);
-                if (alias.inLayer) {
-                    canvas->saveLayer(nullptr, &paint);
-                }
-                for (const MaskTests& mask : maskTypes) {
-                    paint.setMaskFilter(SkMaskFilter::MakeBlur(mask.style, mask.sigma));
-                    canvas->drawSimpleText(&glyph, sizeof(glyph), SkTextEncoding::kGlyphID,
-                                           x, y, font, paint);
-
-                    SkScalar dx = SkScalarCeilToScalar(font.measureText(
-                            &glyph, sizeof(glyph), SkTextEncoding::kGlyphID)) + 5;
-                    x += dx;
-                }
-                paint.setMaskFilter(nullptr);
-            }
-            y += 10;
-        }
-    }
 }
 
-DEF_SIMPLE_GM_CAN_FAIL(typefacerendering, canvas, errMsg, 640, 840) {
-    sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/hintgasp.ttf");
-    if (!face) {
-        return skiagm::DrawResult::kSkip;
+DEF_SIMPLE_GM_BG_NAME(typefacerendering, canvas, 640, 680, SK_ColorWHITE,
+                      SkStringPrintf("typefacerendering%s",
+                                     sk_tool_utils::major_platform_os_name().c_str())) {
+    if (sk_sp<SkTypeface> face = MakeResourceAsTypeface("/fonts/hintgasp.ttf")) {
+        draw_typeface_rendering_gm(canvas, std::move(face));
     }
-    draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('A'));
-
-    // Should draw nothing and not do anything undefined.
-    draw_typeface_rendering_gm(canvas, face, 0xFFFF);
-    return skiagm::DrawResult::kOk;
 }
 
 // Type1 fonts don't currently work in Skia on Windows.
 #ifndef SK_BUILD_FOR_WIN
 
-DEF_SIMPLE_GM_CAN_FAIL(typefacerendering_pfa, canvas, errMsg, 640, 840) {
-    sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto2-Regular.pfa");
-    if (!face) {
-       return skiagm::DrawResult::kSkip;
+DEF_SIMPLE_GM_BG_NAME(typefacerendering_pfa, canvas, 640, 680, SK_ColorWHITE,
+                      SkStringPrintf("typefacerendering_pfa%s",
+                                     sk_tool_utils::major_platform_os_name().c_str())) {
+    if (sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto2-Regular.pfa")) {
+        // This subsetted typeface doesn't have the character 'A'.
+        draw_typeface_rendering_gm(canvas, std::move(face), 'O');
     }
-    draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('O'));
-    return skiagm::DrawResult::kOk;
 }
 
-DEF_SIMPLE_GM_CAN_FAIL(typefacerendering_pfb, canvas, errMsg, 640, 840) {
-    sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto2-Regular.pfb");
-    if (!face) {
-        return skiagm::DrawResult::kSkip;
+DEF_SIMPLE_GM_BG_NAME(typefacerendering_pfb, canvas, 640, 680, SK_ColorWHITE,
+                      SkStringPrintf("typefacerendering_pfb%s",
+                                     sk_tool_utils::major_platform_os_name().c_str())) {
+    if (sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto2-Regular.pfb")) {
+        draw_typeface_rendering_gm(canvas, std::move(face), 'O');
     }
-    draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('O'));
-    return skiagm::DrawResult::kOk;
 }
 
 #endif
-
-////////////////////////////////////////////////////////////////////////////////
-
-#include "include/effects/SkStrokeAndFillPathEffect.h"
-
-// Exercise different paint styles and embolden, and compare with strokeandfill patheffect
-DEF_SIMPLE_GM(typeface_styling, canvas, 710, 360) {
-    sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto-Regular.ttf");
-    SkFont font;
-    font.setTypeface(face);
-    font.setSize(100);
-    font.setEdging(SkFont::Edging::kAntiAlias);
-
-    uint16_t glyphs[1] = { font.unicharToGlyph('A') };
-    SkPoint pos[1] = { {0, 0} };
-
-    auto draw = [&](SkPaint::Style style, float width, sk_sp<SkPathEffect> pe) {
-        // Draws 3 rows:
-        //  1. normal
-        //  2. emboldened
-        //  3. normal(white) on top of emboldened (to show the delta)
-
-        SkPaint paint;
-        paint.setStyle(style);
-        paint.setStrokeWidth(width);
-        paint.setPathEffect(pe);
-
-        font.setEmbolden(true);
-        canvas->drawGlyphs(1, glyphs, pos, {20, 120*2}, font, paint);
-        canvas->drawGlyphs(1, glyphs, pos, {20, 120*3}, font, paint);
-
-        font.setEmbolden(false);
-        canvas->drawGlyphs(1, glyphs, pos, {20, 120*1}, font, paint);
-        paint.setColor(SK_ColorYELLOW);
-        canvas->drawGlyphs(1, glyphs, pos, {20, 120*3}, font, paint);
-    };
-
-    const struct {
-        SkPaint::Style  style;
-        float           width;
-        bool            usePE;
-    } recs[] = {
-        { SkPaint::kFill_Style,             0,  false },
-        { SkPaint::kStroke_Style,           0,  false },
-        { SkPaint::kStroke_Style,           3,  false },
-        { SkPaint::kStrokeAndFill_Style,    0,  false },
-        { SkPaint::kStrokeAndFill_Style,    3,  false },
-        { SkPaint::kStroke_Style,           0,  true },
-        { SkPaint::kStroke_Style,           3,  true },
-    };
-
-    canvas->translate(0, -20);
-    auto pe = SkStrokeAndFillPathEffect::Make();
-    for (auto r : recs) {
-        draw(r.style, r.width, r.usePE ? pe : nullptr);
-        canvas->translate(100, 0);
-    }
-}

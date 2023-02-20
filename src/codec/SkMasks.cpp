@@ -4,16 +4,17 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/codec/SkMasks.h"
 
-#include "src/codec/SkCodecPriv.h"
+#include "SkCodecPriv.h"
+#include "SkMasks.h"
+#include "SkTypes.h"
 
 /*
  *
  * Used to convert 1-7 bit color components into 8-bit color components
  *
  */
-static constexpr uint8_t n_bit_to_8_bit_lookup_table[] = {
+const static uint8_t n_bit_to_8_bit_lookup_table[] = {
     // 1 bit
     0, 255,
     // 2 bits
@@ -85,7 +86,7 @@ uint8_t SkMasks::getAlpha(uint32_t pixel) const {
  * Process an input mask to obtain the necessary information
  *
  */
-static SkMasks::MaskInfo process_mask(uint32_t mask) {
+const SkMasks::MaskInfo process_mask(uint32_t mask, uint32_t bpp) {
     // Determine properties of the mask
     uint32_t tempMask = mask;
     uint32_t shift = 0;
@@ -115,7 +116,9 @@ static SkMasks::MaskInfo process_mask(uint32_t mask) {
         }
     }
 
-    return { mask, shift, size };
+    // Save the calculated values
+    const SkMasks::MaskInfo info = { mask, shift, size };
+    return info;
 }
 
 /*
@@ -123,31 +126,36 @@ static SkMasks::MaskInfo process_mask(uint32_t mask) {
  * Create the masks object
  *
  */
-SkMasks* SkMasks::CreateMasks(InputMasks masks, int bytesPerPixel) {
-    SkASSERT(0 < bytesPerPixel && bytesPerPixel <= 4);
-
-    // Trim the input masks to match bytesPerPixel.
-    if (bytesPerPixel < 4) {
-        int bitsPerPixel = 8*bytesPerPixel;
-        masks.red   &= (1 << bitsPerPixel) - 1;
+SkMasks* SkMasks::CreateMasks(InputMasks masks, uint32_t bitsPerPixel) {
+    // Trim the input masks according to bitsPerPixel
+    if (bitsPerPixel < 32) {
+        masks.red &= (1 << bitsPerPixel) - 1;
         masks.green &= (1 << bitsPerPixel) - 1;
-        masks.blue  &= (1 << bitsPerPixel) - 1;
+        masks.blue &= (1 << bitsPerPixel) - 1;
         masks.alpha &= (1 << bitsPerPixel) - 1;
     }
 
-    // Check that masks do not overlap.
-    if (((masks.red   & masks.green) |
-         (masks.red   & masks.blue ) |
-         (masks.red   & masks.alpha) |
-         (masks.green & masks.blue ) |
-         (masks.green & masks.alpha) |
-         (masks.blue  & masks.alpha) ) != 0) {
+    // Check that masks do not overlap
+    if (((masks.red & masks.green) | (masks.red & masks.blue) |
+            (masks.red & masks.alpha) | (masks.green & masks.blue) |
+            (masks.green & masks.alpha) | (masks.blue & masks.alpha)) != 0) {
         return nullptr;
     }
 
-    return new SkMasks(process_mask(masks.red  ),
-                       process_mask(masks.green),
-                       process_mask(masks.blue ),
-                       process_mask(masks.alpha));
+    // Collect information about the masks
+    const MaskInfo red = process_mask(masks.red, bitsPerPixel);
+    const MaskInfo green = process_mask(masks.green, bitsPerPixel);
+    const MaskInfo blue = process_mask(masks.blue, bitsPerPixel);
+    const MaskInfo alpha = process_mask(masks.alpha, bitsPerPixel);
+
+    return new SkMasks(red, green, blue, alpha);
 }
 
+
+SkMasks::SkMasks(const MaskInfo& red, const MaskInfo& green,
+                 const MaskInfo& blue, const MaskInfo& alpha)
+    : fRed(red)
+    , fGreen(green)
+    , fBlue(blue)
+    , fAlpha(alpha)
+{}

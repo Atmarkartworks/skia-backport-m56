@@ -5,24 +5,21 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
+#include "Benchmark.h"
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkString.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/private/base/SkTemplates.h"
-
-using namespace skia_private;
+#include "SkCanvas.h"
+#include "SkShader.h"
+#include "SkGradientShader.h"
+#include "SkString.h"
+#include "SkColor.h"
+#include "SkPaint.h"
 
 class HardStopGradientBench_ScaleNumHardStops : public Benchmark {
 public:
     HardStopGradientBench_ScaleNumHardStops(int colorCount, int hardStopCount) {
         SkASSERT(hardStopCount <= colorCount/2);
 
-        fName.printf("hardstop_scale_num_hard_stops_%03d_colors_%03d_hard_stops",
+        fName.printf("hardstop_scale_num_hard_stops_%03d_colors_%03d_hard_stops", 
                      colorCount, hardStopCount);
 
         fColorCount    = colorCount;
@@ -40,7 +37,7 @@ public:
     void onPreDraw(SkCanvas* canvas) override {
         // Left to right
         SkPoint points[2] = {
-            SkPoint::Make(0,        kSize/2),
+            SkPoint::Make(0,        kSize/2), 
             SkPoint::Make(kSize-1,  kSize/2),
         };
 
@@ -53,14 +50,14 @@ public:
         };
 
         // Alternate between different choices
-        AutoTArray<SkColor> colors(fColorCount);
+        SkAutoTArray<SkColor> colors(fColorCount);
         for (int i = 0; i < fColorCount; i++) {
             colors[i] = color_choices[i % kNumColorChoices];
         }
 
         // Create requisite number of hard stops, and evenly
         // space positions after that
-        AutoTArray<SkScalar> positions(fColorCount);
+        SkAutoTArray<SkScalar> positions(fColorCount);
         int k = 0;
         for (int i = 0; i < fHardStopCount; i++) {
             float val = k/2.0f;
@@ -75,7 +72,7 @@ public:
                                                       colors.get(),
                                                       positions.get(),
                                                       fColorCount,
-                                                      SkTileMode::kClamp,
+                                                      SkShader::kClamp_TileMode,
                                                       0,
                                                       nullptr));
     }
@@ -97,7 +94,7 @@ private:
     int      fHardStopCount;
     SkPaint  fPaint;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 DEF_BENCH(return new HardStopGradientBench_ScaleNumHardStops(10, 1);)

@@ -5,18 +5,20 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkDrawable.h"
-#include <atomic>
+#include "SkAtomics.h"
+#include "SkCanvas.h"
+#include "SkDrawable.h"
 
 static int32_t next_generation_id() {
-    static std::atomic<int32_t> nextID{1};
+    static int32_t gCanvasDrawableGenerationID;
 
-    int32_t id;
+    // do a loop in case our global wraps around, as we never want to
+    // return a 0
+    int32_t genID;
     do {
-        id = nextID.fetch_add(1, std::memory_order_relaxed);
-    } while (id == 0);
-    return id;
+        genID = sk_atomic_inc(&gCanvasDrawableGenerationID) + 1;
+    } while (0 == genID);
+    return genID;
 }
 
 SkDrawable::SkDrawable() : fGenerationID(0) {}
@@ -37,13 +39,13 @@ void SkDrawable::draw(SkCanvas* canvas, const SkMatrix* matrix) {
     }
     this->onDraw(canvas);
 
-    if ((false)) {
+    if (false) {
         draw_bbox(canvas, this->getBounds());
     }
 }
 
 void SkDrawable::draw(SkCanvas* canvas, SkScalar x, SkScalar y) {
-    SkMatrix matrix = SkMatrix::Translate(x, y);
+    SkMatrix matrix = SkMatrix::MakeTrans(x, y);
     this->draw(canvas, &matrix);
 }
 
@@ -62,28 +64,21 @@ SkRect SkDrawable::getBounds() {
     return this->onGetBounds();
 }
 
-size_t SkDrawable::approximateBytesUsed() {
-    return this->onApproximateBytesUsed();
-}
-size_t SkDrawable::onApproximateBytesUsed() {
-    return 0;
-}
-
 void SkDrawable::notifyDrawingChanged() {
     fGenerationID = 0;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-#include "include/core/SkPictureRecorder.h"
+#include "SkPictureRecorder.h"
 
 SkPicture* SkDrawable::onNewPictureSnapshot() {
     SkPictureRecorder recorder;
 
     const SkRect bounds = this->getBounds();
-    SkCanvas* canvas = recorder.beginRecording(bounds);
+    SkCanvas* canvas = recorder.beginRecording(bounds, nullptr, 0);
     this->draw(canvas);
-    if ((false)) {
+    if (false) {
         draw_bbox(canvas, bounds);
     }
     return recorder.finishRecordingAsPicture().release();

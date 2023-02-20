@@ -5,15 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/base/SkTo.h"
-#include "src/core/SkAntiRun.h"
-#include "src/core/SkOpts.h"
+
+#include "SkAntiRun.h"
+#include "SkUtils.h"
 
 void SkAlphaRuns::reset(int width) {
     SkASSERT(width > 0);
 
 #ifdef SK_DEBUG
-    SkOpts::memset16((uint16_t*)fRuns, (uint16_t)(-42), width);
+    sk_memset16((uint16_t*)fRuns, (uint16_t)(-42), width);
 #endif
     fRuns[0] = SkToS16(width);
     fRuns[width] = 0;

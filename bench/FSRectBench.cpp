@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkRandom.h"
 
 /**
  * Draws full screen opaque rectangles. It is designed to test any optimizations in the GPU backend
@@ -28,10 +28,10 @@ protected:
             static const SkScalar kMaxOffset = 100 * SK_Scalar1;
             static const SkScalar kOffsetRange = kMaxOffset - kMinOffset;
             for (int i = 0; i < N; ++i) {
-                fRects[i].fLeft = -kMinOffset - rand.nextUScalar1() * kOffsetRange;
-                fRects[i].fTop = -kMinOffset - rand.nextUScalar1() * kOffsetRange;
-                fRects[i].fRight = W + kMinOffset + rand.nextUScalar1() * kOffsetRange;
-                fRects[i].fBottom = H + kMinOffset + rand.nextUScalar1() * kOffsetRange;
+                fRects[i].fLeft = -kMinOffset - SkScalarMul(rand.nextUScalar1(), kOffsetRange);
+                fRects[i].fTop = -kMinOffset - SkScalarMul(rand.nextUScalar1(), kOffsetRange);
+                fRects[i].fRight = W + kMinOffset + SkScalarMul(rand.nextUScalar1(), kOffsetRange);
+                fRects[i].fBottom = H + kMinOffset + SkScalarMul(rand.nextUScalar1(), kOffsetRange);
                 fColors[i] = rand.nextU() | 0xFF000000;
             }
             fInit = true;
@@ -56,7 +56,7 @@ private:
     SkColor fColors[N];
     bool fInit;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 DEF_BENCH(return new FSRectBench();)

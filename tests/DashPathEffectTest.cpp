@@ -5,25 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathEffect.h"
-#include "include/core/SkPathUtils.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkStrokeRec.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "src/core/SkPathEffectBase.h"
-#include "tests/Test.h"
+#include "Test.h"
 
-#include <array>
+#include "SkDashPathEffect.h"
+#include "SkWriteBuffer.h"
+#include "SkStrokeRec.h"
+#include "SkCanvas.h"
+#include "SkSurface.h"
 
 // crbug.com/348821 was rooted in SkDashPathEffect refusing to flatten and unflatten itself when
 // the effect is nonsense.  Here we test that it fails when passed nonsense parameters.
@@ -77,15 +65,15 @@ DEF_TEST(DashPathEffectTest_asPoints, r) {
     mats[2].setTranslate(10.0f, 10.0f);
 
     for (int i = 0; i < kNumMats; ++i) {
-        for (int j = 0; j < (int)std::size(testCases); ++j) {
+        for (int j = 0; j < (int)SK_ARRAY_COUNT(testCases); ++j) {
             for (int k = 0; k < 2; ++k) {  // exercise alternating endpoints
-                SkPathEffectBase::PointData results;
+                SkPathEffect::PointData results;
                 SkPath src;
 
                 src.moveTo(testCases[j].fPts[k]);
                 src.lineTo(testCases[j].fPts[(k+1)%2]);
 
-                bool actualResult = as_PEB(dash)->asPoints(&results, src, rec, mats[i], &cull);
+                bool actualResult = dash->asPoints(&results, src, rec, mats[i], &cull);
                 if (i < 2) {
                     REPORTER_ASSERT(r, actualResult == testCases[j].fExpectedResult);
                 } else {
@@ -111,7 +99,7 @@ DEF_TEST(DashPath_bug4871, r) {
     paint.setPathEffect(dash);
 
     SkPath fill;
-    skpathutils::FillPathWithPaint(path, paint, &fill);
+    paint.getFillPath(path, &fill);
 }
 
 // Verify that long lines with many dashes don't cause overflows/OOMs.
@@ -124,23 +112,6 @@ DEF_TEST(DashPathEffectTest_asPoints_limit, r) {
     // force the bounds to outset by a large amount
     p.setStrokeWidth(5.0e10f);
     const SkScalar intervals[] = { 1, 1 };
-    p.setPathEffect(SkDashPathEffect::Make(intervals, std::size(intervals), 0));
+    p.setPathEffect(SkDashPathEffect::Make(intervals, SK_ARRAY_COUNT(intervals), 0));
     canvas->drawLine(1, 1, 1, 5.0e10f, p);
-}
-
-// This used to cause SkDashImpl to walk off the end of the intervals array, due to underflow
-// trying to substract a smal value from a large one in floats.
-DEF_TEST(DashCrazy_crbug_875494, r) {
-    SkScalar vals[] = { 98, 94, 2888458849.f, 227, 0, 197 };
-    const int N = std::size(vals);
-
-    SkRect cull = SkRect::MakeXYWH(43,236,57,149);
-    SkPath path;
-    path.addRect(cull);
-
-    SkPath path2;
-    SkPaint paint;
-    paint.setStyle(SkPaint::kStroke_Style);
-    paint.setPathEffect(SkDashPathEffect::Make(vals, N, 222));
-    skpathutils::FillPathWithPaint(path, paint, &path2, &cull);
 }

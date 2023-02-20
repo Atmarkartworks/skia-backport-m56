@@ -5,10 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "fuzz/Fuzz.h"
-#include "include/core/SkString.h"
-#include "include/utils/SkParsePath.h"
-
+#include "Fuzz.h"
+#include "SkString.h"
+#include "SkParsePath.h"
 #include <stdlib.h>
 
 // Most of this is taken from random_parse_path.cpp and adapted to use the Fuzz
@@ -46,7 +45,7 @@ static void add_white(Fuzz* fuzz, SkString* atom) {
     fuzz->nextRange(&reps, 0, 2);
     for (uint8_t rep = 0; rep < reps; ++rep) {
         uint8_t index;
-        fuzz->nextRange(&index, 0, (int) std::size(gWhiteSpace) - 1);
+        fuzz->nextRange(&index, 0, (int) SK_ARRAY_COUNT(gWhiteSpace) - 1);
         if (gWhiteSpace[index]) {
             atom->append(&gWhiteSpace[index], 1);
         }
@@ -75,9 +74,9 @@ static void add_comma(Fuzz* fuzz, SkString* atom) {
 
 SkString MakeRandomParsePathPiece(Fuzz* fuzz) {
     SkString atom;
-    uint8_t legalIndex;
-    fuzz->nextRange(&legalIndex, 0, (int) std::size(gLegal) - 1);
-    const Legal& legal = gLegal[legalIndex];
+    uint8_t index;
+    fuzz->nextRange(&index, 0, (int) SK_ARRAY_COUNT(gLegal) - 1);
+    const Legal& legal = gLegal[index];
     gEasy ? atom.append("\n") : add_white(fuzz, &atom);
     bool b;
     fuzz->next(&b);

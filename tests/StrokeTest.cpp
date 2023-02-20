@@ -5,20 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathUtils.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkStrokeRec.h"
-#include "include/private/base/SkFloatBits.h"
-#include "src/core/SkPathPriv.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstddef>
-#include <cstdint>
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRect.h"
+#include "SkStroke.h"
+#include "SkStrokeRec.h"
+#include "Test.h"
 
 static bool equal(const SkRect& a, const SkRect& b) {
     return  SkScalarNearlyEqual(a.left(), b.left()) &&
@@ -47,13 +39,13 @@ static void test_strokecubic(skiatest::Reporter* reporter) {
     SkPath path, fillPath;
     path.moveTo(cubicVals[0]);
     path.cubicTo(cubicVals[1], cubicVals[2], cubicVals[3]);
-    skpathutils::FillPathWithPaint(path, paint, &fillPath);
+    paint.getFillPath(path, &fillPath);
     path.reset();
     path.moveTo(SkBits2Float(hexCubicVals[0]), SkBits2Float(hexCubicVals[1]));
     path.cubicTo(SkBits2Float(hexCubicVals[2]), SkBits2Float(hexCubicVals[3]),
             SkBits2Float(hexCubicVals[4]), SkBits2Float(hexCubicVals[5]),
             SkBits2Float(hexCubicVals[6]), SkBits2Float(hexCubicVals[7]));
-    skpathutils::FillPathWithPaint(path, paint, &fillPath);
+    paint.getFillPath(path, &fillPath);
 }
 
 static void test_strokerect(skiatest::Reporter* reporter) {
@@ -72,18 +64,18 @@ static void test_strokerect(skiatest::Reporter* reporter) {
         SkPaint::kMiter_Join, SkPaint::kRound_Join, SkPaint::kBevel_Join
     };
 
-    for (size_t i = 0; i < std::size(joins); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(joins); ++i) {
         paint.setStrokeJoin(joins[i]);
 
         SkPath path, fillPath;
         path.addRect(r);
-        skpathutils::FillPathWithPaint(path, paint, &fillPath);
+        paint.getFillPath(path, &fillPath);
 
         REPORTER_ASSERT(reporter, equal(outer, fillPath.getBounds()));
 
         bool isMiter = SkPaint::kMiter_Join == joins[i];
         SkRect nested[2];
-        REPORTER_ASSERT(reporter, SkPathPriv::IsNestedFillRects(fillPath, nested) == isMiter);
+        REPORTER_ASSERT(reporter, fillPath.isNestedFillRects(nested) == isMiter);
         if (isMiter) {
             SkRect inner(r);
             inner.inset(width/2, width/2);
@@ -155,7 +147,7 @@ static void test_strokerec_equality(skiatest::Reporter* reporter) {
         REPORTER_ASSERT(reporter, s1.hasEqualEffect(s2));
 
         s2.setStrokeParams(SkPaint::kButt_Cap, SkPaint::kRound_Join, 2.1f);
-        REPORTER_ASSERT(reporter, s1.hasEqualEffect(s2));  // Miter limit not relevant to butt caps.
+        REPORTER_ASSERT(reporter, !s1.hasEqualEffect(s2));
         s2.setStrokeParams(SkPaint::kButt_Cap, SkPaint::kBevel_Join, 2.9f);
         REPORTER_ASSERT(reporter, !s1.hasEqualEffect(s2));
         s2.setStrokeParams(SkPaint::kRound_Cap, SkPaint::kRound_Join, 2.9f);
@@ -168,27 +160,8 @@ static void test_strokerec_equality(skiatest::Reporter* reporter) {
     }
 }
 
-// From skbug.com/6491. The large stroke width can cause numerical instabilities.
-static void test_big_stroke(skiatest::Reporter* reporter) {
-    SkPaint paint;
-    paint.setStyle(SkPaint::kStrokeAndFill_Style);
-    paint.setStrokeWidth(1.49679073e+10f);
-
-    SkPath path;
-    path.moveTo(SkBits2Float(0x46380000), SkBits2Float(0xc6380000));  // 11776, -11776
-    path.lineTo(SkBits2Float(0x46a00000), SkBits2Float(0xc6a00000));  // 20480, -20480
-    path.lineTo(SkBits2Float(0x468c0000), SkBits2Float(0xc68c0000));  // 17920, -17920
-    path.lineTo(SkBits2Float(0x46100000), SkBits2Float(0xc6100000));  // 9216, -9216
-    path.lineTo(SkBits2Float(0x46380000), SkBits2Float(0xc6380000));  // 11776, -11776
-    path.close();
-
-    SkPath strokeAndFillPath;
-    skpathutils::FillPathWithPaint(path, paint, &strokeAndFillPath);
-}
-
 DEF_TEST(Stroke, reporter) {
     test_strokecubic(reporter);
     test_strokerect(reporter);
     test_strokerec_equality(reporter);
-    test_big_stroke(reporter);
 }

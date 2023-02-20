@@ -8,43 +8,14 @@
 #ifndef SkBlitMask_opts_DEFINED
 #define SkBlitMask_opts_DEFINED
 
-#include "include/private/base/SkFeatures.h"
-#include "src/core/Sk4px.h"
-
-#if defined(SK_ARM_HAS_NEON)
-    #include <arm_neon.h>
-#endif
+#include "Sk4px.h"
 
 namespace SK_OPTS_NS {
 
 #if defined(SK_ARM_HAS_NEON)
     // The Sk4px versions below will work fine with NEON, but we have had many indications
     // that it doesn't perform as well as this NEON-specific code.  TODO(mtklein): why?
-
-    #define NEON_A (SK_A32_SHIFT / 8)
-    #define NEON_R (SK_R32_SHIFT / 8)
-    #define NEON_G (SK_G32_SHIFT / 8)
-    #define NEON_B (SK_B32_SHIFT / 8)
-
-    static inline uint16x8_t SkAlpha255To256_neon8(uint8x8_t alpha) {
-        return vaddw_u8(vdupq_n_u16(1), alpha);
-    }
-
-    static inline uint8x8_t SkAlphaMul_neon8(uint8x8_t color, uint16x8_t scale) {
-        return vshrn_n_u16(vmovl_u8(color) * scale, 8);
-    }
-
-    static inline uint8x8x4_t SkAlphaMulQ_neon8(uint8x8x4_t color, uint16x8_t scale) {
-        uint8x8x4_t ret;
-
-        ret.val[0] = SkAlphaMul_neon8(color.val[0], scale);
-        ret.val[1] = SkAlphaMul_neon8(color.val[1], scale);
-        ret.val[2] = SkAlphaMul_neon8(color.val[2], scale);
-        ret.val[3] = SkAlphaMul_neon8(color.val[3], scale);
-
-        return ret;
-    }
-
+    #include "SkColor_opts_neon.h"
 
     template <bool isColor>
     static void D32_A8_Opaque_Color_neon(void* SK_RESTRICT dst, size_t dstRB,
@@ -55,8 +26,7 @@ namespace SK_OPTS_NS {
         const uint8_t* SK_RESTRICT mask = (const uint8_t*)maskPtr;
         uint8x8x4_t vpmc;
 
-        // Nine patch may set maskRB to 0 to blit the same row repeatedly.
-        ptrdiff_t mask_adjust = (ptrdiff_t)maskRB - width;
+        maskRB -= width;
         dstRB -= (width << 2);
 
         if (width >= 8) {
@@ -103,10 +73,10 @@ namespace SK_OPTS_NS {
                         + SkAlphaMulQ(*device, SkAlpha255To256(255 - aa));
                 }
                 device += 1;
-            }
+            };
 
             device = (uint32_t*)((char*)device + dstRB);
-            mask += mask_adjust;
+            mask += maskRB;
 
         } while (--height != 0);
     }
@@ -131,8 +101,7 @@ namespace SK_OPTS_NS {
         SkPMColor* SK_RESTRICT device = (SkPMColor*)dst;
         const uint8_t* SK_RESTRICT mask = (const uint8_t*)maskPtr;
 
-        // Nine patch may set maskRB to 0 to blit the same row repeatedly.
-        ptrdiff_t mask_adjust = (ptrdiff_t)maskRB - width;
+        maskRB -= width;
         dstRB -= (width << 2);
         do {
             int w = width;
@@ -155,9 +124,9 @@ namespace SK_OPTS_NS {
                 *device = (aa << SK_A32_SHIFT)
                             + SkAlphaMulQ(*device, SkAlpha255To256(255 - aa));
                 device += 1;
-            }
+            };
             device = (uint32_t*)((char*)device + dstRB);
-            mask += mask_adjust;
+            mask += maskRB;
         } while (--height != 0);
     }
 
@@ -210,8 +179,7 @@ namespace SK_OPTS_NS {
             //   ~~~>
             // a = 1*aa + d(1-1*aa) = aa + d(1-aa)
             // c = 0*aa + d(1-1*aa) =      d(1-aa)
-            return (aa & Sk4px(skvx::byte16{0,0,0,255, 0,0,0,255, 0,0,0,255, 0,0,0,255}))
-                 + d.approxMulDiv255(aa.inv());
+            return aa.zeroColors() + d.approxMulDiv255(aa.inv());
         };
         while (h --> 0) {
             Sk4px::MapDstAlpha(w, dst, mask, fn);
@@ -221,9 +189,9 @@ namespace SK_OPTS_NS {
     }
 #endif
 
-/*not static*/ inline void blit_mask_d32_a8(SkPMColor* dst, size_t dstRB,
-                                            const SkAlpha* mask, size_t maskRB,
-                                            SkColor color, int w, int h) {
+static void blit_mask_d32_a8(SkPMColor* dst, size_t dstRB,
+                             const SkAlpha* mask, size_t maskRB,
+                             SkColor color, int w, int h) {
     if (color == SK_ColorBLACK) {
         blit_mask_d32_a8_black(dst, dstRB, mask, maskRB, w, h);
     } else if (SkColorGetA(color) == 0xFF) {
@@ -233,6 +201,6 @@ namespace SK_OPTS_NS {
     }
 }
 
-}  // namespace SK_OPTS_NS
+}  // SK_OPTS_NS
 
 #endif//SkBlitMask_opts_DEFINED

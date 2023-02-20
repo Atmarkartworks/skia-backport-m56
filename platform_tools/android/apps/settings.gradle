@@ -1,6 +1,2 @@
+include ':canvasproof'
 include ':viewer'
-include ':skqp'
-include ':skottie'
-include ':skottie:skottielib'
-include ':JetSki'
-include ':jetskidemo'

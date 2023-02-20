@@ -7,35 +7,27 @@
 #ifndef PathOpsThreadedCommon_DEFINED
 #define PathOpsThreadedCommon_DEFINED
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkTypes.h"
-#include "include/pathops/SkPathOps.h"
-#include "include/private/base/SkTDArray.h"
-
-#include <string>
+#include "SkGraphics.h"
+#include "SkTDArray.h"
 
 #define PATH_STR_SIZE 512
 
 class PathOpsThreadedRunnable;
-enum class SkPathFillType;
 
 namespace skiatest {
 class Reporter;
-}  // namespace skiatest
+}
 
 struct PathOpsThreadState {
     unsigned char fA;
     unsigned char fB;
     unsigned char fC;
     unsigned char fD;
-    std::string fPathStr;
+    char* fPathStr;
     const char* fKey;
     char fSerialNo[256];
     skiatest::Reporter* fReporter;
     SkBitmap* fBitmap;
-
-    void outputProgress(const char* pathStr, SkPathFillType);
-    void outputProgress(const char* pathStr, SkPathOp);
 };
 
 class PathOpsThreadedTestRunner {
@@ -55,10 +47,10 @@ class PathOpsThreadedRunnable {
 public:
     PathOpsThreadedRunnable(void (*testFun)(PathOpsThreadState*), int a, int b, int c, int d,
             PathOpsThreadedTestRunner* runner) {
-        fState.fA = (a & 0xFF);
-        fState.fB = (b & 0xFF);
-        fState.fC = (c & 0xFF);
-        fState.fD = (d & 0xFF);
+        fState.fA = a;
+        fState.fB = b;
+        fState.fC = c;
+        fState.fD = d;
         fState.fReporter = runner->fReporter;
         fTestFun = testFun;
     }
@@ -83,6 +75,9 @@ public:
     void operator()() {
         SkBitmap bitmap;
         fState.fBitmap = &bitmap;
+        char pathStr[PATH_STR_SIZE];
+        fState.fPathStr = pathStr;
+        SkGraphics::SetTLSFontCacheLimit(1 * 1024 * 1024);
         (*fTestFun)(&fState);
     }
 

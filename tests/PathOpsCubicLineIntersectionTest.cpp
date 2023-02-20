@@ -4,20 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsDebug.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkReduceOrder.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstddef>
-#include <utility>
+#include "PathOpsTestCommon.h"
+#include "SkIntersections.h"
+#include "SkPathOpsCubic.h"
+#include "SkPathOpsLine.h"
+#include "SkReduceOrder.h"
+#include "Test.h"
 
 struct lineCubic {
     CubicPts cubic;
@@ -30,7 +22,7 @@ static lineCubic failLineCubicTests[] = {
             {{{40.625,-5.7890625}, {37.7109375,1.3515625}}}},
 };
 
-static const size_t failLineCubicTests_count = std::size(failLineCubicTests);
+static const size_t failLineCubicTests_count = SK_ARRAY_COUNT(failLineCubicTests);
 
 static void testFail(skiatest::Reporter* reporter, int iIndex) {
     const CubicPts& cuPts = failLineCubicTests[iIndex].cubic;
@@ -104,7 +96,7 @@ static lineCubic lineCubicTests[] = {
     {{{{0, 0}, {0, 1}, {0, 1}, {1, 1}}}, {{{0, 1}, {1, 0}}}},
 };
 
-static const size_t lineCubicTests_count = std::size(lineCubicTests);
+static const size_t lineCubicTests_count = SK_ARRAY_COUNT(lineCubicTests);
 
 static int doIntersect(SkIntersections& intersections, const SkDCubic& cubic, const SkDLine& line) {
     int result;
@@ -114,8 +106,7 @@ static int doIntersect(SkIntersections& intersections, const SkDCubic& cubic, co
         double bottom = line[1].fY;
         flipped = top > bottom;
         if (flipped) {
-            using std::swap;
-            swap(top, bottom);
+            SkTSwap<double>(top, bottom);
         }
         result = intersections.vertical(cubic, top, bottom, line[0].fX, flipped);
     } else if (line[0].fY == line[1].fY) {
@@ -123,8 +114,7 @@ static int doIntersect(SkIntersections& intersections, const SkDCubic& cubic, co
         double right = line[1].fX;
         flipped = left > right;
         if (flipped) {
-            using std::swap;
-            swap(left, right);
+            SkTSwap<double>(left, right);
         }
         result = intersections.horizontal(cubic, left, right, line[0].fY, flipped);
     } else {

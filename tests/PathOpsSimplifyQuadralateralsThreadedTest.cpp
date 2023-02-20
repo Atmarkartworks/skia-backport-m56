@@ -4,15 +4,9 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPath.h"
-#include "include/core/SkPathTypes.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTDArray.h"
-#include "tests/PathOpsExtendedTest.h"
-#include "tests/PathOpsThreadedCommon.h"
-#include "tests/Test.h"
+#include "PathOpsExtendedTest.h"
+#include "PathOpsThreadedCommon.h"
+#include "SkString.h"
 
 static int loopNo = 1;
 
@@ -42,6 +36,7 @@ static void testSimplifyQuadralateralsMain(PathOpsThreadState* data)
                     int hx = h & 0x03;
                     int hy = h >> 2;
                     SkPath path, out;
+                    path.setFillType(SkPath::kWinding_FillType);
                     path.moveTo(SkIntToScalar(ax), SkIntToScalar(ay));
                     path.lineTo(SkIntToScalar(bx), SkIntToScalar(by));
                     path.lineTo(SkIntToScalar(cx), SkIntToScalar(cy));
@@ -68,12 +63,12 @@ static void testSimplifyQuadralateralsMain(PathOpsThreadState* data)
                         pathStr.appendf("    path.close();\n");
                         pathStr.appendf("    testPathSimplify(reporter, path, filename);\n");
                         pathStr.appendf("}\n");
-                        state.outputProgress(pathStr.c_str(), SkPathFillType::kWinding);
+                        outputProgress(state.fPathStr, pathStr.c_str(), SkPath::kWinding_FillType);
                     }
                     testSimplify(path, false, out, state, pathStr.c_str());
-                    path.setFillType(SkPathFillType::kEvenOdd);
+                    path.setFillType(SkPath::kEvenOdd_FillType);
                     if (state.fReporter->verbose()) {
-                        state.outputProgress(pathStr.c_str(), SkPathFillType::kEvenOdd);
+                        outputProgress(state.fPathStr, pathStr.c_str(), SkPath::kEvenOdd_FillType);
                     }
                     testSimplify(path, true, out, state, pathStr.c_str());
                 }

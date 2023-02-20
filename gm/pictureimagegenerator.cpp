@@ -5,38 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageGenerator.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPicture.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/pathops/SkPathOps.h"
-#include "include/utils/SkTextUtils.h"
-#include "tools/ToolUtils.h"
-
-#include <string.h>
-#include <memory>
+#include "gm.h"
+#include "SkBitmap.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkImageGenerator.h"
+#include "SkPaint.h"
+#include "SkPathOps.h"
+#include "SkPicture.h"
+#include "SkPictureRecorder.h"
 
 static void draw_vector_logo(SkCanvas* canvas, const SkRect& viewBox) {
     constexpr char kSkiaStr[] = "SKIA";
@@ -46,29 +23,30 @@ static void draw_vector_logo(SkCanvas* canvas, const SkRect& viewBox) {
 
     SkPaint paint;
     paint.setAntiAlias(true);
-
-    SkFont font(ToolUtils::create_portable_typeface());
-    font.setSubpixel(true);
-    font.setEmbolden(true);
+    paint.setSubpixelText(true);
+    paint.setFakeBoldText(true);
+    sk_tool_utils::set_portable_typeface(&paint);
 
     SkPath path;
     SkRect iBox, skiBox, skiaBox;
-    SkTextUtils::GetPath("SKI", 3, SkTextEncoding::kUTF8, 0, 0, font, &path);
+    paint.getTextPath("SKI", 3, 0, 0, &path);
     TightBounds(path, &skiBox);
-    SkTextUtils::GetPath("I", 1, SkTextEncoding::kUTF8, 0, 0, font, &path);
+    paint.getTextPath("I", 1, 0, 0, &path);
     TightBounds(path, &iBox);
     iBox.offsetTo(skiBox.fRight - iBox.width(), iBox.fTop);
 
     const size_t textLen = strlen(kSkiaStr);
-    SkTextUtils::GetPath(kSkiaStr, textLen, SkTextEncoding::kUTF8, 0, 0, font, &path);
+    paint.getTextPath(kSkiaStr, textLen, 0, 0, &path);
     TightBounds(path, &skiaBox);
     skiaBox.outset(0, 2 * iBox.width() * (kVerticalSpacing + 1));
 
     const SkScalar accentSize = iBox.width() * kAccentScale;
     const SkScalar underlineY = iBox.bottom() +
         (kVerticalSpacing + SkScalarSqrt(3) / 2) * accentSize;
+    SkMatrix m;
+    m.setRectToRect(skiaBox, viewBox, SkMatrix::kFill_ScaleToFit);
     SkAutoCanvasRestore acr(canvas, true);
-    canvas->concat(SkMatrix::RectToRect(skiaBox, viewBox));
+    canvas->concat(m);
 
     canvas->drawCircle(iBox.centerX(),
                        iBox.y() - (0.5f + kVerticalSpacing) * accentSize,
@@ -89,9 +67,9 @@ static void draw_vector_logo(SkCanvas* canvas, const SkRect& viewBox) {
                              SkPoint::Make(iBox.centerX(), 0) };
     const SkScalar pos1[] = { 0, 0.75f };
     const SkColor colors1[] = { SK_ColorTRANSPARENT, SK_ColorBLACK };
-    SkASSERT(std::size(pos1) == std::size(colors1));
-    paint.setShader(SkGradientShader::MakeLinear(pts1, colors1, pos1, std::size(pos1),
-                                                 SkTileMode::kClamp));
+    SkASSERT(SK_ARRAY_COUNT(pos1) == SK_ARRAY_COUNT(colors1));
+    paint.setShader(SkGradientShader::MakeLinear(pts1, colors1, pos1, SK_ARRAY_COUNT(pos1),
+                                                 SkShader::kClamp_TileMode));
     canvas->drawRect(underlineRect, paint);
 
     const SkPoint pts2[] = { SkPoint::Make(iBox.x() - iBox.width() * kGradientPad, 0),
@@ -107,10 +85,10 @@ static void draw_vector_logo(SkCanvas* canvas, const SkRect& viewBox) {
         0xff5460a5,
         SK_ColorBLACK
     };
-    SkASSERT(std::size(pos2) == std::size(colors2));
-    paint.setShader(SkGradientShader::MakeLinear(pts2, colors2, pos2, std::size(pos2),
-                                                 SkTileMode::kClamp));
-    canvas->drawSimpleText(kSkiaStr, textLen, SkTextEncoding::kUTF8, 0, 0, font, paint);
+    SkASSERT(SK_ARRAY_COUNT(pos2) == SK_ARRAY_COUNT(colors2));
+    paint.setShader(SkGradientShader::MakeLinear(pts2, colors2, pos2, SK_ARRAY_COUNT(pos2),
+                                                 SkShader::kClamp_TileMode));
+    canvas->drawText(kSkiaStr, textLen, 0, 0, paint);
 }
 
 // This GM exercises SkPictureImageGenerator features
@@ -160,41 +138,35 @@ protected:
             { SkISize::Make(200, 100), -1, -1, 0.5f },
         };
 
-        auto srgbColorSpace = SkColorSpace::MakeSRGB();
         const unsigned kDrawsPerRow = 4;
         const SkScalar kDrawSize = 250;
 
-        for (size_t i = 0; i < std::size(configs); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(configs); ++i) {
             SkPaint p;
-            p.setAlphaf(configs[i].opacity);
+            p.setAlpha(SkScalarRoundToInt(255 * configs[i].opacity));
 
-            SkMatrix m = SkMatrix::Scale(configs[i].scaleX, configs[i].scaleY);
+            SkMatrix m = SkMatrix::MakeScale(configs[i].scaleX, configs[i].scaleY);
             if (configs[i].scaleX < 0) {
                 m.postTranslate(SkIntToScalar(configs[i].size.width()), 0);
             }
             if (configs[i].scaleY < 0) {
                 m.postTranslate(0, SkIntToScalar(configs[i].size.height()));
             }
-            std::unique_ptr<SkImageGenerator> gen =
-                SkImageGenerator::MakeFromPicture(configs[i].size, fPicture, &m,
-                                                 p.getAlpha() != 255 ? &p : nullptr,
-                                                 SkImage::BitDepth::kU8, srgbColorSpace);
-
-            SkImageInfo bmInfo = gen->getInfo().makeColorSpace(canvas->imageInfo().refColorSpace());
-
+            std::unique_ptr<SkImageGenerator> gen(
+                SkImageGenerator::NewFromPicture(configs[i].size, fPicture.get(), &m,
+                                                 p.getAlpha() != 255 ? &p : nullptr));
             SkBitmap bm;
-            bm.allocPixels(bmInfo);
-            SkAssertResult(gen->getPixels(bm.info(), bm.getPixels(), bm.rowBytes()));
+            gen->generateBitmap(&bm);
 
             const SkScalar x = kDrawSize * (i % kDrawsPerRow);
             const SkScalar y = kDrawSize * (i / kDrawsPerRow);
 
             p.setColor(0xfff0f0f0);
-            p.setAlphaf(1.0f);
+            p.setAlpha(255);
             canvas->drawRect(SkRect::MakeXYWH(x, y,
                                               SkIntToScalar(bm.width()),
                                               SkIntToScalar(bm.height())), p);
-            canvas->drawImage(bm.asImage(), x, y);
+            canvas->drawBitmap(bm, x, y);
         }
     }
 
@@ -204,7 +176,7 @@ private:
     const SkScalar kPictureWidth = 200;
     const SkScalar kPictureHeight = 100;
 
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM(return new PictureGeneratorGM;)

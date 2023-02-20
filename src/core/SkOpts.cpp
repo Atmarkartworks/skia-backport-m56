@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/base/SkOnce.h"
-#include "src/base/SkHalf.h"
-#include "src/core/SkCpu.h"
-#include "src/core/SkOpts.h"
+#include "SkCpu.h"
+#include "SkHalf.h"
+#include "SkOnce.h"
+#include "SkOpts.h"
 
 #if defined(SK_ARM_HAS_NEON)
     #if defined(SK_ARM_HAS_CRC32)
@@ -16,8 +16,6 @@
     #else
         #define SK_OPTS_NS neon
     #endif
-#elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SKX
-    #define SK_OPTS_NS skx
 #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
     #define SK_OPTS_NS avx2
 #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX
@@ -38,16 +36,17 @@
     #define SK_OPTS_NS portable
 #endif
 
-#include "src/core/SkCubicSolver.h"
-#include "src/opts/SkBitmapProcState_opts.h"
-#include "src/opts/SkBlitMask_opts.h"
-#include "src/opts/SkBlitRow_opts.h"
-#include "src/opts/SkChecksum_opts.h"
-#include "src/opts/SkRasterPipeline_opts.h"
-#include "src/opts/SkSwizzler_opts.h"
-#include "src/opts/SkUtils_opts.h"
-#include "src/opts/SkVM_opts.h"
-#include "src/opts/SkXfermode_opts.h"
+#include "SkBlend_opts.h"
+#include "SkBlitMask_opts.h"
+#include "SkBlitRow_opts.h"
+#include "SkBlurImageFilter_opts.h"
+#include "SkChecksum_opts.h"
+#include "SkColorCubeFilter_opts.h"
+#include "SkMorphologyImageFilter_opts.h"
+#include "SkRasterPipeline_opts.h"
+#include "SkSwizzler_opts.h"
+#include "SkTextureCompressor_opts.h"
+#include "SkXfermode_opts.h"
 
 namespace SkOpts {
     // Define default function pointer values here...
@@ -56,6 +55,19 @@ namespace SkOpts {
     // They'll still get a chance to be replaced with even better ones, e.g. using SSE4.1.
 #define DEFINE_DEFAULT(name) decltype(name) name = SK_OPTS_NS::name
     DEFINE_DEFAULT(create_xfermode);
+    DEFINE_DEFAULT(color_cube_filter_span);
+
+    DEFINE_DEFAULT(box_blur_xx);
+    DEFINE_DEFAULT(box_blur_xy);
+    DEFINE_DEFAULT(box_blur_yx);
+
+    DEFINE_DEFAULT(dilate_x);
+    DEFINE_DEFAULT(dilate_y);
+    DEFINE_DEFAULT( erode_x);
+    DEFINE_DEFAULT( erode_y);
+
+    DEFINE_DEFAULT(texture_compressor);
+    DEFINE_DEFAULT(fill_block_dimensions);
 
     DEFINE_DEFAULT(blit_mask_d32_a8);
 
@@ -73,77 +85,35 @@ namespace SkOpts {
     DEFINE_DEFAULT(inverted_CMYK_to_RGB1);
     DEFINE_DEFAULT(inverted_CMYK_to_BGR1);
 
-    DEFINE_DEFAULT(memset16);
-    DEFINE_DEFAULT(memset32);
-    DEFINE_DEFAULT(memset64);
-
-    DEFINE_DEFAULT(rect_memset16);
-    DEFINE_DEFAULT(rect_memset32);
-    DEFINE_DEFAULT(rect_memset64);
-
-    DEFINE_DEFAULT(cubic_solver);
+    DEFINE_DEFAULT(srcover_srgb_srgb);
 
     DEFINE_DEFAULT(hash_fn);
 
-    DEFINE_DEFAULT(S32_alpha_D32_filter_DX);
-    DEFINE_DEFAULT(S32_alpha_D32_filter_DXDY);
-
-    DEFINE_DEFAULT(interpret_skvm);
+    DEFINE_DEFAULT(compile_pipeline);
 #undef DEFINE_DEFAULT
-
-    size_t raster_pipeline_lowp_stride  = SK_OPTS_NS::raster_pipeline_lowp_stride();
-    size_t raster_pipeline_highp_stride = SK_OPTS_NS::raster_pipeline_highp_stride();
-
-#define M(st) (StageFn)SK_OPTS_NS::st,
-    StageFn ops_highp[] = { SK_RASTER_PIPELINE_OPS_ALL(M) };
-    StageFn just_return_highp = (StageFn)SK_OPTS_NS::just_return;
-    void (*start_pipeline_highp)(size_t, size_t, size_t, size_t, SkRasterPipelineStage*) =
-            SK_OPTS_NS::start_pipeline;
-#undef M
-
-#define M(st) (StageFn)SK_OPTS_NS::lowp::st,
-    StageFn ops_lowp[] = { SK_RASTER_PIPELINE_OPS_LOWP(M) };
-    StageFn just_return_lowp = (StageFn)SK_OPTS_NS::lowp::just_return;
-    void (*start_pipeline_lowp)(size_t, size_t, size_t, size_t, SkRasterPipelineStage*) =
-            SK_OPTS_NS::lowp::start_pipeline;
-#undef M
 
     // Each Init_foo() is defined in src/opts/SkOpts_foo.cpp.
     void Init_ssse3();
+    void Init_sse41();
     void Init_sse42();
     void Init_avx();
     void Init_hsw();
-    void Init_skx();
-    void Init_erms();
     void Init_crc32();
 
     static void init() {
-    #if defined(SK_ENABLE_OPTIMIZE_SIZE)
-        // All Init_foo functions are omitted when optimizing for size
-    #elif defined(SK_CPU_X86)
-        #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SSSE3
-            if (SkCpu::Supports(SkCpu::SSSE3)) { Init_ssse3(); }
-        #endif
-
-        #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SSE42
-            if (SkCpu::Supports(SkCpu::SSE42)) { Init_sse42(); }
-        #endif
-
-        #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_AVX
-            if (SkCpu::Supports(SkCpu::AVX)) { Init_avx();   }
-            if (SkCpu::Supports(SkCpu::HSW)) { Init_hsw();   }
-        #endif
-
-        #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SKX
-            if (SkCpu::Supports(SkCpu::SKX)) { Init_skx(); }
-        #endif
-
-        if (SkCpu::Supports(SkCpu::ERMS)) { Init_erms(); }
+#if !defined(SK_BUILD_NO_OPTS)
+    #if defined(SK_CPU_X86)
+        if (SkCpu::Supports(SkCpu::SSSE3)) { Init_ssse3(); }
+        if (SkCpu::Supports(SkCpu::SSE41)) { Init_sse41(); }
+        if (SkCpu::Supports(SkCpu::SSE42)) { Init_sse42(); }
+        if (SkCpu::Supports(SkCpu::AVX  )) { Init_avx();   }
+        if (SkCpu::Supports(SkCpu::HSW  )) { Init_hsw();   }
 
     #elif defined(SK_CPU_ARM64)
         if (SkCpu::Supports(SkCpu::CRC32)) { Init_crc32(); }
 
     #endif
+#endif
     }
 
     void Init() {

@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
+#include "Benchmark.h"
 
 // This benchmark's runtime should be fairly constant for a given machine,
 // so it can be used as a baseline to control for thermal or other throttling.
@@ -16,7 +16,7 @@ struct ControlBench : public Benchmark {
 
     void onDraw(int loops, SkCanvas*) override {
         // Nothing terribly useful: force a memory read, a memory write, and some math.
-        [[maybe_unused]] volatile uint32_t rand = 0;
+        volatile uint32_t rand = 0;
         for (int i = 0; i < 1000*loops; i++) {
             rand *= 1664525;
             rand += 1013904223;

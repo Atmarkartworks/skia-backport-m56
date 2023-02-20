@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
-#include "include/core/SkTypes.h"
-#include "tools/skdiff/skdiff.h"
+#include "skdiff.h"
+#include "SkBitmap.h"
+#include "SkColor.h"
+#include "SkColorPriv.h"
+#include "SkTypes.h"
 
 /*static*/ char const * const DiffRecord::ResultNames[DiffRecord::kResultCount] = {
     "EqualBits",
@@ -163,6 +163,8 @@ void compute_diff(DiffRecord* dr, DiffMetricProc diffFunction, const int colorTh
         return;
     }
 
+    SkAutoLockPixels alpDiff(dr->fDifference.fBitmap);
+    SkAutoLockPixels alpWhite(dr->fWhite.fBitmap);
     int mismatchedPixels = 0;
     int totalMismatchA = 0;
     int totalMismatchR = 0;

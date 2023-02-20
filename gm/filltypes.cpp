@@ -5,15 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPathBuilder.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
+#include "gm.h"
+#include "SkPath.h"
 
 namespace skiagm {
 
@@ -21,15 +14,14 @@ class FillTypeGM : public GM {
     SkPath fPath;
 public:
     FillTypeGM() {
-        this->setBGColor(0xFFDDDDDD);
+        this->setBGColor(sk_tool_utils::color_to_565(0xFFDDDDDD));
     }
 
     void makePath() {
         if (fPath.isEmpty()) {
             const SkScalar radius = SkIntToScalar(45);
-            fPath = SkPathBuilder().addCircle(SkIntToScalar(50), SkIntToScalar(50), radius)
-                                   .addCircle(SkIntToScalar(100), SkIntToScalar(100), radius)
-                                   .detach();
+            fPath.addCircle(SkIntToScalar(50), SkIntToScalar(50), radius);
+            fPath.addCircle(SkIntToScalar(100), SkIntToScalar(100), radius);
         }
     }
 
@@ -43,7 +35,7 @@ protected:
         return SkISize::Make(835, 840);
     }
 
-    void showPath(SkCanvas* canvas, int x, int y, SkPathFillType ft,
+    void showPath(SkCanvas* canvas, int x, int y, SkPath::FillType ft,
                   SkScalar scale, const SkPaint& paint) {
         const SkRect r = { 0, 0, SkIntToScalar(150), SkIntToScalar(150) };
 
@@ -60,13 +52,13 @@ protected:
     }
 
     void showFour(SkCanvas* canvas, SkScalar scale, const SkPaint& paint) {
-        showPath(canvas,   0,   0, SkPathFillType::kWinding,
+        showPath(canvas,   0,   0, SkPath::kWinding_FillType,
                  scale, paint);
-        showPath(canvas, 200,   0, SkPathFillType::kEvenOdd,
+        showPath(canvas, 200,   0, SkPath::kEvenOdd_FillType,
                  scale, paint);
-        showPath(canvas,  00, 200, SkPathFillType::kInverseWinding,
+        showPath(canvas,  00, 200, SkPath::kInverseWinding_FillType,
                  scale, paint);
-        showPath(canvas, 200, 200, SkPathFillType::kInverseEvenOdd,
+        showPath(canvas, 200, 200, SkPath::kInverseEvenOdd_FillType,
                  scale, paint);
     }
 
@@ -93,11 +85,12 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new FillTypeGM; )
+static GM* MyFactory(void*) { return new FillTypeGM; }
+static GMRegistry reg(MyFactory);
 
-}  // namespace skiagm
+}

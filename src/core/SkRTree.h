@@ -8,8 +8,9 @@
 #ifndef SkRTree_DEFINED
 #define SkRTree_DEFINED
 
-#include "include/core/SkBBHFactory.h"
-#include "include/core/SkRect.h"
+#include "SkBBoxHierarchy.h"
+#include "SkRect.h"
+#include "SkTDArray.h"
 
 /**
  * An R-Tree implementation. In short, it is a balanced n-ary tree containing a hierarchy of
@@ -29,10 +30,18 @@
  */
 class SkRTree : public SkBBoxHierarchy {
 public:
-    SkRTree();
+
+
+    /**
+     * If you have some prior information about the distribution of bounds you're expecting, you
+     * can provide an optional aspect ratio parameter. This allows the bulk-load algorithm to
+     * create better proportioned tiles of rectangles.
+     */
+    explicit SkRTree(SkScalar aspectRatio = 1);
+    virtual ~SkRTree() {}
 
     void insert(const SkRect[], int N) override;
-    void search(const SkRect& query, std::vector<int>* results) const override;
+    void search(const SkRect& query, SkTDArray<int>* results) const override;
     size_t bytesUsed() const override;
 
     // Methods and constants below here are only public for tests.
@@ -41,6 +50,9 @@ public:
     int getDepth() const { return fCount ? fRoot.fSubtree->fLevel + 1 : 0; }
     // Insertion count (not overall node count, which may be greater).
     int getCount() const { return fCount; }
+
+    // Get the root bound.
+    SkRect getRootBound() const override;
 
     // These values were empirically determined to produce reasonable performance in most cases.
     static const int kMinChildren = 6,
@@ -63,20 +75,23 @@ private:
         Branch fChildren[kMaxChildren];
     };
 
-    void search(Node* root, const SkRect& query, std::vector<int>* results) const;
+    void search(Node* root, const SkRect& query, SkTDArray<int>* results) const;
 
     // Consumes the input array.
-    Branch bulkLoad(std::vector<Branch>* branches, int level = 0);
+    Branch bulkLoad(SkTDArray<Branch>* branches, int level = 0);
 
     // How many times will bulkLoad() call allocateNodeAtLevel()?
-    static int CountNodes(int branches);
+    static int CountNodes(int branches, SkScalar aspectRatio);
 
     Node* allocateNodeAtLevel(uint16_t level);
 
     // This is the count of data elements (rather than total nodes in the tree)
     int fCount;
+    SkScalar fAspectRatio;
     Branch fRoot;
-    std::vector<Node> fNodes;
+    SkTDArray<Node> fNodes;
+
+    typedef SkBBoxHierarchy INHERITED;
 };
 
 #endif

@@ -5,23 +5,22 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-#include "include/gpu/GrDirectContext.h"
-#include "tests/CtsEnforcement.h"
-#include "tests/Test.h"
-#include "tools/gpu/FenceSync.h"
+#include "SkTypes.h"
 
-struct GrContextOptions;
+#if SK_SUPPORT_GPU
+
+#include "GrContextFactory.h"
+#include "Test.h"
 
 using namespace sk_gpu_test;
 
-DEF_GANESH_TEST(GrContext_abandonContext, reporter, options, CtsEnforcement::kApiLevel_T) {
+DEF_GPUTEST(GrContext_abandonContext, reporter, /*factory*/) {
     for (int testType = 0; testType < 6; ++testType) {
         for (int i = 0; i < GrContextFactory::kContextTypeCnt; ++i) {
-            GrContextFactory testFactory(options);
+            GrContextFactory testFactory;
             GrContextFactory::ContextType ctxType = (GrContextFactory::ContextType) i;
             ContextInfo info = testFactory.getContextInfo(ctxType);
-            if (auto context = info.directContext()) {
+            if (GrContext* context = info.grContext()) {
                 switch (testType) {
                     case 0:
                         context->abandonContext();
@@ -50,3 +49,5 @@ DEF_GANESH_TEST(GrContext_abandonContext, reporter, options, CtsEnforcement::kAp
         }
     }
 }
+
+#endif

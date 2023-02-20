@@ -9,7 +9,26 @@
 from recipe_engine import recipe_api
 
 
-TEST_DEFAULT_ASSET_VERSION = '42'
+BUILD_PRODUCTS_ISOLATE_WHITELIST = [
+  'dm',
+  'dm.exe',
+  'get_images_from_skps',
+  'get_images_from_skps.exe',
+  'nanobench',
+  'nanobench.exe',
+  'skpbench',
+  '*.so',
+  '*.dll',
+  '*.dylib',
+  'skia_launcher',
+  'lib/*.so',
+  'iOSShell.app',
+  'iOSShell.ipa',
+  'visualbench',
+  'visualbench.exe',
+  'vulkan-1.dll',
+]
+
 
 class SkiaStepApi(recipe_api.RecipeApi):
 
@@ -28,10 +47,6 @@ class SkiaStepApi(recipe_api.RecipeApi):
       raise self.m.step.StepFailure('Failed build steps: %s' %
                                     ', '.join([f.name for f in self._failed]))
 
-  @property
-  def failed_steps(self):
-    return self._failed[:]
-
   def run_once(self, fn, *args, **kwargs):
     if not fn.__name__ in self._already_ran:
       self._already_ran[fn.__name__] = fn(*args, **kwargs)
@@ -39,59 +54,77 @@ class SkiaStepApi(recipe_api.RecipeApi):
 
   def readfile(self, filename, *args, **kwargs):
     """Convenience function for reading files."""
-    name = kwargs.pop('name', 'read %s' % self.m.path.basename(filename))
-    return self.m.file.read_text(name, filename, *args, **kwargs)
+    name = kwargs.pop('name') or 'read %s' % self.m.path.basename(filename)
+    return self.m.file.read(name, filename, infra_step=True, *args, **kwargs)
 
   def writefile(self, filename, contents):
     """Convenience function for writing files."""
-    return self.m.file.write_text('write %s' % self.m.path.basename(filename),
-                                  filename, contents)
+    return self.m.file.write('write %s' % self.m.path.basename(filename),
+                             filename, contents, infra_step=True)
 
   def rmtree(self, path):
-    """Wrapper around api.file.rmtree."""
-    self.m.file.rmtree('rmtree %s' % self.m.path.basename(path), path)
-
-  def asset_version(self, asset_name, skia_dir, test_data=None):
-    """Return the contents of VERSION for the given asset as a string.
-
-    If test_data is not specified, reads the property
-    'test_<asset_name>_version' or if not present, uses
-    TEST_DEFAULT_ASSET_VERSION."""
-    version_file = skia_dir.join(
-        'infra', 'bots', 'assets', asset_name, 'VERSION')
-    if not test_data:
-      test_data = self.m.properties.get(
-          'test_%s_version' % asset_name, TEST_DEFAULT_ASSET_VERSION)
-    return self.m.file.read_text('Get %s VERSION' % asset_name,
-                                 version_file,
-                                 test_data=test_data).rstrip()
+    """Wrapper around api.file.rmtree with environment fix."""
+    env = {}
+    env['PYTHONPATH'] = str(self.m.path['slave_build'].join(
+        'skia', 'infra', 'bots', '.recipe_deps', 'build', 'scripts'))
+    self.m.file.rmtree(self.m.path.basename(path),
+                       path,
+                       env=env,
+                       infra_step=True)
 
   def __call__(self, steptype, name, abort_on_failure=True,
-               fail_build_on_failure=True, **kwargs):
+               fail_build_on_failure=True, env=None, **kwargs):
     """Run a step. If it fails, keep going but mark the build status failed."""
+    env = dict(env or {})
+    env.update(self.m.vars.default_env)
     try:
-      with self.m.env(self.m.vars.default_env):
-        return steptype(name=name, **kwargs)
+      return steptype(name=name, env=env, **kwargs)
     except self.m.step.StepFailure as e:
+      if abort_on_failure:
+        raise  # pragma: no cover
       if fail_build_on_failure:
         self._failed.append(e)
-      if abort_on_failure:
-        raise
 
-  def with_retry(self, steptype, name, attempts, between_attempts_fn=None,
-                 abort_on_failure=True, fail_build_on_failure=True, **kwargs):
-    for attempt in range(attempts):
+  def copy_build_products(self, src, dst):
+    """Copy whitelisted build products from src to dst."""
+    self.m.python.inline(
+        name='copy build products',
+        program='''import errno
+import glob
+import os
+import shutil
+import sys
+
+src = sys.argv[1]
+dst = sys.argv[2]
+build_products_whitelist = %s
+
+try:
+  os.makedirs(dst)
+except OSError as e:
+  if e.errno != errno.EEXIST:
+    raise
+
+for pattern in build_products_whitelist:
+  path = os.path.join(src, pattern)
+  for f in glob.glob(path):
+    dst_path = os.path.join(dst, os.path.relpath(f, src))
+    if not os.path.isdir(os.path.dirname(dst_path)):
+      os.makedirs(os.path.dirname(dst_path))
+    print 'Copying build product %%s to %%s' %% (f, dst_path)
+    shutil.move(f, dst_path)
+''' % str(BUILD_PRODUCTS_ISOLATE_WHITELIST),
+        args=[src, dst],
+        infra_step=True)
+
+  def with_retry(self, steptype, name, attempts, *args, **kwargs):
+    for attempt in xrange(attempts):
       step_name = name
       if attempt > 0:
         step_name += ' (attempt %d)' % (attempt + 1)
       try:
-        res = self(steptype, name=step_name, abort_on_failure=True,
-                   fail_build_on_failure=fail_build_on_failure, **kwargs)
-        if attempt > 0 and fail_build_on_failure:
-          del self._failed[-attempt:]
-        return res
+        steptype(step_name, *args, **kwargs)
+        return
       except self.m.step.StepFailure:
-        if between_attempts_fn:
-          between_attempts_fn(attempt+1)
-        if (attempt == attempts - 1) and abort_on_failure:
-            raise
+        if attempt == attempts - 1:
+          raise

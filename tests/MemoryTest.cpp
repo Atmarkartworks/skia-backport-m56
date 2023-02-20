@@ -1,13 +1,4 @@
- /*
- * Copyright 2013 Google Inc.
- *
- * Use of this source code is governed by a BSD-style license that can be
- * found in the LICENSE file.
- */
-
-#include "include/private/base/SkMalloc.h"
-#include "tests/Test.h"
-#include <cstddef>
+#include "Test.h"
 
 DEF_TEST(memory_calloc, reporter) {
     const size_t kNum = 200;

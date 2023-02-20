@@ -8,12 +8,12 @@
 #ifndef SkMaskCache_DEFINED
 #define SkMaskCache_DEFINED
 
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "src/core/SkCachedData.h"
-#include "src/core/SkMask.h"
-#include "src/core/SkResourceCache.h"
+#include "SkBlurTypes.h"
+#include "SkCachedData.h"
+#include "SkMask.h"
+#include "SkRect.h"
+#include "SkResourceCache.h"
+#include "SkRRect.h"
 
 class SkMaskCache {
 public:
@@ -23,20 +23,20 @@ public:
      *
      * On failure, return nullptr.
      */
-    static SkCachedData* FindAndRef(SkScalar sigma, SkBlurStyle style,
+    static SkCachedData* FindAndRef(SkScalar sigma, SkBlurStyle style, SkBlurQuality quality,
                                     const SkRRect& rrect, SkMask* mask,
                                     SkResourceCache* localCache = nullptr);
-    static SkCachedData* FindAndRef(SkScalar sigma, SkBlurStyle style,
+    static SkCachedData* FindAndRef(SkScalar sigma, SkBlurStyle style, SkBlurQuality quality,
                                     const SkRect rects[], int count, SkMask* mask,
                                     SkResourceCache* localCache = nullptr);
 
     /**
      * Add a mask and its pixel-data to the cache.
      */
-    static void Add(SkScalar sigma, SkBlurStyle style,
+    static void Add(SkScalar sigma, SkBlurStyle style, SkBlurQuality quality,
                     const SkRRect& rrect, const SkMask& mask, SkCachedData* data,
                     SkResourceCache* localCache = nullptr);
-    static void Add(SkScalar sigma, SkBlurStyle style,
+    static void Add(SkScalar sigma, SkBlurStyle style, SkBlurQuality quality,
                     const SkRect rects[], int count, const SkMask& mask, SkCachedData* data,
                     SkResourceCache* localCache = nullptr);
 };

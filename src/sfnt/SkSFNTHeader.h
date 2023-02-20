@@ -8,8 +8,8 @@
 #ifndef SkSFNTHeader_DEFINED
 #define SkSFNTHeader_DEFINED
 
-#include "src/core/SkEndian.h"
-#include "src/sfnt/SkOTTableTypes.h"
+#include "SkEndian.h"
+#include "SkOTTableTypes.h"
 
 //All SK_SFNT_ prefixed types should be considered as big endian.
 typedef uint16_t SK_SFNT_USHORT;

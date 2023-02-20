@@ -1,39 +1,73 @@
 /*
-* Copyright 2017 Google Inc.
-*
-* Use of this source code is governed by a BSD-style license that can be
-* found in the LICENSE file.
-*/
+ * Copyright 2015 Google Inc.
+ *
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ *
+ */
 
 #ifndef HelloWorld_DEFINED
 #define HelloWorld_DEFINED
 
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "tools/sk_app/Application.h"
-#include "tools/sk_app/Window.h"
-#include "tools/skui/ModifierKey.h"
+#include "SkSurface.h"
+#include "SkWindow.h"
 
-class SkSurface;
+class GrContext;
+struct GrGLInterface;
+class GrRenderTarget;
+class SkCanvas;
 
-class HelloWorld : public sk_app::Application, sk_app::Window::Layer {
+class HelloWorldWindow : public SkOSWindow {
 public:
-    HelloWorld(int argc, char** argv, void* platformData);
-    ~HelloWorld() override;
+    enum DeviceType {
+        kRaster_DeviceType,
+        kGPU_DeviceType,
+    };
+    HelloWorldWindow(void* hwnd);
+    virtual ~HelloWorldWindow() override;
 
-    void onIdle() override;
+    // Changes the device type of the object.
+    bool setUpBackend();
 
-    void onBackendCreated() override;
-    void onPaint(SkSurface*) override;
-    bool onChar(SkUnichar c, skui::ModifierKey modifiers) override;
+    DeviceType getDeviceType() const { return fType; }
+
+protected:
+    sk_sp<SkSurface> makeSurface() override {
+        SkSurfaceProps props(INHERITED::getSurfaceProps());
+        if (kGPU_DeviceType == fType) {
+            return fGpuSurface;
+        }
+        const SkImageInfo info = SkImageInfo::MakeN32Premul(SkScalarRoundToInt(this->width()),
+                                                            SkScalarRoundToInt(this->height()));
+        fRasterSurface = SkSurface::MakeRaster(info, &props);
+        return fRasterSurface;
+    }
+
+    void draw(SkCanvas* canvas) override;
+    void drawContents(SkCanvas* canvas);
+
+    void onSizeChange() override;
 
 private:
-    void updateTitle();
+    bool findNextMatch();  // Set example to the first one that matches FLAGS_match.
+    void setTitle();
+    void setUpGpuBackedSurface();
+    bool onHandleChar(SkUnichar unichar) override;
+    void tearDownBackend();
 
-    sk_app::Window* fWindow;
-    sk_app::Window::BackendType fBackendType;
-
+    // draw contents
     SkScalar fRotationAngle;
+
+    // support framework
+    DeviceType fType;
+    sk_sp<SkSurface> fRasterSurface;
+    GrContext* fContext;
+    sk_sp<SkSurface> fGpuSurface;
+    AttachmentInfo fAttachmentInfo;
+    const GrGLInterface* fInterface;
+
+    typedef SkOSWindow INHERITED;
 };
 
 #endif

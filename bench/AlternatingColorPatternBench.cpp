@@ -5,13 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkString.h"
-#include "include/effects/SkGradientShader.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkString.h"
 
 enum ColorPattern {
     kWhite_ColorPattern,
@@ -42,7 +41,7 @@ static void makebm(SkBitmap* bm, int w, int h) {
     bm->eraseColor(SK_ColorTRANSPARENT);
 
     SkCanvas    canvas(*bm);
-    SkScalar    s = SkIntToScalar(std::min(w, h));
+    SkScalar    s = SkIntToScalar(SkMin32(w, h));
     static const SkPoint     kPts0[] = { { 0, 0 }, { s, s } };
     static const SkPoint     kPts1[] = { { s/2, 0 }, { s/2, s } };
     static const SkScalar    kPos[] = { 0, SK_Scalar1/2, SK_Scalar1 };
@@ -52,11 +51,11 @@ static void makebm(SkBitmap* bm, int w, int h) {
 
     SkPaint     paint;
 
-    paint.setShader(SkGradientShader::MakeLinear(kPts0, kColors0, kPos, std::size(kColors0),
-                                                 SkTileMode::kClamp));
+    paint.setShader(SkGradientShader::MakeLinear(kPts0, kColors0, kPos, SK_ARRAY_COUNT(kColors0),
+                                                 SkShader::kClamp_TileMode));
     canvas.drawPaint(paint);
-    paint.setShader(SkGradientShader::MakeLinear(kPts1, kColors1, kPos, std::size(kColors1),
-                                                 SkTileMode::kClamp));
+    paint.setShader(SkGradientShader::MakeLinear(kPts1, kColors1, kPos, SK_ARRAY_COUNT(kColors1),
+                                                 SkShader::kClamp_TileMode));
     canvas.drawPaint(paint);
 }
 
@@ -71,8 +70,8 @@ static void makebm(SkBitmap* bm, int w, int h) {
  *
  * The bench is used to test a few things. First it can test any optimizations made for a specific
  * color pattern (for example drawing an opaque bitmap versus one with partial alpha). Also it can
- * be used to test the cost of program switching and/or GrDrawOp combining when alternating between
- * different patterns when on the gpu.
+ * be used to test the cost of program switching and/or batching when alternating between different
+ * patterns when on the gpu.
  */
 class AlternatingColorPatternBench : public Benchmark {
 public:
@@ -113,8 +112,9 @@ protected:
         int w = 40;
         int h = 40;
         makebm(&fBmp, w, h);
-        fBmShader = fBmp.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
-                                    SkSamplingOptions(SkFilterMode::kLinear));
+        fBmShader = SkShader::MakeBitmapShader(fBmp,
+                                                 SkShader::kRepeat_TileMode,
+                                                 SkShader::kRepeat_TileMode);
         int offset = 2;
         int count = 0;
         for (int j = 0; j < NY; ++j) {
@@ -122,8 +122,8 @@ protected:
                 int x = (w + offset) * i;
                 int y = (h * offset) * j;
                 if (kRect_DrawType == fDrawType) {
-                    fRects[count].setXYWH(SkIntToScalar(x), SkIntToScalar(y),
-                                          SkIntToScalar(w), SkIntToScalar(h));
+                    fRects[count].set(SkIntToScalar(x), SkIntToScalar(y),
+                                      SkIntToScalar(x + w), SkIntToScalar(y + h));
                 } else {
                     fPaths[count].moveTo(SkIntToScalar(x), SkIntToScalar(y));
                     fPaths[count].rLineTo(SkIntToScalar(w), 0);
@@ -145,6 +145,7 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         SkPaint paint;
         paint.setAntiAlias(false);
+        paint.setFilterQuality(kLow_SkFilterQuality);
 
         for (int i = 0; i < loops; ++i) {
             for (int j = 0; j < NUM_DRAWS; ++j) {
@@ -160,7 +161,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 DEF_BENCH(return new AlternatingColorPatternBench(kWhite_ColorPattern,

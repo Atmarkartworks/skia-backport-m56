@@ -8,59 +8,37 @@
 #ifndef VkTestContext_DEFINED
 #define VkTestContext_DEFINED
 
-#include "tools/gpu/TestContext.h"
+#include "TestContext.h"
 
 #ifdef SK_VULKAN
 
-#include "include/gpu/vk/GrVkBackendContext.h"
-#include "tools/gpu/vk/GrVulkanDefines.h"
-
-namespace skgpu { class VulkanExtensions; }
+#include "vk/GrVkBackendContext.h"
 
 namespace sk_gpu_test {
 class VkTestContext : public TestContext {
 public:
-    GrBackendApi backend() override { return GrBackendApi::kVulkan; }
-
-    const GrVkBackendContext& getVkBackendContext() const {
-        return fVk;
+    virtual GrBackend backend() override { return kVulkan_GrBackend; }
+    virtual GrBackendContext backendContext() override {
+        return reinterpret_cast<GrBackendContext>(fVk.get());
     }
 
-    const skgpu::VulkanExtensions* getVkExtensions() const {
-        return fExtensions;
-    }
+    bool isValid() const override { return NULL != this->vk(); }
 
-    const VkPhysicalDeviceFeatures2* getVkFeatures() const {
-        return fFeatures;
-    }
+    const GrVkInterface* vk() const { return fVk->fInterface.get(); }
 
 protected:
-    VkTestContext(const GrVkBackendContext& vk, const skgpu::VulkanExtensions* extensions,
-                  const VkPhysicalDeviceFeatures2* features, bool ownsContext,
-                  VkDebugReportCallbackEXT debugCallback,
-                  PFN_vkDestroyDebugReportCallbackEXT destroyCallback)
-            : fVk(vk)
-            , fExtensions(extensions)
-            , fFeatures(features)
-            , fOwnsContext(ownsContext)
-            , fDebugCallback(debugCallback)
-            , fDestroyDebugReportCallbackEXT(destroyCallback) {}
+    VkTestContext(sk_sp<const GrVkBackendContext> vk) : fVk(std::move(vk)) {}
 
-    GrVkBackendContext                  fVk;
-    const skgpu::VulkanExtensions*      fExtensions;
-    const VkPhysicalDeviceFeatures2*    fFeatures;
-    bool                                fOwnsContext;
-    VkDebugReportCallbackEXT            fDebugCallback = VK_NULL_HANDLE;
-    PFN_vkDestroyDebugReportCallbackEXT fDestroyDebugReportCallbackEXT = nullptr;
+    sk_sp<const GrVkBackendContext> fVk;
 
 private:
-    using INHERITED = TestContext;
+    typedef TestContext INHERITED;
 };
 
 /**
  * Creates Vk context object bound to the native Vk library.
  */
-VkTestContext* CreatePlatformVkTestContext(VkTestContext*);
+VkTestContext* CreatePlatformVkTestContext();
 
 }  // namespace sk_gpu_test
 

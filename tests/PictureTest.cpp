@@ -5,42 +5,37 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBBHFactory.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkClipOp.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkData.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkImage.h" // IWYU pragma: keep
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPathTypes.h"
-#include "include/core/SkPicture.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkPixelRef.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkBigPicture.h"
-#include "src/core/SkPicturePriv.h"
-#include "src/core/SkRectPriv.h"
-#include "tests/Test.h"
+#include "SkBigPicture.h"
+#include "SkBBoxHierarchy.h"
+#include "SkBlurImageFilter.h"
+#include "SkCanvas.h"
+#include "SkColorMatrixFilter.h"
+#include "SkColorPriv.h"
+#include "SkDashPathEffect.h"
+#include "SkData.h"
+#include "SkImageGenerator.h"
+#include "SkImageEncoder.h"
+#include "SkImageGenerator.h"
+#include "SkMD5.h"
+#include "SkPaint.h"
+#include "SkPicture.h"
+#include "SkPictureAnalyzer.h"
+#include "SkPictureRecorder.h"
+#include "SkPictureUtils.h"
+#include "SkPixelRef.h"
+#include "SkPixelSerializer.h"
+#include "SkMiniRecorder.h"
+#include "SkRRect.h"
+#include "SkRandom.h"
+#include "SkRecord.h"
+#include "SkShader.h"
+#include "SkStream.h"
+#include "sk_tool_utils.h"
 
-#include <cstddef>
-#include <memory>
-#include <vector>
+#include "Test.h"
 
-class SkRRect;
-class SkRegion;
+#include "SkLumaColorFilter.h"
+#include "SkColorFilterImageFilter.h"
 
 static void make_bm(SkBitmap* bm, int w, int h, SkColor color, bool immutable) {
     bm->allocN32Pixels(w, h);
@@ -49,6 +44,50 @@ static void make_bm(SkBitmap* bm, int w, int h, SkColor color, bool immutable) {
         bm->setImmutable();
     }
 }
+
+// For a while willPlayBackBitmaps() ignored SkImages and just looked for SkBitmaps.
+static void test_images_are_found_by_willPlayBackBitmaps(skiatest::Reporter* reporter) {
+    // We just need _some_ SkImage
+    const SkPMColor pixel = 0;
+    const SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
+    sk_sp<SkImage> image(SkImage::MakeRasterCopy(SkPixmap(info, &pixel, sizeof(pixel))));
+
+    SkPictureRecorder recorder;
+    recorder.beginRecording(100,100)->drawImage(image, 0,0);
+    sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
+
+    REPORTER_ASSERT(reporter, picture->willPlayBackBitmaps());
+}
+
+/* Hit a few SkPicture::Analysis cases not handled elsewhere. */
+static void test_analysis(skiatest::Reporter* reporter) {
+    SkPictureRecorder recorder;
+
+    SkCanvas* canvas = recorder.beginRecording(100, 100);
+    {
+        canvas->drawRect(SkRect::MakeWH(10, 10), SkPaint ());
+    }
+    sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
+    REPORTER_ASSERT(reporter, !picture->willPlayBackBitmaps());
+
+    canvas = recorder.beginRecording(100, 100);
+    {
+        SkPaint paint;
+        // CreateBitmapShader is too smart for us; an empty (or 1x1) bitmap shader
+        // gets optimized into a non-bitmap form, so we create a 2x2 bitmap here.
+        SkBitmap bitmap;
+        bitmap.allocPixels(SkImageInfo::MakeN32Premul(2, 2));
+        bitmap.eraseColor(SK_ColorBLUE);
+        *(bitmap.getAddr32(0, 0)) = SK_ColorGREEN;
+        paint.setShader(SkShader::MakeBitmapShader(bitmap, SkShader::kClamp_TileMode,
+                                                   SkShader::kClamp_TileMode));
+        REPORTER_ASSERT(reporter, paint.getShader()->isAImage());
+
+        canvas->drawRect(SkRect::MakeWH(10, 10), paint);
+    }
+    REPORTER_ASSERT(reporter, recorder.finishRecordingAsPicture()->willPlayBackBitmaps());
+}
+
 
 #ifdef SK_DEBUG
 // Ensure that deleting an empty SkPicture does not assert. Asserts only fire
@@ -93,6 +132,192 @@ static void rand_op(SkCanvas* canvas, SkRandom& rand) {
     }
 }
 
+#if SK_SUPPORT_GPU
+
+static SkPath make_convex_path() {
+    SkPath path;
+    path.lineTo(100, 0);
+    path.lineTo(50, 100);
+    path.close();
+
+    return path;
+}
+
+static SkPath make_concave_path() {
+    SkPath path;
+    path.lineTo(50, 50);
+    path.lineTo(100, 0);
+    path.lineTo(50, 100);
+    path.close();
+
+    return path;
+}
+
+static void test_gpu_veto(skiatest::Reporter* reporter) {
+    SkPictureRecorder recorder;
+
+    SkCanvas* canvas = recorder.beginRecording(100, 100);
+    {
+        SkPath path;
+        path.moveTo(0, 0);
+        path.lineTo(50, 50);
+
+        SkScalar intervals[] = { 1.0f, 1.0f };
+        sk_sp<SkPathEffect> dash(SkDashPathEffect::Make(intervals, 2, 0));
+
+        SkPaint paint;
+        paint.setStyle(SkPaint::kStroke_Style);
+        paint.setPathEffect(dash);
+
+        for (int i = 0; i < 50; ++i) {
+            canvas->drawPath(path, paint);
+        }
+    }
+    sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
+    // path effects currently render an SkPicture undesireable for GPU rendering
+
+    const char *reason = nullptr;
+    REPORTER_ASSERT(reporter,
+        !SkPictureGpuAnalyzer(picture).suitableForGpuRasterization(&reason));
+    REPORTER_ASSERT(reporter, reason);
+
+    canvas = recorder.beginRecording(100, 100);
+    {
+        SkPath path;
+
+        path.moveTo(0, 0);
+        path.lineTo(0, 50);
+        path.lineTo(25, 25);
+        path.lineTo(50, 50);
+        path.lineTo(50, 0);
+        path.close();
+        REPORTER_ASSERT(reporter, !path.isConvex());
+
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        for (int i = 0; i < 50; ++i) {
+            canvas->drawPath(path, paint);
+        }
+    }
+    picture = recorder.finishRecordingAsPicture();
+    // A lot of small AA concave paths should be fine for GPU rendering
+    REPORTER_ASSERT(reporter, SkPictureGpuAnalyzer(picture).suitableForGpuRasterization());
+
+    canvas = recorder.beginRecording(100, 100);
+    {
+        SkPath path;
+
+        path.moveTo(0, 0);
+        path.lineTo(0, 100);
+        path.lineTo(50, 50);
+        path.lineTo(100, 100);
+        path.lineTo(100, 0);
+        path.close();
+        REPORTER_ASSERT(reporter, !path.isConvex());
+
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        for (int i = 0; i < 50; ++i) {
+            canvas->drawPath(path, paint);
+        }
+    }
+    picture = recorder.finishRecordingAsPicture();
+    // A lot of large AA concave paths currently render an SkPicture undesireable for GPU rendering
+    REPORTER_ASSERT(reporter, !SkPictureGpuAnalyzer(picture).suitableForGpuRasterization());
+
+    canvas = recorder.beginRecording(100, 100);
+    {
+        SkPath path;
+
+        path.moveTo(0, 0);
+        path.lineTo(0, 50);
+        path.lineTo(25, 25);
+        path.lineTo(50, 50);
+        path.lineTo(50, 0);
+        path.close();
+        REPORTER_ASSERT(reporter, !path.isConvex());
+
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        paint.setStyle(SkPaint::kStroke_Style);
+        paint.setStrokeWidth(0);
+        for (int i = 0; i < 50; ++i) {
+            canvas->drawPath(path, paint);
+        }
+    }
+    picture = recorder.finishRecordingAsPicture();
+    // hairline stroked AA concave paths are fine for GPU rendering
+    REPORTER_ASSERT(reporter, SkPictureGpuAnalyzer(picture).suitableForGpuRasterization());
+
+    canvas = recorder.beginRecording(100, 100);
+    {
+        SkPaint paint;
+        SkScalar intervals [] = { 10, 20 };
+        paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 25));
+
+        SkPoint points [2] = { { 0, 0 }, { 100, 0 } };
+
+        for (int i = 0; i < 50; ++i) {
+            canvas->drawPoints(SkCanvas::kLines_PointMode, 2, points, paint);
+        }
+    }
+    picture = recorder.finishRecordingAsPicture();
+    // fast-path dashed effects are fine for GPU rendering ...
+    REPORTER_ASSERT(reporter, SkPictureGpuAnalyzer(picture).suitableForGpuRasterization());
+
+    canvas = recorder.beginRecording(100, 100);
+    {
+        SkPaint paint;
+        SkScalar intervals [] = { 10, 20 };
+        paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 25));
+
+        for (int i = 0; i < 50; ++i) {
+            canvas->drawRect(SkRect::MakeWH(10, 10), paint);
+        }
+    }
+    picture = recorder.finishRecordingAsPicture();
+    // ... but only when applied to drawPoint() calls
+    REPORTER_ASSERT(reporter, !SkPictureGpuAnalyzer(picture).suitableForGpuRasterization());
+
+    canvas = recorder.beginRecording(100, 100);
+    {
+        const SkPath convexClip = make_convex_path();
+        const SkPath concaveClip = make_concave_path();
+
+        for (int i = 0; i < 50; ++i) {
+            canvas->clipPath(convexClip);
+            canvas->clipPath(concaveClip);
+            canvas->clipPath(convexClip, SkCanvas::kIntersect_Op, true);
+            canvas->drawRect(SkRect::MakeWH(100, 100), SkPaint());
+        }
+    }
+    picture = recorder.finishRecordingAsPicture();
+    // Convex clips and non-AA concave clips are fine on the GPU.
+    REPORTER_ASSERT(reporter, SkPictureGpuAnalyzer(picture).suitableForGpuRasterization());
+
+    canvas = recorder.beginRecording(100, 100);
+    {
+        const SkPath concaveClip = make_concave_path();
+        for (int i = 0; i < 50; ++i) {
+            canvas->clipPath(concaveClip, SkCanvas::kIntersect_Op, true);
+            canvas->drawRect(SkRect::MakeWH(100, 100), SkPaint());
+        }
+    }
+    picture = recorder.finishRecordingAsPicture();
+    // ... but AA concave clips are not.
+    REPORTER_ASSERT(reporter, !SkPictureGpuAnalyzer(picture).suitableForGpuRasterization());
+
+    // Nest the previous picture inside a new one.
+    canvas = recorder.beginRecording(100, 100);
+    {
+        canvas->drawPicture(picture);
+    }
+    picture = recorder.finishRecordingAsPicture();
+    REPORTER_ASSERT(reporter, !SkPictureGpuAnalyzer(picture).suitableForGpuRasterization());
+}
+
+#endif // SK_SUPPORT_GPU
+
 static void set_canvas_to_save_count_4(SkCanvas* canvas) {
     canvas->restoreToCount(1);
     canvas->save();
@@ -109,18 +334,12 @@ public:
         : INHERITED(width, height)
         , fSaveCount(0)
         , fSaveLayerCount(0)
-        , fSaveBehindCount(0)
         , fRestoreCount(0){
     }
 
     SaveLayerStrategy getSaveLayerStrategy(const SaveLayerRec& rec) override {
         ++fSaveLayerCount;
         return this->INHERITED::getSaveLayerStrategy(rec);
-    }
-
-    bool onDoSaveBehind(const SkRect* subset) override {
-        ++fSaveBehindCount;
-        return this->INHERITED::onDoSaveBehind(subset);
     }
 
     void willSave() override {
@@ -135,16 +354,14 @@ public:
 
     unsigned int getSaveCount() const { return fSaveCount; }
     unsigned int getSaveLayerCount() const { return fSaveLayerCount; }
-    unsigned int getSaveBehindCount() const { return fSaveBehindCount; }
     unsigned int getRestoreCount() const { return fRestoreCount; }
 
 private:
     unsigned int fSaveCount;
     unsigned int fSaveLayerCount;
-    unsigned int fSaveBehindCount;
     unsigned int fRestoreCount;
 
-    using INHERITED = SkCanvas;
+    typedef SkCanvas INHERITED;
 };
 
 void check_save_state(skiatest::Reporter* reporter, SkPicture* picture,
@@ -181,7 +398,7 @@ static void create_imbalance(SkCanvas* canvas) {
     SkRect clipRect = SkRect::MakeWH(2, 2);
     SkRect drawRect = SkRect::MakeWH(10, 10);
     canvas->save();
-        canvas->clipRect(clipRect, SkClipOp::kIntersect);
+        canvas->clipRect(clipRect, SkCanvas::kReplace_Op);
         canvas->translate(1.0f, 1.0f);
         SkPaint p;
         p.setColor(SK_ColorGREEN);
@@ -200,14 +417,18 @@ static void check_balance(skiatest::Reporter* reporter, SkPicture* picture) {
 
     SkMatrix beforeMatrix = canvas.getTotalMatrix();
 
-    SkRect beforeClip = canvas.getLocalClipBounds();
+    SkRect beforeClip;
+
+    canvas.getClipBounds(&beforeClip);
 
     canvas.drawPicture(picture);
 
     REPORTER_ASSERT(reporter, beforeSaveCount == canvas.getSaveCount());
     REPORTER_ASSERT(reporter, beforeMatrix == canvas.getTotalMatrix());
 
-    SkRect afterClip = canvas.getLocalClipBounds();
+    SkRect afterClip;
+
+    canvas.getClipBounds(&afterClip);
 
     REPORTER_ASSERT(reporter, afterClip == beforeClip);
 }
@@ -237,11 +458,41 @@ DEF_TEST(PictureRecorder_replay, reporter) {
         check_save_state(reporter, copy.get(), 2, 1, 3);
     }
 
+    // (partially) check leakage of draw ops
+    {
+        SkPictureRecorder recorder;
+
+        SkCanvas* canvas = recorder.beginRecording(10, 10);
+
+        SkRect r = SkRect::MakeWH(5, 5);
+        SkPaint p;
+
+        canvas->drawRect(r, p);
+
+        sk_sp<SkPicture> copy(SkPictureRecorderReplayTester::Copy(&recorder));
+
+        REPORTER_ASSERT(reporter, !copy->willPlayBackBitmaps());
+
+        SkBitmap bm;
+        make_bm(&bm, 10, 10, SK_ColorRED, true);
+
+        r.offset(5.0f, 5.0f);
+        canvas->drawBitmapRect(bm, r, nullptr);
+
+        sk_sp<SkPicture> final(recorder.finishRecordingAsPicture());
+        REPORTER_ASSERT(reporter, final->willPlayBackBitmaps());
+
+        REPORTER_ASSERT(reporter, copy->uniqueID() != final->uniqueID());
+
+        // The snapshot shouldn't pick up any operations added after it was made
+        REPORTER_ASSERT(reporter, !copy->willPlayBackBitmaps());
+    }
+
     // Recreate the Android partialReplay test case
     {
         SkPictureRecorder recorder;
 
-        SkCanvas* canvas = recorder.beginRecording(4, 3);
+        SkCanvas* canvas = recorder.beginRecording(4, 3, nullptr, 0);
         create_imbalance(canvas);
 
         int expectedSaveCount = canvas->getSaveCount();
@@ -351,22 +602,23 @@ static void test_peephole() {
     }
 }
 
-static void test_bad_bitmap(skiatest::Reporter* reporter) {
-    // missing pixels should return null for image
+#ifndef SK_DEBUG
+// Only test this is in release mode. We deliberately crash in debug mode, since a valid caller
+// should never do this.
+static void test_bad_bitmap() {
+    // This bitmap has a width and height but no pixels. As a result, attempting to record it will
+    // fail.
     SkBitmap bm;
     bm.setInfo(SkImageInfo::MakeN32Premul(100, 100));
-    auto img = bm.asImage();
-    REPORTER_ASSERT(reporter, !img);
-
-    // make sure we don't crash on a null image
     SkPictureRecorder recorder;
     SkCanvas* recordingCanvas = recorder.beginRecording(100, 100);
-    recordingCanvas->drawImage(nullptr, 0, 0);
+    recordingCanvas->drawBitmap(bm, 0, 0);
     sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
 
     SkCanvas canvas;
     canvas.drawPicture(picture);
 }
+#endif
 
 static void test_clip_bound_opt(skiatest::Reporter* reporter) {
     // Test for crbug.com/229011
@@ -379,7 +631,7 @@ static void test_clip_bound_opt(skiatest::Reporter* reporter) {
 
     SkPath invPath;
     invPath.addOval(rect1);
-    invPath.setFillType(SkPathFillType::kInverseEvenOdd);
+    invPath.setFillType(SkPath::kInverseEvenOdd_FillType);
     SkPath path;
     path.addOval(rect2);
     SkPath path2;
@@ -391,7 +643,8 @@ static void test_clip_bound_opt(skiatest::Reporter* reporter) {
     {
         SkCanvas* canvas = recorder.beginRecording(10, 10);
         canvas->clipPath(invPath);
-        clipBounds = canvas->getDeviceClipBounds();
+        bool nonEmpty = canvas->getClipDeviceBounds(&clipBounds);
+        REPORTER_ASSERT(reporter, true == nonEmpty);
         REPORTER_ASSERT(reporter, 0 == clipBounds.fLeft);
         REPORTER_ASSERT(reporter, 0 == clipBounds.fTop);
         REPORTER_ASSERT(reporter, 10 == clipBounds.fBottom);
@@ -401,7 +654,8 @@ static void test_clip_bound_opt(skiatest::Reporter* reporter) {
         SkCanvas* canvas = recorder.beginRecording(10, 10);
         canvas->clipPath(path);
         canvas->clipPath(invPath);
-        clipBounds = canvas->getDeviceClipBounds();
+        bool nonEmpty = canvas->getClipDeviceBounds(&clipBounds);
+        REPORTER_ASSERT(reporter, true == nonEmpty);
         REPORTER_ASSERT(reporter, 7 == clipBounds.fLeft);
         REPORTER_ASSERT(reporter, 7 == clipBounds.fTop);
         REPORTER_ASSERT(reporter, 8 == clipBounds.fBottom);
@@ -409,8 +663,10 @@ static void test_clip_bound_opt(skiatest::Reporter* reporter) {
     }
     {
         SkCanvas* canvas = recorder.beginRecording(10, 10);
-        canvas->clipPath(path, SkClipOp::kDifference);
-        clipBounds = canvas->getDeviceClipBounds();
+        canvas->clipPath(path);
+        canvas->clipPath(invPath, SkCanvas::kUnion_Op);
+        bool nonEmpty = canvas->getClipDeviceBounds(&clipBounds);
+        REPORTER_ASSERT(reporter, true == nonEmpty);
         REPORTER_ASSERT(reporter, 0 == clipBounds.fLeft);
         REPORTER_ASSERT(reporter, 0 == clipBounds.fTop);
         REPORTER_ASSERT(reporter, 10 == clipBounds.fBottom);
@@ -418,11 +674,35 @@ static void test_clip_bound_opt(skiatest::Reporter* reporter) {
     }
     {
         SkCanvas* canvas = recorder.beginRecording(10, 10);
-        canvas->clipPath(path, SkClipOp::kIntersect);
-        canvas->clipPath(path2, SkClipOp::kDifference);
-        clipBounds = canvas->getDeviceClipBounds();
+        canvas->clipPath(path, SkCanvas::kDifference_Op);
+        bool nonEmpty = canvas->getClipDeviceBounds(&clipBounds);
+        REPORTER_ASSERT(reporter, true == nonEmpty);
+        REPORTER_ASSERT(reporter, 0 == clipBounds.fLeft);
+        REPORTER_ASSERT(reporter, 0 == clipBounds.fTop);
+        REPORTER_ASSERT(reporter, 10 == clipBounds.fBottom);
+        REPORTER_ASSERT(reporter, 10 == clipBounds.fRight);
+    }
+    {
+        SkCanvas* canvas = recorder.beginRecording(10, 10);
+        canvas->clipPath(path, SkCanvas::kReverseDifference_Op);
+        bool nonEmpty = canvas->getClipDeviceBounds(&clipBounds);
+        // True clip is actually empty in this case, but the best
+        // determination we can make using only bounds as input is that the
+        // clip is included in the bounds of 'path'.
+        REPORTER_ASSERT(reporter, true == nonEmpty);
         REPORTER_ASSERT(reporter, 7 == clipBounds.fLeft);
         REPORTER_ASSERT(reporter, 7 == clipBounds.fTop);
+        REPORTER_ASSERT(reporter, 8 == clipBounds.fBottom);
+        REPORTER_ASSERT(reporter, 8 == clipBounds.fRight);
+    }
+    {
+        SkCanvas* canvas = recorder.beginRecording(10, 10);
+        canvas->clipPath(path, SkCanvas::kIntersect_Op);
+        canvas->clipPath(path2, SkCanvas::kXOR_Op);
+        bool nonEmpty = canvas->getClipDeviceBounds(&clipBounds);
+        REPORTER_ASSERT(reporter, true == nonEmpty);
+        REPORTER_ASSERT(reporter, 6 == clipBounds.fLeft);
+        REPORTER_ASSERT(reporter, 6 == clipBounds.fTop);
         REPORTER_ASSERT(reporter, 8 == clipBounds.fBottom);
         REPORTER_ASSERT(reporter, 8 == clipBounds.fRight);
     }
@@ -438,7 +718,7 @@ static void test_cull_rect_reset(skiatest::Reporter* reporter) {
     canvas->drawRect(bounds, paint);
     canvas->drawRect(bounds, paint);
     sk_sp<SkPicture> p(recorder.finishRecordingAsPictureWithCull(bounds));
-    const SkBigPicture* picture = SkPicturePriv::AsSkBigPicture(p);
+    const SkBigPicture* picture = p->asSkBigPicture();
     REPORTER_ASSERT(reporter, picture);
 
     SkRect finalCullRect = picture->cullRect();
@@ -446,6 +726,13 @@ static void test_cull_rect_reset(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 0 == finalCullRect.fTop);
     REPORTER_ASSERT(reporter, 100 == finalCullRect.fBottom);
     REPORTER_ASSERT(reporter, 100 == finalCullRect.fRight);
+
+    const SkBBoxHierarchy* pictureBBH = picture->bbh();
+    SkRect bbhCullRect = pictureBBH->getRootBound();
+    REPORTER_ASSERT(reporter, 0 == bbhCullRect.fLeft);
+    REPORTER_ASSERT(reporter, 0 == bbhCullRect.fTop);
+    REPORTER_ASSERT(reporter, 100 == bbhCullRect.fBottom);
+    REPORTER_ASSERT(reporter, 100 == bbhCullRect.fRight);
 }
 
 
@@ -459,22 +746,22 @@ public:
         , fClipCount(0){
     }
 
-    void onClipRect(const SkRect& r, SkClipOp op, ClipEdgeStyle edgeStyle) override {
+    void onClipRect(const SkRect& r, ClipOp op, ClipEdgeStyle edgeStyle) override {
         fClipCount += 1;
         this->INHERITED::onClipRect(r, op, edgeStyle);
     }
 
-    void onClipRRect(const SkRRect& rrect, SkClipOp op, ClipEdgeStyle edgeStyle)override {
+    void onClipRRect(const SkRRect& rrect, ClipOp op, ClipEdgeStyle edgeStyle)override {
         fClipCount += 1;
         this->INHERITED::onClipRRect(rrect, op, edgeStyle);
     }
 
-    void onClipPath(const SkPath& path, SkClipOp op, ClipEdgeStyle edgeStyle) override {
+    void onClipPath(const SkPath& path, ClipOp op, ClipEdgeStyle edgeStyle) override {
         fClipCount += 1;
         this->INHERITED::onClipPath(path, op, edgeStyle);
     }
 
-    void onClipRegion(const SkRegion& deviceRgn, SkClipOp op) override {
+    void onClipRegion(const SkRegion& deviceRgn, ClipOp op) override {
         fClipCount += 1;
         this->INHERITED::onClipRegion(deviceRgn, op);
     }
@@ -484,8 +771,70 @@ public:
 private:
     unsigned fClipCount;
 
-    using INHERITED = SkCanvas;
+    typedef SkCanvas INHERITED;
 };
+
+static void test_clip_expansion(skiatest::Reporter* reporter) {
+    SkPictureRecorder recorder;
+    SkCanvas* canvas = recorder.beginRecording(10, 10);
+
+    canvas->clipRect(SkRect::MakeEmpty(), SkCanvas::kReplace_Op);
+    // The following expanding clip should not be skipped.
+    canvas->clipRect(SkRect::MakeXYWH(4, 4, 3, 3), SkCanvas::kUnion_Op);
+    // Draw something so the optimizer doesn't just fold the world.
+    SkPaint p;
+    p.setColor(SK_ColorBLUE);
+    canvas->drawPaint(p);
+    sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
+
+    ClipCountingCanvas testCanvas(10, 10);
+    picture->playback(&testCanvas);
+
+    // Both clips should be present on playback.
+    REPORTER_ASSERT(reporter, testCanvas.getClipCount() == 2);
+}
+
+static void test_hierarchical(skiatest::Reporter* reporter) {
+    SkBitmap bm;
+    make_bm(&bm, 10, 10, SK_ColorRED, true);
+
+    SkPictureRecorder recorder;
+
+    recorder.beginRecording(10, 10);
+    sk_sp<SkPicture> childPlain(recorder.finishRecordingAsPicture());
+    REPORTER_ASSERT(reporter, !childPlain->willPlayBackBitmaps()); // 0
+
+    recorder.beginRecording(10, 10)->drawBitmap(bm, 0, 0);
+    sk_sp<SkPicture> childWithBitmap(recorder.finishRecordingAsPicture());
+    REPORTER_ASSERT(reporter, childWithBitmap->willPlayBackBitmaps()); // 1
+
+    {
+        SkCanvas* canvas = recorder.beginRecording(10, 10);
+        canvas->drawPicture(childPlain);
+        sk_sp<SkPicture> parentPP(recorder.finishRecordingAsPicture());
+        REPORTER_ASSERT(reporter, !parentPP->willPlayBackBitmaps()); // 0
+    }
+    {
+        SkCanvas* canvas = recorder.beginRecording(10, 10);
+        canvas->drawPicture(childWithBitmap);
+        sk_sp<SkPicture> parentPWB(recorder.finishRecordingAsPicture());
+        REPORTER_ASSERT(reporter, parentPWB->willPlayBackBitmaps()); // 1
+    }
+    {
+        SkCanvas* canvas = recorder.beginRecording(10, 10);
+        canvas->drawBitmap(bm, 0, 0);
+        canvas->drawPicture(childPlain);
+        sk_sp<SkPicture> parentWBP(recorder.finishRecordingAsPicture());
+        REPORTER_ASSERT(reporter, parentWBP->willPlayBackBitmaps()); // 1
+    }
+    {
+        SkCanvas* canvas = recorder.beginRecording(10, 10);
+        canvas->drawBitmap(bm, 0, 0);
+        canvas->drawPicture(childWithBitmap);
+        sk_sp<SkPicture> parentWBWB(recorder.finishRecordingAsPicture());
+        REPORTER_ASSERT(reporter, parentWBWB->willPlayBackBitmaps()); // 2
+    }
+}
 
 static void test_gen_id(skiatest::Reporter* reporter) {
 
@@ -497,7 +846,7 @@ static void test_gen_id(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, empty->uniqueID() != SK_InvalidGenID);
 
     SkCanvas* canvas = recorder.beginRecording(1, 1);
-    canvas->drawColor(SK_ColorWHITE);
+    canvas->drawARGB(255, 255, 255, 255);
     sk_sp<SkPicture> hasData(recorder.finishRecordingAsPicture());
     // picture should have a non-zero id after recording
     REPORTER_ASSERT(reporter, hasData->uniqueID() != SK_InvalidGenID);
@@ -509,8 +858,10 @@ static void test_gen_id(skiatest::Reporter* reporter) {
 static void test_typeface(skiatest::Reporter* reporter) {
     SkPictureRecorder recorder;
     SkCanvas* canvas = recorder.beginRecording(10, 10);
-    SkFont font(SkTypeface::MakeFromName("Arial", SkFontStyle::Italic()));
-    canvas->drawString("Q", 0, 10, font, SkPaint());
+    SkPaint paint;
+    paint.setTypeface(SkTypeface::MakeFromName("Arial",
+                                               SkFontStyle::FromOldStyle(SkTypeface::kItalic)));
+    canvas->drawText("Q", 1, 0, 10, paint);
     sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
     SkDynamicMemoryWStream stream;
     picture->serialize(&stream);
@@ -521,24 +872,38 @@ DEF_TEST(Picture, reporter) {
 #ifdef SK_DEBUG
     test_deleting_empty_picture();
     test_serializing_empty_picture();
+#else
+    test_bad_bitmap();
 #endif
-    test_bad_bitmap(reporter);
     test_unbalanced_save_restores(reporter);
     test_peephole();
+#if SK_SUPPORT_GPU
+    test_gpu_veto(reporter);
+#endif
+    test_images_are_found_by_willPlayBackBitmaps(reporter);
+    test_analysis(reporter);
     test_clip_bound_opt(reporter);
+    test_clip_expansion(reporter);
+    test_hierarchical(reporter);
     test_gen_id(reporter);
     test_cull_rect_reset(reporter);
 }
 
 static void draw_bitmaps(const SkBitmap bitmap, SkCanvas* canvas) {
+    const SkPaint paint;
     const SkRect rect = { 5.0f, 5.0f, 8.0f, 8.0f };
-    auto img = bitmap.asImage();
+    const SkIRect irect =  { 2, 2, 3, 3 };
+    int divs[] = { 2, 3 };
+    SkCanvas::Lattice lattice;
+    lattice.fXCount = lattice.fYCount = 2;
+    lattice.fXDivs = lattice.fYDivs = divs;
 
     // Don't care what these record, as long as they're legal.
-    canvas->drawImage(img, 0.0f, 0.0f);
-    canvas->drawImageRect(img, rect, rect, SkSamplingOptions(), nullptr,
-                          SkCanvas::kStrict_SrcRectConstraint);
-    canvas->drawImage(img, 1, 1);   // drawSprite
+    canvas->drawBitmap(bitmap, 0.0f, 0.0f, &paint);
+    canvas->drawBitmapRect(bitmap, rect, rect, &paint, SkCanvas::kStrict_SrcRectConstraint);
+    canvas->drawBitmapNine(bitmap, irect, rect, &paint);
+    canvas->drawBitmap(bitmap, 1, 1);   // drawSprite
+    canvas->drawBitmapLattice(bitmap, lattice, rect, &paint);
 }
 
 static void test_draw_bitmaps(SkCanvas* canvas) {
@@ -587,11 +952,11 @@ DEF_TEST(DontOptimizeSaveLayerDrawDrawRestore, reporter) {
 
     SkPictureRecorder recorder;
     SkCanvas* canvas = recorder.beginRecording(100, 100);
-    canvas->drawColor(0);
+    canvas->drawARGB(0, 0, 0, 0);
 
-    canvas->saveLayer(nullptr, &semiTransparent);
-    canvas->drawImage(blueBM.asImage(), 25, 25);
-    canvas->drawImage(redBM.asImage(), 50, 50);
+    canvas->saveLayer(0, &semiTransparent);
+    canvas->drawBitmap(blueBM, 25, 25);
+    canvas->drawBitmap(redBM, 50, 50);
     canvas->restore();
 
     sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
@@ -602,6 +967,7 @@ DEF_TEST(DontOptimizeSaveLayerDrawDrawRestore, reporter) {
     make_bm(&replayBM, 100, 100, SK_ColorBLACK, false);
     SkCanvas replayCanvas(replayBM);
     picture->playback(&replayCanvas);
+    replayCanvas.flush();
 
     // With the bug present, at (55, 55) we would get a fully opaque red
     // intead of a dark red.
@@ -611,33 +977,34 @@ DEF_TEST(DontOptimizeSaveLayerDrawDrawRestore, reporter) {
 
 struct CountingBBH : public SkBBoxHierarchy {
     mutable int searchCalls;
+    SkRect rootBound;
 
-    CountingBBH() : searchCalls(0) {}
+    CountingBBH(const SkRect& bound) : searchCalls(0), rootBound(bound) {}
 
-    void search(const SkRect& query, std::vector<int>* results) const override {
+    void search(const SkRect& query, SkTDArray<int>* results) const override {
         this->searchCalls++;
     }
 
     void insert(const SkRect[], int) override {}
-    size_t bytesUsed() const override { return 0; }
+    virtual size_t bytesUsed() const override { return 0; }
+    SkRect getRootBound() const override { return rootBound; }
 };
 
 class SpoonFedBBHFactory : public SkBBHFactory {
 public:
-    explicit SpoonFedBBHFactory(sk_sp<SkBBoxHierarchy> bbh) : fBBH(bbh) {}
-    sk_sp<SkBBoxHierarchy> operator()() const override {
-        return fBBH;
+    explicit SpoonFedBBHFactory(SkBBoxHierarchy* bbh) : fBBH(bbh) {}
+    SkBBoxHierarchy* operator()(const SkRect&) const override {
+        return SkRef(fBBH);
     }
 private:
-    sk_sp<SkBBoxHierarchy> fBBH;
+    SkBBoxHierarchy* fBBH;
 };
 
 // When the canvas clip covers the full picture, we don't need to call the BBH.
 DEF_TEST(Picture_SkipBBH, r) {
     SkRect bound = SkRect::MakeWH(320, 240);
-
-    auto bbh = sk_make_sp<CountingBBH>();
-    SpoonFedBBHFactory factory(bbh);
+    CountingBBH bbh(bound);
+    SpoonFedBBHFactory factory(&bbh);
 
     SkPictureRecorder recorder;
     SkCanvas* c = recorder.beginRecording(bound, &factory);
@@ -649,10 +1016,10 @@ DEF_TEST(Picture_SkipBBH, r) {
     SkCanvas big(640, 480), small(300, 200);
 
     picture->playback(&big);
-    REPORTER_ASSERT(r, bbh->searchCalls == 0);
+    REPORTER_ASSERT(r, bbh.searchCalls == 0);
 
     picture->playback(&small);
-    REPORTER_ASSERT(r, bbh->searchCalls == 1);
+    REPORTER_ASSERT(r, bbh.searchCalls == 1);
 }
 
 DEF_TEST(Picture_BitmapLeak, r) {
@@ -673,8 +1040,8 @@ DEF_TEST(Picture_BitmapLeak, r) {
         // place it inside local braces.
         SkPictureRecorder rec;
         SkCanvas* canvas = rec.beginRecording(1920, 1200);
-            canvas->drawImage(mut.asImage(), 0, 0);
-            canvas->drawImage(immut.asImage(), 800, 600);
+            canvas->drawBitmap(mut, 0, 0);
+            canvas->drawBitmap(immut, 800, 600);
         pic = rec.finishRecordingAsPicture();
     }
 
@@ -700,6 +1067,16 @@ DEF_TEST(Picture_getRecordingCanvas, r) {
     }
 }
 
+DEF_TEST(MiniRecorderLeftHanging, r) {
+    // Any shader or other ref-counted effect will do just fine here.
+    SkPaint paint;
+    paint.setShader(SkShader::MakeColorShader(SK_ColorRED));
+
+    SkMiniRecorder rec;
+    REPORTER_ASSERT(r, rec.drawRect(SkRect::MakeWH(20,30), paint));
+    // Don't call rec.detachPicture().  Test succeeds by not asserting or leaking the shader.
+}
+
 DEF_TEST(Picture_preserveCullRect, r) {
     SkPictureRecorder recorder;
 
@@ -720,228 +1097,117 @@ DEF_TEST(Picture_preserveCullRect, r) {
     REPORTER_ASSERT(r, deserializedPicture->cullRect().bottom() == 4);
 }
 
+#if SK_SUPPORT_GPU
 
-// If we record bounded ops into a picture with a big cull and calculate the
-// bounds of those ops, we should trim down the picture cull to the ops' bounds.
-// If we're not using an SkBBH, we shouldn't change it.
-DEF_TEST(Picture_UpdatedCull_1, r) {
-    SkRTreeFactory factory;
+DEF_TEST(PictureGpuAnalyzer, r) {
     SkPictureRecorder recorder;
 
-    auto canvas = recorder.beginRecording(SkRectPriv::MakeLargest(), &factory);
-    canvas->drawRect(SkRect::MakeWH(20,20), SkPaint{});
-    auto pic = recorder.finishRecordingAsPicture();
-    REPORTER_ASSERT(r, pic->cullRect() == SkRect::MakeWH(20,20));
-
-    canvas = recorder.beginRecording(SkRectPriv::MakeLargest());
-    canvas->drawRect(SkRect::MakeWH(20,20), SkPaint{});
-    pic = recorder.finishRecordingAsPicture();
-    REPORTER_ASSERT(r, pic->cullRect() == SkRectPriv::MakeLargest());
-}
-DEF_TEST(Picture_UpdatedCull_2, r) {
-    SkRTreeFactory factory;
-    SkPictureRecorder recorder;
-
-    auto canvas = recorder.beginRecording(SkRectPriv::MakeLargest(), &factory);
-    canvas->drawRect(SkRect::MakeWH(20,20), SkPaint{});
-    canvas->drawRect(SkRect::MakeWH(10,40), SkPaint{});
-    auto pic = recorder.finishRecordingAsPicture();
-    REPORTER_ASSERT(r, pic->cullRect() == SkRect::MakeWH(20,40));
-
-    canvas = recorder.beginRecording(SkRectPriv::MakeLargest());
-    canvas->drawRect(SkRect::MakeWH(20,20), SkPaint{});
-    canvas->drawRect(SkRect::MakeWH(10,40), SkPaint{});
-    pic = recorder.finishRecordingAsPicture();
-    REPORTER_ASSERT(r, pic->cullRect() == SkRectPriv::MakeLargest());
-}
-
-DEF_TEST(Picture_RecordsFlush, r) {
-    SkPictureRecorder recorder;
-
-    auto canvas = recorder.beginRecording(SkRect::MakeWH(100,100));
-    for (int i = 0; i < 10; i++) {
-        canvas->clear(0);
-        for (int j = 0; j < 10; j++) {
-            canvas->drawRect(SkRect::MakeXYWH(i*10,j*10,10,10), SkPaint());
-        }
-        canvas->flush();
-    }
-
-    // Did we record the flushes?
-    auto pic = recorder.finishRecordingAsPicture();
-    REPORTER_ASSERT(r, pic->approximateOpCount() == 120);  // 10 clears, 100 draws, 10 flushes
-
-    // Do we serialize and deserialize flushes?
-    auto skp = pic->serialize();
-    auto back = SkPicture::MakeFromData(skp->data(), skp->size());
-    REPORTER_ASSERT(r, back->approximateOpCount() == pic->approximateOpCount());
-}
-
-DEF_TEST(Placeholder, r) {
-    SkRect cull = { 0,0, 10,20 };
-
-    // Each placeholder is unique.
-    sk_sp<SkPicture> p1 = SkPicture::MakePlaceholder(cull),
-                     p2 = SkPicture::MakePlaceholder(cull);
-    REPORTER_ASSERT(r, p1->cullRect() == p2->cullRect());
-    REPORTER_ASSERT(r, p1->cullRect() == cull);
-    REPORTER_ASSERT(r, p1->uniqueID() != p2->uniqueID());
-
-    // Placeholders are never unrolled by SkCanvas (while other small pictures may be).
-    SkPictureRecorder recorder;
-    SkCanvas* canvas = recorder.beginRecording(cull);
-        canvas->drawPicture(p1);
-        canvas->drawPicture(p2);
-    sk_sp<SkPicture> pic = recorder.finishRecordingAsPicture();
-    REPORTER_ASSERT(r, pic->approximateOpCount() == 2);
-
-    // Any upper limit when recursing into nested placeholders is fine as long
-    // as it doesn't overflow an int.
-    REPORTER_ASSERT(r, pic->approximateOpCount(/*nested?*/true) >=  2);
-    REPORTER_ASSERT(r, pic->approximateOpCount(/*nested?*/true) <= 10);
-}
-
-DEF_TEST(Picture_empty_serial, reporter) {
-    SkPictureRecorder rec;
-    (void)rec.beginRecording(10, 10);
-    auto pic = rec.finishRecordingAsPicture();
-    REPORTER_ASSERT(reporter, pic);
-
-    auto data = pic->serialize();
-    REPORTER_ASSERT(reporter, data);
-
-    auto pic2 = SkPicture::MakeFromData(data->data(), data->size());
-    REPORTER_ASSERT(reporter, pic2);
-}
-
-
-DEF_TEST(Picture_drawsNothing, r) {
-    // Tests that pic->cullRect().isEmpty() is a good way to test a picture
-    // recorded with an R-tree draws nothing.
-    struct {
-        bool draws_nothing;
-        void (*fn)(SkCanvas*);
-    } cases[] = {
-        {  true, [](SkCanvas* c) {                                                             } },
-        {  true, [](SkCanvas* c) { c->save();                                    c->restore(); } },
-        {  true, [](SkCanvas* c) { c->save(); c->clipRect({0,0,5,5});            c->restore(); } },
-        {  true, [](SkCanvas* c) {            c->clipRect({0,0,5,5});                          } },
-
-        { false, [](SkCanvas* c) {            c->drawRect({0,0,5,5}, SkPaint{});               } },
-        { false, [](SkCanvas* c) { c->save(); c->drawRect({0,0,5,5}, SkPaint{}); c->restore(); } },
-        { false, [](SkCanvas* c) {
-            c->drawRect({0,0, 5, 5}, SkPaint{});
-            c->drawRect({5,5,10,10}, SkPaint{});
-        }},
-    };
-
-    for (const auto& c : cases) {
-        SkPictureRecorder rec;
-        SkRTreeFactory factory;
-        c.fn(rec.beginRecording(10,10, &factory));
-        sk_sp<SkPicture> pic = rec.finishRecordingAsPicture();
-
-        REPORTER_ASSERT(r, pic->cullRect().isEmpty() == c.draws_nothing);
-    }
-}
-
-DEF_TEST(Picture_emptyNestedPictureBug, r) {
-    const SkRect bounds = {-5000, -5000, 5000, 5000};
-
-    SkPictureRecorder recorder;
-    SkRTreeFactory factory;
-
-    // These three pictures should all draw the same but due to bugs they don't:
-    //
-    //   1) inner has enough content that it is recoreded as an SkBigPicture,
-    //      and all its content falls outside the positive/positive quadrant,
-    //      and it is recorded with an R-tree so we contract the cullRect to those bounds;
-    //
-    //   2) middle wraps inner,
-    //      and it its recorded with an R-tree so we update middle's cullRect to inner's;
-    //
-    //   3) outer wraps inner,
-    //      and notices that middle contains only one op, drawPicture(inner),
-    //      so it plays middle back during recording rather than ref'ing middle,
-    //      querying middle's R-tree with its SkCanvas' bounds* {0,0, 5000,5000},
-    //      finding nothing to draw.
-    //
-    //  * The bug was that these bounds were not tracked as {-5000,-5000, 5000,5000}.
     {
-        SkCanvas* canvas = recorder.beginRecording(bounds, &factory);
-        canvas->translate(-100,-100);
-        canvas->drawRect({0,0,50,50}, SkPaint{});
-    }
-    sk_sp<SkPicture> inner = recorder.finishRecordingAsPicture();
+        SkCanvas* canvas = recorder.beginRecording(10, 10);
+        SkPaint paint;
+        SkScalar intervals [] = { 10, 20 };
+        paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 25));
 
-    recorder.beginRecording(bounds, &factory)->drawPicture(inner);
-    sk_sp<SkPicture> middle = recorder.finishRecordingAsPicture();
-
-    // This doesn't need &factory to reproduce the bug,
-    // but it's nice to see we come up with the same {-100,-100, -50,-50} bounds.
-    recorder.beginRecording(bounds, &factory)->drawPicture(middle);
-    sk_sp<SkPicture> outer = recorder.finishRecordingAsPicture();
-
-    REPORTER_ASSERT(r, (inner ->cullRect() == SkRect{-100,-100, -50,-50}));
-    REPORTER_ASSERT(r, (middle->cullRect() == SkRect{-100,-100, -50,-50}));
-    REPORTER_ASSERT(r, (outer ->cullRect() == SkRect{-100,-100, -50,-50}));   // Used to fail.
-}
-
-DEF_TEST(Picture_fillsBBH, r) {
-    // Test empty (0 draws), mini (1 draw), and big (2+) pictures, making sure they fill the BBH.
-    const SkRect rects[] = {
-        { 0, 0, 20,20},
-        {20,20, 40,40},
-    };
-
-    for (int n = 0; n <= 2; n++) {
-        SkRTreeFactory factory;
-        SkPictureRecorder rec;
-
-        sk_sp<SkBBoxHierarchy> bbh = factory();
-
-        SkCanvas* c = rec.beginRecording({0,0, 100,100}, bbh);
-        for (int i = 0; i < n; i++) {
-            c->drawRect(rects[i], SkPaint{});
+        for (int i = 0; i < 50; ++i) {
+            canvas->drawRect(SkRect::MakeWH(10, 10), paint);
         }
-        sk_sp<SkPicture> pic = rec.finishRecordingAsPicture();
+    }
+    sk_sp<SkPicture> vetoPicture(recorder.finishRecordingAsPicture());
 
-        std::vector<int> results;
-        bbh->search({0,0, 100,100}, &results);
-        REPORTER_ASSERT(r, (int)results.size() == n,
-                        "results.size() == %d, want %d\n", (int)results.size(), n);
+    SkPictureGpuAnalyzer analyzer;
+    REPORTER_ASSERT(r, analyzer.suitableForGpuRasterization());
+
+    analyzer.analyzePicture(vetoPicture.get());
+    REPORTER_ASSERT(r, !analyzer.suitableForGpuRasterization());
+
+    analyzer.reset();
+    REPORTER_ASSERT(r, analyzer.suitableForGpuRasterization());
+
+    recorder.beginRecording(10, 10)->drawPicture(vetoPicture);
+    sk_sp<SkPicture> nestedVetoPicture(recorder.finishRecordingAsPicture());
+
+    analyzer.analyzePicture(nestedVetoPicture.get());
+    REPORTER_ASSERT(r, !analyzer.suitableForGpuRasterization());
+
+    analyzer.reset();
+
+    const SkPath convexClip = make_convex_path();
+    const SkPath concaveClip = make_concave_path();
+    for (int i = 0; i < 50; ++i) {
+        analyzer.analyzeClipPath(convexClip, SkCanvas::kIntersect_Op, false);
+        analyzer.analyzeClipPath(convexClip, SkCanvas::kIntersect_Op, true);
+        analyzer.analyzeClipPath(concaveClip, SkCanvas::kIntersect_Op, false);
+    }
+    REPORTER_ASSERT(r, analyzer.suitableForGpuRasterization());
+
+    for (int i = 0; i < 50; ++i) {
+        analyzer.analyzeClipPath(concaveClip, SkCanvas::kIntersect_Op, true);
+    }
+    REPORTER_ASSERT(r, !analyzer.suitableForGpuRasterization());
+}
+
+#endif // SK_SUPPORT_GPU
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Disable until we properly fix https://bugs.chromium.org/p/skia/issues/detail?id=5548
+#if 0
+static void empty_ops(SkCanvas* canvas) {
+}
+static void clip_ops(SkCanvas* canvas) {
+    canvas->save();
+    canvas->clipRect(SkRect::MakeWH(20, 20));
+    canvas->restore();
+}
+static void matrix_ops(SkCanvas* canvas) {
+    canvas->save();
+    canvas->scale(2, 3);
+    canvas->restore();
+}
+static void matrixclip_ops(SkCanvas* canvas) {
+    canvas->save();
+    canvas->scale(2, 3);
+    canvas->clipRect(SkRect::MakeWH(20, 20));
+    canvas->restore();
+}
+typedef void (*CanvasProc)(SkCanvas*);
+
+// Test the kReturnNullForEmpty_FinishFlag option when recording
+//
+DEF_TEST(Picture_RecordEmpty, r) {
+    const SkRect cull = SkRect::MakeWH(100, 100);
+
+    CanvasProc procs[] { empty_ops, clip_ops, matrix_ops, matrixclip_ops };
+
+    for (auto proc : procs) {
+        {
+            SkPictureRecorder rec;
+            proc(rec.beginRecording(cull));
+            sk_sp<SkPicture> pic = rec.finishRecordingAsPicture(0);
+            REPORTER_ASSERT(r, pic.get());
+            REPORTER_ASSERT(r, pic->approximateOpCount() == 0);
+        }
+        {
+            SkPictureRecorder rec;
+            proc(rec.beginRecording(cull));
+            sk_sp<SkPicture> pic = rec.finishRecordingAsPicture(
+                                                 SkPictureRecorder::kReturnNullForEmpty_FinishFlag);
+            REPORTER_ASSERT(r, !pic.get());
+        }
+        {
+            SkPictureRecorder rec;
+            proc(rec.beginRecording(cull));
+            sk_sp<SkDrawable> dr = rec.finishRecordingAsDrawable(0);
+            REPORTER_ASSERT(r, dr.get());
+        }
+        {
+            SkPictureRecorder rec;
+            proc(rec.beginRecording(cull));
+            sk_sp<SkDrawable> dr = rec.finishRecordingAsDrawable(
+                                                 SkPictureRecorder::kReturnNullForEmpty_FinishFlag);
+            REPORTER_ASSERT(r, !dr.get());
+        }
     }
 }
+#endif
 
-DEF_TEST(Picture_nested_op_count, r) {
-    auto make_pic = [](int n, sk_sp<SkPicture> pic) {
-        SkPictureRecorder rec;
-        SkCanvas* c = rec.beginRecording({0,0, 100,100});
-        for (int i = 0; i < n; i++) {
-            if (pic) {
-                c->drawPicture(pic);
-            } else {
-                c->drawRect({0,0, 100,100}, SkPaint{});
-            }
-        }
-        return rec.finishRecordingAsPicture();
-    };
-
-    auto check = [r](sk_sp<SkPicture> pic, int shallow, int nested) {
-        int s = pic->approximateOpCount(false);
-        int n = pic->approximateOpCount(true);
-        REPORTER_ASSERT(r, s == shallow);
-        REPORTER_ASSERT(r, n == nested);
-    };
-
-    sk_sp<SkPicture> leaf1 = make_pic(1, nullptr);
-    check(leaf1, 1, 1);
-
-    sk_sp<SkPicture> leaf10 = make_pic(10, nullptr);
-    check(leaf10, 10, 10);
-
-    check(make_pic( 1, leaf1),   1,   1);
-    check(make_pic( 1, leaf10),  1,  10);
-    check(make_pic(10, leaf1),  10,  10);
-    check(make_pic(10, leaf10), 10, 100);
-}

@@ -4,35 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkSurfaceProps.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
-#include "tools/ToolUtils.h"
-
-#include <string.h>
-
-using namespace skia_private;
+#include "gm.h"
+#include "Resources.h"
+#include "SkCanvas.h"
+#include "SkStream.h"
+#include "SkSurface.h"
+#include "SkTypeface.h"
 
 class DFTextGM : public skiagm::GM {
 public:
@@ -42,44 +19,48 @@ public:
 
 protected:
     void onOnceBeforeDraw() override {
-        fEmojiTypeface = ToolUtils::emoji_typeface();
-        fEmojiText     = ToolUtils::emoji_sample_text();
+        fEmojiTypeface = sk_tool_utils::emoji_typeface();
+        fEmojiText = sk_tool_utils::emoji_sample_text();
     }
 
     SkString onShortName() override {
-        return SkString("dftext");
+        SkString name("dftext");
+        name.append(sk_tool_utils::platform_os_emoji());
+        return name;
     }
 
     SkISize onISize() override {
         return SkISize::Make(1024, 768);
     }
 
-    void onDraw(SkCanvas* inputCanvas) override {
+    virtual void onDraw(SkCanvas* inputCanvas) override {
         SkScalar textSizes[] = { 9.0f, 9.0f*2.0f, 9.0f*5.0f, 9.0f*2.0f*5.0f };
         SkScalar scales[] = { 2.0f*5.0f, 5.0f, 2.0f, 1.0f };
 
         // set up offscreen rendering with distance field text
-        auto ctx = inputCanvas->recordingContext();
+#if SK_SUPPORT_GPU
+        GrContext* ctx = inputCanvas->getGrContext();
         SkISize size = onISize();
         SkImageInfo info = SkImageInfo::MakeN32(size.width(), size.height(), kPremul_SkAlphaType,
-                                                inputCanvas->imageInfo().refColorSpace());
-        SkSurfaceProps inputProps;
-        inputCanvas->getProps(&inputProps);
-        SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag | inputProps.flags(),
-                             inputProps.pixelGeometry());
-        auto surface(SkSurface::MakeRenderTarget(ctx, skgpu::Budgeted::kNo, info, 0, &props));
+                                                sk_ref_sp(inputCanvas->imageInfo().colorSpace()));
+        SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag,
+                             SkSurfaceProps::kLegacyFontHost_InitType);
+        auto surface(SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, 0, &props));
         SkCanvas* canvas = surface ? surface->getCanvas() : inputCanvas;
         // init our new canvas with the old canvas's matrix
-        canvas->setMatrix(inputCanvas->getLocalToDeviceAs3x3());
+        canvas->setMatrix(inputCanvas->getTotalMatrix());
+#else
+        SkCanvas* canvas = inputCanvas;
+#endif
         // apply global scale to test glyph positioning
         canvas->scale(1.05f, 1.05f);
         canvas->clear(0xffffffff);
 
         SkPaint paint;
         paint.setAntiAlias(true);
+        paint.setSubpixelText(true);
 
-        SkFont font(ToolUtils::create_portable_typeface("serif", SkFontStyle()));
-        font.setSubpixel(true);
+        sk_tool_utils::set_portable_typeface(&paint, "serif");
 
         const char* text = "Hamburgefons";
         const size_t textLen = strlen(text);
@@ -87,13 +68,13 @@ protected:
         // check scaling up
         SkScalar x = SkIntToScalar(0);
         SkScalar y = SkIntToScalar(78);
-        for (size_t i = 0; i < std::size(textSizes); ++i) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(textSizes); ++i) {
             SkAutoCanvasRestore acr(canvas, true);
             canvas->translate(x, y);
             canvas->scale(scales[i], scales[i]);
-            font.setSize(textSizes[i]);
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, 0, 0, font, paint);
-            y += font.getMetrics(nullptr)*scales[i];
+            paint.setTextSize(textSizes[i]);
+            canvas->drawText(text, textLen, 0, 0, paint);
+            y += paint.getFontMetrics(nullptr)*scales[i];
         }
 
         // check rotation
@@ -105,25 +86,25 @@ protected:
             canvas->translate(SkIntToScalar(10 + i * 200), -80);
             canvas->rotate(SkIntToScalar(i * 5), rotX, rotY);
             for (int ps = 6; ps <= 32; ps += 3) {
-                font.setSize(SkIntToScalar(ps));
-                canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, rotX, rotY, font, paint);
-                rotY += font.getMetrics(nullptr);
+                paint.setTextSize(SkIntToScalar(ps));
+                canvas->drawText(text, textLen, rotX, rotY, paint);
+                rotY += paint.getFontMetrics(nullptr);
             }
         }
 
         // check scaling down
-        font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+        paint.setLCDRenderText(true);
         x = SkIntToScalar(680);
         y = SkIntToScalar(20);
-        size_t arraySize = std::size(textSizes);
+        size_t arraySize = SK_ARRAY_COUNT(textSizes);
         for (size_t i = 0; i < arraySize; ++i) {
             SkAutoCanvasRestore acr(canvas, true);
             canvas->translate(x, y);
             SkScalar scaleFactor = SkScalarInvert(scales[arraySize - i - 1]);
             canvas->scale(scaleFactor, scaleFactor);
-            font.setSize(textSizes[i]);
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, 0, 0, font, paint);
-            y += font.getMetrics(nullptr)*scaleFactor;
+            paint.setTextSize(textSizes[i]);
+            canvas->drawText(text, textLen, 0, 0, paint);
+            y += paint.getFontMetrics(nullptr)*scaleFactor;
         }
 
         // check pos text
@@ -132,15 +113,20 @@ protected:
 
             canvas->scale(2.0f, 2.0f);
 
-            AutoTArray<SkGlyphID> glyphs(SkToInt(textLen));
-            int count = font.textToGlyphs(text, textLen, SkTextEncoding::kUTF8, glyphs.get(), textLen);
-            AutoTArray<SkPoint>  pos(count);
-            font.setSize(textSizes[0]);
-            font.getPos(glyphs.get(), count, pos.get(), {340, 75});
+            SkAutoTArray<SkPoint>  pos(SkToInt(textLen));
+            SkAutoTArray<SkScalar> widths(SkToInt(textLen));
+            paint.setTextSize(textSizes[0]);
 
-            auto blob = SkTextBlob::MakeFromPosText(glyphs.get(), count * sizeof(SkGlyphID),
-                                                    pos.get(), font, SkTextEncoding::kGlyphID);
-            canvas->drawTextBlob(blob, 0, 0, paint);
+            paint.getTextWidths(text, textLen, &widths[0]);
+
+            SkScalar x = SkIntToScalar(340);
+            SkScalar y = SkIntToScalar(75);
+            for (unsigned int i = 0; i < textLen; ++i) {
+                pos[i].set(x, y);
+                x += widths[i];
+            }
+
+            canvas->drawPosText(text, textLen, &pos[0], paint);
         }
 
 
@@ -158,12 +144,12 @@ protected:
 
         x = SkIntToScalar(680);
         y = SkIntToScalar(235);
-        font.setSize(SkIntToScalar(19));
-        for (size_t i = 0; i < std::size(fg); ++i) {
+        paint.setTextSize(SkIntToScalar(19));
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fg); ++i) {
             paint.setColor(fg[i]);
 
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, x, y, font, paint);
-            y += font.getMetrics(nullptr);
+            canvas->drawText(text, textLen, x, y, paint);
+            y += paint.getFontMetrics(nullptr);
         }
 
         paint.setColor(0xFF181C18);
@@ -172,82 +158,52 @@ protected:
 
         x = SkIntToScalar(830);
         y = SkIntToScalar(235);
-        font.setSize(SkIntToScalar(19));
-        for (size_t i = 0; i < std::size(fg); ++i) {
+        paint.setTextSize(SkIntToScalar(19));
+        for (size_t i = 0; i < SK_ARRAY_COUNT(fg); ++i) {
             paint.setColor(fg[i]);
 
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, x, y, font, paint);
-            y += font.getMetrics(nullptr);
+            canvas->drawText(text, textLen, x, y, paint);
+            y += paint.getFontMetrics(nullptr);
         }
 
         // check skew
         {
-            font.setEdging(SkFont::Edging::kAntiAlias);
+            paint.setLCDRenderText(false);
             SkAutoCanvasRestore acr(canvas, true);
             canvas->skew(0.0f, 0.151515f);
-            font.setSize(SkIntToScalar(32));
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, 745, 70, font, paint);
+            paint.setTextSize(SkIntToScalar(32));
+            canvas->drawText(text, textLen, 745, 70, paint);
         }
         {
-            font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+            paint.setLCDRenderText(true);
             SkAutoCanvasRestore acr(canvas, true);
             canvas->skew(0.5f, 0.0f);
-            font.setSize(SkIntToScalar(32));
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, 580, 125, font, paint);
-        }
-
-        // check perspective
-        {
-            font.setEdging(SkFont::Edging::kAntiAlias);
-            SkAutoCanvasRestore acr(canvas, true);
-            SkMatrix persp;
-            persp.setAll(0.9839f, 0, 0,
-                         0.2246f, 0.6829f, 0,
-                         0.0002352f, -0.0003844f, 1);
-            canvas->concat(persp);
-            canvas->translate(1100, -295);
-            font.setSize(37.5f);
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, 0, 0, font, paint);
-        }
-        {
-            font.setSubpixel(false);
-            font.setEdging(SkFont::Edging::kAlias);
-            SkAutoCanvasRestore acr(canvas, true);
-            SkMatrix persp;
-            persp.setAll(0.9839f, 0, 0,
-                         0.2246f, 0.6829f, 0,
-                         0.0002352f, -0.0003844f, 1);
-            canvas->concat(persp);
-            canvas->translate(1075, -245);
-            canvas->scale(375, 375);
-            font.setSize(0.1f);
-            canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8, 0, 0, font, paint);
+            paint.setTextSize(SkIntToScalar(32));
+            canvas->drawText(text, textLen, 580, 125, paint);
         }
 
         // check color emoji
         if (fEmojiTypeface) {
-            SkFont emoiFont;
-            emoiFont.setSubpixel(true);
-            emoiFont.setTypeface(fEmojiTypeface);
-            emoiFont.setSize(SkIntToScalar(19));
-            canvas->drawSimpleText(fEmojiText, strlen(fEmojiText), SkTextEncoding::kUTF8, 670, 90,
-                                   emoiFont, paint);
+            paint.setTypeface(fEmojiTypeface);
+            paint.setTextSize(SkIntToScalar(19));
+            canvas->drawText(fEmojiText, strlen(fEmojiText), 670, 90, paint);
         }
-
+#if SK_SUPPORT_GPU
         // render offscreen buffer
         if (surface) {
             SkAutoCanvasRestore acr(inputCanvas, true);
             // since we prepended this matrix already, we blit using identity
             inputCanvas->resetMatrix();
-            inputCanvas->drawImage(surface->makeImageSnapshot().get(), 0, 0);
+            inputCanvas->drawImage(surface->makeImageSnapshot().get(), 0, 0, nullptr);
         }
+#endif
     }
 
 private:
     sk_sp<SkTypeface> fEmojiTypeface;
     const char* fEmojiText;
 
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM(return new DFTextGM;)

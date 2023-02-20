@@ -8,9 +8,8 @@
 #ifndef SKPAnimationBench_DEFINED
 #define SKPAnimationBench_DEFINED
 
-#include "bench/SKPBench.h"
-#include "src/base/SkRandom.h"
-#include "tools/timer/Timer.h"
+#include "SKPBench.h"
+#include "Timer.h"
 
 /**
  * Runs an SkPicture as a benchmark by repeatedly drawing it, first centering the picture and
@@ -23,29 +22,30 @@ public:
         virtual const char* getTag() = 0;
         virtual void preConcatFrameMatrix(double animationTimeMs, const SkIRect& devBounds,
                                           SkMatrix* drawMatrix) = 0;
+        virtual ~Animation() {}
     };
 
-    SKPAnimationBench(const char* name, const SkPicture*, const SkIRect& devClip, sk_sp<Animation>,
+    SKPAnimationBench(const char* name, const SkPicture*, const SkIRect& devClip, Animation*,
                       bool doLooping);
 
-    static sk_sp<Animation> MakeZoomAnimation(SkScalar zoomMax, double zoomPeriodMs);
+    static Animation* CreateZoomAnimation(SkScalar zoomMax, double zoomPeriodMs);
 
 protected:
     const char* onGetUniqueName() override;
     void onPerCanvasPreDraw(SkCanvas* canvas) override;
 
     void drawMPDPicture() override {
-        SK_ABORT("MPD not supported\n");
+        SkFAIL("MPD not supported\n");
     }
     void drawPicture() override;
 
 private:
     sk_sp<Animation> fAnimation;
-    SkRandom         fAnimationTime;
+    WallTimer        fAnimationTimer;
     SkString         fUniqueName;
     SkIRect          fDevBounds;
 
-    using INHERITED = SKPBench;
+    typedef SKPBench INHERITED;
 };
 
 #endif

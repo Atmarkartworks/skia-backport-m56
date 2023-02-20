@@ -1,33 +1,44 @@
+
 /*
  * Copyright 2011 Google Inc.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
-#include "src/gpu/ganesh/gl/GrGLUtil.h"
-#include "tools/gpu/gl/GLTestContext.h"
+#include "gl/GLTestContext.h"
 
 #define GL_GLEXT_PROTOTYPES
+#include <GLES2/gl2.h>
+
+#define EGL_EGLEXT_PROTOTYPES
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
+#include "gl/GrGLDefines.h"
+#include "gl/GrGLUtil.h"
+
 namespace {
 
-std::function<void()> context_restorer() {
-    auto display = eglGetCurrentDisplay();
-    auto dsurface = eglGetCurrentSurface(EGL_DRAW);
-    auto rsurface = eglGetCurrentSurface(EGL_READ);
-    auto context = eglGetCurrentContext();
-    return [display, dsurface, rsurface, context] {
-        eglMakeCurrent(display, dsurface, rsurface, context);
-    };
-}
+// TODO: Share this class with ANGLE if/when it gets support for EGL_KHR_fence_sync.
+class EGLFenceSync : public sk_gpu_test::FenceSync {
+public:
+    static std::unique_ptr<EGLFenceSync> MakeIfSupported(EGLDisplay);
+
+    sk_gpu_test::PlatformFence SK_WARN_UNUSED_RESULT insertFence() const override;
+    bool waitFence(sk_gpu_test::PlatformFence fence) const override;
+    void deleteFence(sk_gpu_test::PlatformFence fence) const override;
+
+private:
+    EGLFenceSync(EGLDisplay display) : fDisplay(display) {}
+
+    EGLDisplay                    fDisplay;
+
+    typedef sk_gpu_test::FenceSync INHERITED;
+};
 
 class EGLGLTestContext : public sk_gpu_test::GLTestContext {
 public:
-    EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* shareContext);
+    EGLGLTestContext(GrGLStandard forcedGpuAPI);
     ~EGLGLTestContext() override;
 
     GrEGLImage texture2DToEGLImage(GrGLuint texID) const override;
@@ -38,59 +49,56 @@ public:
 private:
     void destroyGLContext();
 
-    void onPlatformMakeNotCurrent() const override;
     void onPlatformMakeCurrent() const override;
-    std::function<void()> onPlatformGetAutoContextRestore() const override;
+    void onPlatformSwapBuffers() const override;
     GrGLFuncPtr onPlatformGetProcAddress(const char*) const override;
-
-    PFNEGLCREATEIMAGEKHRPROC fEglCreateImageProc = nullptr;
-    PFNEGLDESTROYIMAGEKHRPROC fEglDestroyImageProc = nullptr;
 
     EGLContext fContext;
     EGLDisplay fDisplay;
     EGLSurface fSurface;
 };
 
-static EGLContext create_gles_egl_context(EGLDisplay display,
-                                          EGLConfig surfaceConfig,
-                                          EGLContext eglShareContext,
-                                          EGLint eglContextClientVersion) {
-    const EGLint contextAttribsForOpenGLES[] = {
-        EGL_CONTEXT_CLIENT_VERSION,
-        eglContextClientVersion,
-        EGL_NONE
-    };
-    return eglCreateContext(display, surfaceConfig, eglShareContext, contextAttribsForOpenGLES);
-}
-static EGLContext create_gl_egl_context(EGLDisplay display,
-                                        EGLConfig surfaceConfig,
-                                        EGLContext eglShareContext) {
-    const EGLint contextAttribsForOpenGL[] = {
-        EGL_NONE
-    };
-    return eglCreateContext(display, surfaceConfig, eglShareContext, contextAttribsForOpenGL);
-}
-
-EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* shareContext)
+EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI)
     : fContext(EGL_NO_CONTEXT)
     , fDisplay(EGL_NO_DISPLAY)
     , fSurface(EGL_NO_SURFACE) {
-
-    EGLContext eglShareContext = shareContext ? shareContext->fContext : nullptr;
-
-    static const GrGLStandard kStandards[] = {
-        kGL_GrGLStandard,
-        kGLES_GrGLStandard,
+    static const EGLint kEGLContextAttribsForOpenGL[] = {
+        EGL_NONE
     };
 
-    size_t apiLimit = std::size(kStandards);
+    static const EGLint kEGLContextAttribsForOpenGLES[] = {
+        EGL_CONTEXT_CLIENT_VERSION, 2,
+        EGL_NONE
+    };
+
+    static const struct {
+        const EGLint* fContextAttribs;
+        EGLenum fAPI;
+        EGLint  fRenderableTypeBit;
+        GrGLStandard fStandard;
+    } kAPIs[] = {
+        {   // OpenGL
+            kEGLContextAttribsForOpenGL,
+            EGL_OPENGL_API,
+            EGL_OPENGL_BIT,
+            kGL_GrGLStandard
+        },
+        {   // OpenGL ES. This seems to work for both ES2 and 3 (when available).
+            kEGLContextAttribsForOpenGLES,
+            EGL_OPENGL_ES_API,
+            EGL_OPENGL_ES2_BIT,
+            kGLES_GrGLStandard
+        },
+    };
+
+    size_t apiLimit = SK_ARRAY_COUNT(kAPIs);
     size_t api = 0;
     if (forcedGpuAPI == kGL_GrGLStandard) {
         apiLimit = 1;
     } else if (forcedGpuAPI == kGLES_GrGLStandard) {
         api = 1;
     }
-    SkASSERT(forcedGpuAPI == kNone_GrGLStandard || kStandards[api] == forcedGpuAPI);
+    SkASSERT(forcedGpuAPI == kNone_GrGLStandard || kAPIs[api].fStandard == forcedGpuAPI);
 
     sk_sp<const GrGLInterface> gl;
 
@@ -107,16 +115,15 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
         SkDebugf("VERSION: %s\n", eglQueryString(fDisplay, EGL_VERSION));
         SkDebugf("EXTENSIONS %s\n", eglQueryString(fDisplay, EGL_EXTENSIONS));
 #endif
-        bool gles = kGLES_GrGLStandard == kStandards[api];
 
-        if (!eglBindAPI(gles ? EGL_OPENGL_ES_API : EGL_OPENGL_API)) {
+        if (!eglBindAPI(kAPIs[api].fAPI)) {
             continue;
         }
 
         EGLint numConfigs = 0;
         const EGLint configAttribs[] = {
             EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
-            EGL_RENDERABLE_TYPE, gles ? EGL_OPENGL_ES2_BIT : EGL_OPENGL_BIT,
+            EGL_RENDERABLE_TYPE, kAPIs[api].fRenderableTypeBit,
             EGL_RED_SIZE, 8,
             EGL_GREEN_SIZE, 8,
             EGL_BLUE_SIZE, 8,
@@ -135,20 +142,7 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
             continue;
         }
 
-        if (gles) {
-#ifdef GR_EGL_TRY_GLES3_THEN_GLES2
-            // Some older devices (Nexus7/Tegra3) crash when you try this.  So it is (for now)
-            // hidden behind this flag.
-            fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 3);
-            if (EGL_NO_CONTEXT == fContext) {
-                fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 2);
-            }
-#else
-            fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 2);
-#endif
-        } else {
-            fContext = create_gl_egl_context(fDisplay, surfaceConfig, eglShareContext);
-        }
+        fContext = eglCreateContext(fDisplay, surfaceConfig, nullptr, kAPIs[api].fContextAttribs);
         if (EGL_NO_CONTEXT == fContext) {
             SkDebugf("eglCreateContext failed.  EGL Error: 0x%08x\n", eglGetError());
             continue;
@@ -167,16 +161,14 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
             continue;
         }
 
-        SkScopeExit restorer(context_restorer());
         if (!eglMakeCurrent(fDisplay, fSurface, fSurface, fContext)) {
             SkDebugf("eglMakeCurrent failed.  EGL Error: 0x%08x\n", eglGetError());
             this->destroyGLContext();
             continue;
         }
 
-#ifdef SK_GL
-        gl = GrGLMakeNativeInterface();
-        if (!gl) {
+        gl.reset(GrGLCreateNativeInterface());
+        if (nullptr == gl.get()) {
             SkDebugf("Failed to create gl interface.\n");
             this->destroyGLContext();
             continue;
@@ -187,20 +179,8 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
             this->destroyGLContext();
             continue;
         }
-        const char* extensions = eglQueryString(fDisplay, EGL_EXTENSIONS);
-        if (strstr(extensions, "EGL_KHR_image")) {
-            fEglCreateImageProc = (PFNEGLCREATEIMAGEKHRPROC)eglGetProcAddress("eglCreateImageKHR");
-            fEglDestroyImageProc =
-                    (PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
-        }
 
-        this->init(std::move(gl));
-#else
-        // Allow the GLTestContext creation to succeed without a GrGLInterface to support
-        // GrContextFactory's persistent GL context workaround for Vulkan. We won't need the
-        // GrGLInterface since we're not running the GL backend.
-        this->init(nullptr);
-#endif
+        this->init(gl.release(), EGLFenceSync::MakeIfSupported(fDisplay));
         break;
     }
 }
@@ -212,11 +192,9 @@ EGLGLTestContext::~EGLGLTestContext() {
 
 void EGLGLTestContext::destroyGLContext() {
     if (fDisplay) {
+        eglMakeCurrent(fDisplay, 0, 0, 0);
+
         if (fContext) {
-            if (eglGetCurrentContext() == fContext) {
-                // This will ensure that the context is immediately deleted.
-                eglMakeCurrent(fDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-            }
             eglDestroyContext(fDisplay, fContext);
             fContext = EGL_NO_CONTEXT;
         }
@@ -232,26 +210,23 @@ void EGLGLTestContext::destroyGLContext() {
 }
 
 GrEGLImage EGLGLTestContext::texture2DToEGLImage(GrGLuint texID) const {
-#ifdef SK_GL
-    if (!this->gl()->hasExtension("EGL_KHR_gl_texture_2D_image") || !fEglCreateImageProc) {
+    if (!this->gl()->hasExtension("EGL_KHR_gl_texture_2D_image")) {
         return GR_EGL_NO_IMAGE;
     }
-    EGLint attribs[] = { GR_EGL_GL_TEXTURE_LEVEL, 0, GR_EGL_NONE };
+    GrEGLImage img;
+    GrEGLint attribs[] = { GR_EGL_GL_TEXTURE_LEVEL, 0, GR_EGL_NONE };
     GrEGLClientBuffer clientBuffer = reinterpret_cast<GrEGLClientBuffer>(texID);
-    return fEglCreateImageProc(fDisplay, fContext, GR_EGL_GL_TEXTURE_2D, clientBuffer, attribs);
-#else
-    (void)fEglCreateImageProc;
-    return nullptr;
-#endif
+    GR_GL_CALL_RET(this->gl(), img,
+                   EGLCreateImage(fDisplay, fContext, GR_EGL_GL_TEXTURE_2D, clientBuffer, attribs));
+    return img;
 }
 
 void EGLGLTestContext::destroyEGLImage(GrEGLImage image) const {
-    fEglDestroyImageProc(fDisplay, image);
+    GR_GL_CALL(this->gl(), EGLDestroyImage(fDisplay, image));
 }
 
 GrGLuint EGLGLTestContext::eglImageToExternalTexture(GrEGLImage image) const {
-#ifdef SK_GL
-    while (this->gl()->fFunctions.fGetError() != GR_GL_NO_ERROR) {}
+    GrGLClearErr(this->gl());
     if (!this->gl()->hasExtension("GL_OES_EGL_image_external")) {
         return 0;
     }
@@ -263,39 +238,29 @@ GrGLuint EGLGLTestContext::eglImageToExternalTexture(GrEGLImage image) const {
         return 0;
     }
     GrGLuint texID;
-    GR_GL_CALL(this->gl(), GenTextures(1, &texID));
+    glGenTextures(1, &texID);
     if (!texID) {
         return 0;
     }
-    GR_GL_CALL_NOERRCHECK(this->gl(), BindTexture(GR_GL_TEXTURE_EXTERNAL, texID));
-    if (this->gl()->fFunctions.fGetError() != GR_GL_NO_ERROR) {
-        GR_GL_CALL(this->gl(), DeleteTextures(1, &texID));
+    glBindTexture(GR_GL_TEXTURE_EXTERNAL, texID);
+    if (glGetError() != GR_GL_NO_ERROR) {
+        glDeleteTextures(1, &texID);
         return 0;
     }
     glEGLImageTargetTexture2D(GR_GL_TEXTURE_EXTERNAL, image);
-    if (this->gl()->fFunctions.fGetError() != GR_GL_NO_ERROR) {
-        GR_GL_CALL(this->gl(), DeleteTextures(1, &texID));
+    if (glGetError() != GR_GL_NO_ERROR) {
+        glDeleteTextures(1, &texID);
         return 0;
     }
     return texID;
-#else
-    return 0;
-#endif
 }
 
 std::unique_ptr<sk_gpu_test::GLTestContext> EGLGLTestContext::makeNew() const {
-    std::unique_ptr<sk_gpu_test::GLTestContext> ctx(new EGLGLTestContext(this->gl()->fStandard,
-                                                                         nullptr));
+    std::unique_ptr<sk_gpu_test::GLTestContext> ctx(new EGLGLTestContext(this->gl()->fStandard));
     if (ctx) {
         ctx->makeCurrent();
     }
     return ctx;
-}
-
-void EGLGLTestContext::onPlatformMakeNotCurrent() const {
-    if (!eglMakeCurrent(fDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT )) {
-        SkDebugf("Could not reset the context.\n");
-    }
 }
 
 void EGLGLTestContext::onPlatformMakeCurrent() const {
@@ -304,24 +269,69 @@ void EGLGLTestContext::onPlatformMakeCurrent() const {
     }
 }
 
-std::function<void()> EGLGLTestContext::onPlatformGetAutoContextRestore() const {
-    if (eglGetCurrentContext() == fContext) {
-        return nullptr;
+void EGLGLTestContext::onPlatformSwapBuffers() const {
+    if (!eglSwapBuffers(fDisplay, fSurface)) {
+        SkDebugf("Could not complete eglSwapBuffers.\n");
     }
-    return context_restorer();
 }
 
 GrGLFuncPtr EGLGLTestContext::onPlatformGetProcAddress(const char* procName) const {
     return eglGetProcAddress(procName);
 }
 
+static bool supports_egl_extension(EGLDisplay display, const char* extension) {
+    size_t extensionLength = strlen(extension);
+    const char* extensionsStr = eglQueryString(display, EGL_EXTENSIONS);
+    while (const char* match = strstr(extensionsStr, extension)) {
+        // Ensure the string we found is its own extension, not a substring of a larger extension
+        // (e.g. GL_ARB_occlusion_query / GL_ARB_occlusion_query2).
+        if ((match == extensionsStr || match[-1] == ' ') &&
+            (match[extensionLength] == ' ' || match[extensionLength] == '\0')) {
+            return true;
+        }
+        extensionsStr = match + extensionLength;
+    }
+    return false;
+}
+
+std::unique_ptr<EGLFenceSync> EGLFenceSync::MakeIfSupported(EGLDisplay display) {
+    if (!display || !supports_egl_extension(display, "EGL_KHR_fence_sync")) {
+        return nullptr;
+    }
+    return std::unique_ptr<EGLFenceSync>(new EGLFenceSync(display));
+}
+
+sk_gpu_test::PlatformFence EGLFenceSync::insertFence() const {
+    EGLSyncKHR eglsync = eglCreateSyncKHR(fDisplay, EGL_SYNC_FENCE_KHR, nullptr);
+    return reinterpret_cast<sk_gpu_test::PlatformFence>(eglsync);
+}
+
+bool EGLFenceSync::waitFence(sk_gpu_test::PlatformFence platformFence) const {
+    EGLSyncKHR eglsync = reinterpret_cast<EGLSyncKHR>(platformFence);
+    return EGL_CONDITION_SATISFIED_KHR ==
+            eglClientWaitSyncKHR(fDisplay,
+                                 eglsync,
+                                 EGL_SYNC_FLUSH_COMMANDS_BIT_KHR,
+                                 EGL_FOREVER_KHR);
+}
+
+void EGLFenceSync::deleteFence(sk_gpu_test::PlatformFence platformFence) const {
+    EGLSyncKHR eglsync = reinterpret_cast<EGLSyncKHR>(platformFence);
+    eglDestroySyncKHR(fDisplay, eglsync);
+}
+
+GR_STATIC_ASSERT(sizeof(EGLSyncKHR) <= sizeof(sk_gpu_test::PlatformFence));
+
 }  // anonymous namespace
 
 namespace sk_gpu_test {
 GLTestContext *CreatePlatformGLTestContext(GrGLStandard forcedGpuAPI,
                                            GLTestContext *shareContext) {
-    EGLGLTestContext* eglShareContext = reinterpret_cast<EGLGLTestContext*>(shareContext);
-    EGLGLTestContext *ctx = new EGLGLTestContext(forcedGpuAPI, eglShareContext);
+    SkASSERT(!shareContext);
+    if (shareContext) {
+        return nullptr;
+    }
+    EGLGLTestContext *ctx = new EGLGLTestContext(forcedGpuAPI);
     if (!ctx->isValid()) {
         delete ctx;
         return nullptr;

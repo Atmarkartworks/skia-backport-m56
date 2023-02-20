@@ -8,7 +8,7 @@
 #ifndef GLTestContext_angle_DEFINED
 #define GLTestContext_angle_DEFINED
 
-#include "tools/gpu/gl/GLTestContext.h"
+#include "gl/GLTestContext.h"
 
 namespace sk_gpu_test {
 
@@ -16,13 +16,12 @@ namespace sk_gpu_test {
  * Creates a GrGLInterface for the current ANGLE GLES Context. Here current means bound in ANGLE's
  * implementation of EGL.
  */
-sk_sp<const GrGLInterface> CreateANGLEGLInterface();
+const GrGLInterface* CreateANGLEGLInterface();
 
 enum class ANGLEBackend {
     kD3D9,
     kD3D11,
-    kOpenGL,
-    kMetal
+    kOpenGL
 };
 
 enum class ANGLEContextVersion {
@@ -31,9 +30,7 @@ enum class ANGLEContextVersion {
 };
 
 /** Creates a GLTestContext backed by ANGLE. */
-std::unique_ptr<GLTestContext> MakeANGLETestContext(ANGLEBackend, ANGLEContextVersion,
-                                                    GLTestContext* shareContext = nullptr,
-                                                    void* display = nullptr);
+std::unique_ptr<GLTestContext> MakeANGLETestContext(ANGLEBackend, ANGLEContextVersion);
 
 }  // namespace sk_gpu_test
 #endif

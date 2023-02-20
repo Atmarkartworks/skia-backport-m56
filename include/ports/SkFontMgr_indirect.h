@@ -8,14 +8,15 @@
 #ifndef SkFontMgr_indirect_DEFINED
 #define SkFontMgr_indirect_DEFINED
 
-#include "include/core/SkFontMgr.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "include/ports/SkRemotableFontMgr.h"
-#include "include/private/base/SkMutex.h"
-#include "include/private/base/SkOnce.h"
-#include "include/private/base/SkTArray.h"
+#include "../private/SkMutex.h"
+#include "../private/SkOnce.h"
+#include "../private/SkTArray.h"
+#include "SkDataTable.h"
+#include "SkFontMgr.h"
+#include "SkRefCnt.h"
+#include "SkRemotableFontMgr.h"
+#include "SkTypeface.h"
+#include "SkTypes.h"
 
 class SkData;
 class SkFontStyle;
@@ -47,12 +48,14 @@ protected:
                                             int bcp47Count,
                                             SkUnichar character) const override;
 
-    sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset>, int ttcIndex) const override;
-    sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset> stream,
-                                           const SkFontArguments& args) const override;
-    sk_sp<SkTypeface> onMakeFromFile(const char path[], int ttcIndex) const override;
-    sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData>, int ttcIndex) const override;
-    sk_sp<SkTypeface> onLegacyMakeTypeface(const char familyName[], SkFontStyle) const override;
+    SkTypeface* onMatchFaceStyle(const SkTypeface* familyMember,
+                                 const SkFontStyle& fontStyle) const override;
+
+    SkTypeface* onCreateFromStream(SkStreamAsset* stream, int ttcIndex) const override;
+    SkTypeface* onCreateFromFile(const char path[], int ttcIndex) const override;
+    SkTypeface* onCreateFromData(SkData* data, int ttcIndex) const override;
+
+    SkTypeface* onLegacyCreateTypeface(const char familyName[], SkFontStyle) const override;
 
 private:
     SkTypeface* createTypefaceFromFontId(const SkFontIdentity& fontId) const;
@@ -65,20 +68,16 @@ private:
         uint32_t fTtcIndex;  // key2
         SkTypeface* fTypeface;  // value: weak ref to typeface
 
-        DataEntry() = default;
+        DataEntry() { }
 
-        DataEntry(DataEntry&& that) { *this = std::move(that); }
-        DataEntry& operator=(DataEntry&& that) {
-            if (this != &that) {
-                fDataId = that.fDataId;
-                fTtcIndex = that.fTtcIndex;
-                fTypeface = that.fTypeface;
-
-                SkDEBUGCODE(that.fDataId = SkFontIdentity::kInvalidDataId;)
-                SkDEBUGCODE(that.fTtcIndex = 0xbbadbeef;)
-                that.fTypeface = nullptr;
-            }
-            return *this;
+        DataEntry(DataEntry&& that)
+            : fDataId(that.fDataId)
+            , fTtcIndex(that.fTtcIndex)
+            , fTypeface(that.fTypeface)
+        {
+            SkDEBUGCODE(that.fDataId = SkFontIdentity::kInvalidDataId;)
+            SkDEBUGCODE(that.fTtcIndex = 0xbbadbeef;)
+            that.fTypeface = NULL;
         }
 
         ~DataEntry() {
@@ -95,6 +94,10 @@ private:
      */
     mutable SkTArray<DataEntry> fDataCache;
     mutable SkMutex fDataCacheMutex;
+
+    mutable sk_sp<SkDataTable> fFamilyNames;
+    mutable SkOnce fFamilyNamesInitOnce;
+    static void set_up_family_names(const SkFontMgr_Indirect* self);
 
     friend class SkStyleSet_Indirect;
 };

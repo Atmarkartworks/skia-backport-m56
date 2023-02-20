@@ -5,32 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPath.h"
-#include "include/core/SkPathTypes.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkTypes.h"
-#include "include/pathops/SkPathOps.h"
-#include "include/private/base/SkPathEnums.h"
-#include "include/private/base/SkTArray.h"
-#include "include/private/base/SkTDArray.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/core/SkPathPriv.h"
-#include "src/pathops/SkOpContour.h"
-#include "src/pathops/SkOpEdgeBuilder.h"
-#include "src/pathops/SkOpSegment.h"
-#include "src/pathops/SkOpSpan.h"
-#include "src/pathops/SkPathOpsCommon.h"
-#include "src/pathops/SkPathOpsTypes.h"
-#include "src/pathops/SkPathWriter.h"
-
-#include <cstdint>
+#include "SkMatrix.h"
+#include "SkOpEdgeBuilder.h"
+#include "SkPathPriv.h"
+#include "SkPathOps.h"
+#include "SkPathOpsCommon.h"
 
 static bool one_contour(const SkPath& path) {
-    SkSTArenaAlloc<256> allocator;
+    SkChunkAlloc allocator(256);
     int verbCount = path.countVerbs();
-    uint8_t* verbs = (uint8_t*) allocator.makeArrayDefault<uint8_t>(verbCount);
+    uint8_t* verbs = (uint8_t*) allocator.alloc(sizeof(uint8_t) * verbCount,
+            SkChunkAlloc::kThrow_AllocFailType);
     (void) path.getVerbs(verbs, verbCount);
     for (int index = 1; index < verbCount; ++index) {
         if (verbs[index] == SkPath::kMove_Verb) {
@@ -51,23 +36,21 @@ void SkOpBuilder::ReversePath(SkPath* path) {
 }
 
 bool SkOpBuilder::FixWinding(SkPath* path) {
-    SkPathFillType fillType = path->getFillType();
-    if (fillType == SkPathFillType::kInverseEvenOdd) {
-        fillType = SkPathFillType::kInverseWinding;
-    } else if (fillType == SkPathFillType::kEvenOdd) {
-        fillType = SkPathFillType::kWinding;
+    SkPath::FillType fillType = path->getFillType();
+    if (fillType == SkPath::kInverseEvenOdd_FillType) {
+        fillType = SkPath::kInverseWinding_FillType;
+    } else if (fillType == SkPath::kEvenOdd_FillType) {
+        fillType = SkPath::kWinding_FillType;
     }
-    if (one_contour(*path)) {
-        SkPathFirstDirection dir = SkPathPriv::ComputeFirstDirection(*path);
-        if (dir != SkPathFirstDirection::kUnknown) {
-            if (dir == SkPathFirstDirection::kCW) {
-                ReversePath(path);
-            }
-            path->setFillType(fillType);
-            return true;
+    SkPathPriv::FirstDirection dir;
+    if (one_contour(*path) && SkPathPriv::CheapComputeFirstDirection(*path, &dir)) {
+        if (dir != SkPathPriv::kCCW_FirstDirection) {
+            ReversePath(path);
         }
+        path->setFillType(fillType);
+        return true;
     }
-    SkSTArenaAlloc<4096> allocator;
+    SkChunkAlloc allocator(4096);
     SkOpContourHead contourHead;
     SkOpGlobalState globalState(&contourHead, &allocator  SkDEBUGPARAMS(false)
             SkDEBUGPARAMS(nullptr));
@@ -109,9 +92,6 @@ bool SkOpBuilder::FixWinding(SkPath* path) {
     SkPathWriter woundPath(empty);
     SkOpContour* test = &contourHead;
     do {
-        if (!test->count()) {
-            continue;
-        }
         if (test->reversed()) {
             test->toReversePath(&woundPath);
         } else {
@@ -124,7 +104,7 @@ bool SkOpBuilder::FixWinding(SkPath* path) {
 }
 
 void SkOpBuilder::add(const SkPath& path, SkPathOp op) {
-    if (fOps.empty() && op != kUnion_SkPathOp) {
+    if (0 == fOps.count() && op != kUnion_SkPathOp) {
         fPathRefs.push_back() = SkPath();
         *fOps.append() = kUnion_SkPathOp;
     }
@@ -133,7 +113,7 @@ void SkOpBuilder::add(const SkPath& path, SkPathOp op) {
 }
 
 void SkOpBuilder::reset() {
-    fPathRefs.clear();
+    fPathRefs.reset();
     fOps.reset();
 }
 
@@ -142,9 +122,9 @@ void SkOpBuilder::reset() {
    ops one at a time. */
 bool SkOpBuilder::resolve(SkPath* result) {
     SkPath original = *result;
-    int count = fOps.size();
+    int count = fOps.count();
     bool allUnion = true;
-    SkPathFirstDirection firstDir = SkPathFirstDirection::kUnknown;
+    SkPathPriv::FirstDirection firstDir = SkPathPriv::kUnknown_FirstDirection;
     for (int index = 0; index < count; ++index) {
         SkPath* test = &fPathRefs[index];
         if (kUnion_SkPathOp != fOps[index] || test->isInverseFillType()) {
@@ -153,12 +133,12 @@ bool SkOpBuilder::resolve(SkPath* result) {
         }
         // If all paths are convex, track direction, reversing as needed.
         if (test->isConvex()) {
-            SkPathFirstDirection dir = SkPathPriv::ComputeFirstDirection(*test);
-            if (dir == SkPathFirstDirection::kUnknown) {
+            SkPathPriv::FirstDirection dir;
+            if (!SkPathPriv::CheapComputeFirstDirection(*test, &dir)) {
                 allUnion = false;
                 break;
             }
-            if (firstDir == SkPathFirstDirection::kUnknown) {
+            if (firstDir == SkPathPriv::kUnknown_FirstDirection) {
                 firstDir = dir;
             } else if (firstDir != dir) {
                 ReversePath(test);

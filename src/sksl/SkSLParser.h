@@ -1,77 +1,68 @@
 /*
- * Copyright 2021 Google LLC.
+ * Copyright 2016 Google Inc.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
+ 
 #ifndef SKSL_PARSER
 #define SKSL_PARSER
 
-#include "include/core/SkTypes.h"
-#include "include/private/SkSLDefines.h"
-#include "include/private/base/SkTArray.h"
-#include "include/sksl/DSLCore.h"
-#include "include/sksl/DSLExpression.h"
-#include "include/sksl/DSLLayout.h"
-#include "include/sksl/DSLModifiers.h"
-#include "include/sksl/DSLStatement.h"
-#include "include/sksl/DSLType.h"
-#include "include/sksl/SkSLErrorReporter.h"
-#include "include/sksl/SkSLOperator.h"
-#include "include/sksl/SkSLPosition.h"
-#include "src/sksl/SkSLLexer.h"
-#include "src/sksl/SkSLProgramSettings.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <optional>
 #include <string>
-#include <string_view>
+#include <vector>
+#include <memory>
+#include <unordered_set>
+#include "SkSLErrorReporter.h"
+#include "SkSLToken.h"
+
+struct yy_buffer_state;
+#define YY_TYPEDEF_YY_BUFFER_STATE
+typedef struct yy_buffer_state *YY_BUFFER_STATE;
 
 namespace SkSL {
 
-class Compiler;
+struct ASTBlock;
+struct ASTBreakStatement;
+struct ASTContinueStatement;
+struct ASTDeclaration;
+struct ASTDiscardStatement;
+struct ASTDoStatement;
+struct ASTExpression;
+struct ASTExpressionStatement;
+struct ASTForStatement;
+struct ASTIfStatement;
+struct ASTInterfaceBlock;
+struct ASTLayout;
+struct ASTModifiers;
+struct ASTParameter;
+struct ASTPrecision;
+struct ASTReturnStatement;
+struct ASTStatement;
+struct ASTSuffix;
+struct ASTType;
+struct ASTWhileStatement;
+struct ASTVarDeclarations;
 class SymbolTable;
-enum class ProgramKind : int8_t;
-struct Module;
-struct Program;
-
-namespace dsl {
-class DSLBlock;
-class DSLCase;
-class DSLGlobalVar;
-class DSLParameter;
-class DSLVarBase;
-}
 
 /**
- * Consumes .sksl text and invokes DSL functions to instantiate the program.
+ * Consumes .sksl text and produces an abstract syntax tree describing the contents.
  */
 class Parser {
 public:
-    Parser(Compiler* compiler, const ProgramSettings& settings, ProgramKind kind, std::string text);
+    Parser(std::string text, SymbolTable& types, ErrorReporter& errors);
 
-    std::unique_ptr<Program> program();
+    ~Parser();
 
-    std::unique_ptr<Module> moduleInheritingFrom(const Module* parent);
-
-    std::string_view text(Token token);
-
-    Position position(Token token);
+    /**
+     * Consumes a complete .sksl file and produces a list of declarations. Errors are reported via
+     * the ErrorReporter; the return value may contain some declarations even when errors have
+     * occurred.
+     */
+    std::vector<std::unique_ptr<ASTDeclaration>> file();
 
 private:
-    class AutoDepth;
-    class AutoSymbolTable;
-
     /**
-     * Return the next token, including whitespace tokens, from the parse stream.
-     */
-    Token nextRawToken();
-
-    /**
-     * Return the next non-whitespace token from the parse stream.
+     * Return the next token from the parse stream.
      */
     Token nextToken();
 
@@ -83,287 +74,141 @@ private:
     void pushback(Token t);
 
     /**
-     * Returns the next non-whitespace token without consuming it from the stream.
+     * Returns the next token without consuming it from the stream. 
      */
     Token peek();
 
     /**
-     * Checks to see if the next token is of the specified type. If so, stores it in result (if
-     * result is non-null) and returns true. Otherwise, pushes it back and returns false.
-     */
-    bool checkNext(Token::Kind kind, Token* result = nullptr);
-
-    /**
-     * Behaves like checkNext(TK_IDENTIFIER), but also verifies that identifier is not a builtin
-     * type. If the token was actually a builtin type, false is returned (the next token is not
-     * considered to be an identifier).
-     */
-    bool checkIdentifier(Token* result = nullptr);
-
-    /**
-     * Reads the next non-whitespace token and generates an error if it is not the expected type.
-     * The 'expected' string is part of the error message, which reads:
+     * Reads the next token and generates an error if it is not the expected type. The 'expected'
+     * string is part of the error message, which reads:
      *
      * "expected <expected>, but found '<actual text>'"
      *
      * If 'result' is non-null, it is set to point to the token that was read.
      * Returns true if the read token was as expected, false otherwise.
      */
-    bool expect(Token::Kind kind, const char* expected, Token* result = nullptr);
     bool expect(Token::Kind kind, std::string expected, Token* result = nullptr);
 
+    void error(Position p, std::string msg);
+    
     /**
-     * Behaves like expect(TK_IDENTIFIER), but also verifies that identifier is not a type.
-     * If the token was actually a type, generates an error message of the form:
-     *
-     * "expected an identifier, but found type 'float2'"
+     * Returns true if the 'name' identifier refers to a type name. For instance, isType("int") will
+     * always return true.
      */
-    bool expectIdentifier(Token* result);
-
-    /** If the next token is a newline, consumes it and returns true. If not, returns false. */
-    bool expectNewline();
-
-    void error(Token token, std::string_view msg);
-    void error(Position position, std::string_view msg);
-
-    // Returns the range from `start` to the current parse position.
-    Position rangeFrom(Position start);
-    Position rangeFrom(Token start);
+    bool isType(std::string name);
 
     // these functions parse individual grammar rules from the current parse position; you probably
     // don't need to call any of these outside of the parser. The function declarations in the .cpp
     // file have comments describing the grammar rules.
 
-    void declarations();
+    std::unique_ptr<ASTDeclaration> precision();
 
-    /**
-     * Parses an expression representing an array size. Reports errors if the array size is not
-     * valid (out of bounds, not a literal integer). Returns true if an expression was
-     * successfully parsed, even if that array size is not actually valid. In the event of a true
-     * return, outResult always contains a valid array size (even if the parsed array size was not
-     * actually valid; invalid array sizes result in a 1 to avoid additional errors downstream).
-     */
-    bool arraySize(SKSL_INT* outResult);
+    std::unique_ptr<ASTDeclaration> directive();
 
-    void directive(bool allowVersion);
+    std::unique_ptr<ASTDeclaration> declaration();
 
-    bool declaration();
+    std::unique_ptr<ASTVarDeclarations> varDeclarations();
 
-    bool functionDeclarationEnd(Position start,
-                                dsl::DSLModifiers& modifiers,
-                                dsl::DSLType type,
-                                const Token& name);
+    std::unique_ptr<ASTType> structDeclaration();
 
-    struct VarDeclarationsPrefix {
-        Position fPosition;
-        dsl::DSLModifiers fModifiers;
-        dsl::DSLType fType = dsl::DSLType(dsl::kVoid_Type);
-        Token fName;
-    };
+    std::unique_ptr<ASTVarDeclarations> structVarDeclaration(ASTModifiers modifiers);
 
-    bool varDeclarationsPrefix(VarDeclarationsPrefix* prefixData);
+    std::unique_ptr<ASTVarDeclarations> varDeclarationEnd(ASTModifiers modifiers,
+                                                          std::unique_ptr<ASTType> type, 
+                                                          std::string name);
 
-    dsl::DSLStatement varDeclarationsOrExpressionStatement();
-
-    dsl::DSLStatement varDeclarations();
-
-    dsl::DSLType structDeclaration();
-
-    SkTArray<dsl::DSLGlobalVar> structVarDeclaration(Position start,
-                                                     const dsl::DSLModifiers& modifiers);
-
-    bool allowUnsizedArrays() {
-        return ProgramConfig::IsCompute(fKind) || ProgramConfig::IsFragment(fKind) ||
-               ProgramConfig::IsVertex(fKind);
-    }
-
-    bool parseArrayDimensions(Position pos, dsl::DSLType* type);
-
-    bool parseInitializer(Position pos, dsl::DSLExpression* initializer);
-
-    void globalVarDeclarationEnd(Position position, const dsl::DSLModifiers& mods,
-            dsl::DSLType baseType, Token name);
-
-    dsl::DSLStatement localVarDeclarationEnd(Position position, const dsl::DSLModifiers& mods,
-            dsl::DSLType baseType, Token name);
-
-    std::optional<dsl::DSLParameter> parameter(size_t paramIndex);
+    std::unique_ptr<ASTParameter> parameter();
 
     int layoutInt();
+    
+    ASTLayout layout();
 
-    std::string_view layoutIdentifier();
+    ASTModifiers modifiers();
 
-    dsl::DSLLayout layout();
+    ASTModifiers modifiersWithDefaults(int defaultFlags);
 
-    dsl::DSLModifiers modifiers();
+    std::unique_ptr<ASTStatement> statement();
 
-    dsl::DSLStatement statement();
+    std::unique_ptr<ASTType> type();
 
-    dsl::DSLType type(dsl::DSLModifiers* modifiers);
+    std::unique_ptr<ASTDeclaration> interfaceBlock(ASTModifiers mods);
 
-    bool interfaceBlock(const dsl::DSLModifiers& mods);
+    std::unique_ptr<ASTIfStatement> ifStatement();
 
-    dsl::DSLStatement ifStatement();
+    std::unique_ptr<ASTDoStatement> doStatement();
 
-    dsl::DSLStatement doStatement();
+    std::unique_ptr<ASTWhileStatement> whileStatement();
 
-    dsl::DSLStatement whileStatement();
+    std::unique_ptr<ASTForStatement> forStatement();
 
-    dsl::DSLStatement forStatement();
+    std::unique_ptr<ASTReturnStatement> returnStatement();
 
-    std::optional<dsl::DSLCase> switchCase();
+    std::unique_ptr<ASTBreakStatement> breakStatement();
 
-    dsl::DSLStatement switchStatement();
+    std::unique_ptr<ASTContinueStatement> continueStatement();
 
-    dsl::DSLStatement returnStatement();
+    std::unique_ptr<ASTDiscardStatement> discardStatement();
 
-    dsl::DSLStatement breakStatement();
+    std::unique_ptr<ASTBlock> block();
 
-    dsl::DSLStatement continueStatement();
+    std::unique_ptr<ASTExpressionStatement> expressionStatement();
 
-    dsl::DSLStatement discardStatement();
+    std::unique_ptr<ASTExpression> expression();
 
-    std::optional<dsl::DSLBlock> block();
+    std::unique_ptr<ASTExpression> assignmentExpression();
+    
+    std::unique_ptr<ASTExpression> ternaryExpression();
 
-    dsl::DSLStatement expressionStatement();
+    std::unique_ptr<ASTExpression> logicalOrExpression();
 
-    using BinaryParseFn = dsl::DSLExpression (Parser::*)();
-    bool SK_WARN_UNUSED_RESULT operatorRight(AutoDepth& depth, Operator::Kind op,
-                                             BinaryParseFn rightFn, dsl::DSLExpression& result);
+    std::unique_ptr<ASTExpression> logicalXorExpression();
 
-    dsl::DSLExpression expression();
+    std::unique_ptr<ASTExpression> logicalAndExpression();
 
-    dsl::DSLExpression assignmentExpression();
+    std::unique_ptr<ASTExpression> bitwiseOrExpression();
 
-    dsl::DSLExpression ternaryExpression();
+    std::unique_ptr<ASTExpression> bitwiseXorExpression();
 
-    dsl::DSLExpression logicalOrExpression();
+    std::unique_ptr<ASTExpression> bitwiseAndExpression();
 
-    dsl::DSLExpression logicalXorExpression();
+    std::unique_ptr<ASTExpression> equalityExpression();
 
-    dsl::DSLExpression logicalAndExpression();
+    std::unique_ptr<ASTExpression> relationalExpression();
 
-    dsl::DSLExpression bitwiseOrExpression();
+    std::unique_ptr<ASTExpression> shiftExpression();
 
-    dsl::DSLExpression bitwiseXorExpression();
+    std::unique_ptr<ASTExpression> additiveExpression();
 
-    dsl::DSLExpression bitwiseAndExpression();
+    std::unique_ptr<ASTExpression> multiplicativeExpression();
 
-    dsl::DSLExpression equalityExpression();
+    std::unique_ptr<ASTExpression> unaryExpression();
 
-    dsl::DSLExpression relationalExpression();
+    std::unique_ptr<ASTExpression> postfixExpression();
 
-    dsl::DSLExpression shiftExpression();
+    std::unique_ptr<ASTSuffix> suffix();
 
-    dsl::DSLExpression additiveExpression();
+    std::unique_ptr<ASTExpression> term();
 
-    dsl::DSLExpression multiplicativeExpression();
+    bool intLiteral(int64_t* dest);
 
-    dsl::DSLExpression unaryExpression();
-
-    dsl::DSLExpression postfixExpression();
-
-    dsl::DSLExpression swizzle(Position pos, dsl::DSLExpression base,
-            std::string_view swizzleMask, Position maskPos);
-
-    dsl::DSLExpression call(Position pos, dsl::DSLExpression base, ExpressionArray args);
-
-    dsl::DSLExpression suffix(dsl::DSLExpression base);
-
-    dsl::DSLExpression term();
-
-    bool intLiteral(SKSL_INT* dest);
-
-    bool floatLiteral(SKSL_FLOAT* dest);
+    bool floatLiteral(double* dest);
 
     bool boolLiteral(bool* dest);
 
-    bool identifier(std::string_view* dest);
+    bool identifier(std::string* dest);
 
-    std::shared_ptr<SymbolTable>& symbolTable();
-
-    void addToSymbolTable(dsl::DSLVarBase& var, Position pos = {});
-
-    class Checkpoint {
-    public:
-        Checkpoint(Parser* p) : fParser(p) {
-            fPushbackCheckpoint = fParser->fPushback;
-            fLexerCheckpoint = fParser->fLexer.getCheckpoint();
-            fOldErrorReporter = &dsl::GetErrorReporter();
-            fOldEncounteredFatalError = fParser->fEncounteredFatalError;
-            SkASSERT(fOldErrorReporter);
-            dsl::SetErrorReporter(&fErrorReporter);
-        }
-
-        ~Checkpoint() {
-            SkASSERTF(!fOldErrorReporter,
-                      "Checkpoint was not accepted or rewound before destruction");
-        }
-
-        void accept() {
-            this->restoreErrorReporter();
-            // Parser errors should have been fatal, but we can encounter other errors like type
-            // mismatches despite accepting the parse. Forward those messages to the actual error
-            // handler now.
-            fErrorReporter.forwardErrors();
-        }
-
-        void rewind() {
-            this->restoreErrorReporter();
-            fParser->fPushback = fPushbackCheckpoint;
-            fParser->fLexer.rewindToCheckpoint(fLexerCheckpoint);
-            fParser->fEncounteredFatalError = fOldEncounteredFatalError;
-        }
-
-    private:
-        class ForwardingErrorReporter : public ErrorReporter {
-        public:
-            void handleError(std::string_view msg, Position pos) override {
-                fErrors.push_back({std::string(msg), pos});
-            }
-
-            void forwardErrors() {
-                for (Error& error : fErrors) {
-                    dsl::GetErrorReporter().error(error.fPos, error.fMsg);
-                }
-            }
-
-        private:
-            struct Error {
-                std::string fMsg;
-                Position fPos;
-            };
-
-            SkTArray<Error> fErrors;
-        };
-
-        void restoreErrorReporter() {
-            SkASSERT(fOldErrorReporter);
-            dsl::SetErrorReporter(fOldErrorReporter);
-            fOldErrorReporter = nullptr;
-        }
-
-        Parser* fParser;
-        Token fPushbackCheckpoint;
-        SkSL::Lexer::Checkpoint fLexerCheckpoint;
-        ForwardingErrorReporter fErrorReporter;
-        ErrorReporter* fOldErrorReporter;
-        bool fOldEncounteredFatalError;
-    };
-
-    Compiler& fCompiler;
-    ProgramSettings fSettings;
-    ErrorReporter* fErrorReporter;
-    bool fEncounteredFatalError;
-    ProgramKind fKind;
-    std::unique_ptr<std::string> fText;
-    Lexer fLexer;
+    void* fScanner;
+    YY_BUFFER_STATE fBuffer;
     // current parse depth, used to enforce a recursion limit to try to keep us from overflowing the
     // stack on pathological inputs
     int fDepth = 0;
     Token fPushback;
+    SymbolTable& fTypes;
+    ErrorReporter& fErrors;
+
+    friend class AutoDepth;
 };
 
-}  // namespace SkSL
+} // namespace
 
 #endif

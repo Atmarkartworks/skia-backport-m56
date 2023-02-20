@@ -5,14 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkString.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkRTree.h"
-
-using namespace skia_private;
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkRTree.h"
+#include "SkRandom.h"
+#include "SkString.h"
 
 // confine rectangles to a smallish area, so queries generally hit something, and overlap occurs:
 static const SkScalar GENERATE_EXTENTS = 1000.0f;
@@ -39,7 +36,7 @@ protected:
     }
     void onDraw(int loops, SkCanvas* canvas) override {
         SkRandom rand;
-        AutoTMalloc<SkRect> rects(NUM_BUILD_RECTS);
+        SkAutoTMalloc<SkRect> rects(NUM_BUILD_RECTS);
         for (int i = 0; i < NUM_BUILD_RECTS; ++i) {
             rects[i] = fProc(rand, i, NUM_BUILD_RECTS);
         }
@@ -53,7 +50,7 @@ protected:
 private:
     MakeRectProc fProc;
     SkString fName;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 // Time how long it takes to perform queries on an R-Tree.
@@ -72,7 +69,7 @@ protected:
     }
     void onDelayedSetup() override {
         SkRandom rand;
-        AutoTMalloc<SkRect> rects(NUM_QUERY_RECTS);
+        SkAutoTMalloc<SkRect> rects(NUM_QUERY_RECTS);
         for (int i = 0; i < NUM_QUERY_RECTS; ++i) {
             rects[i] = fProc(rand, i, NUM_QUERY_RECTS);
         }
@@ -82,7 +79,7 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         SkRandom rand;
         for (int i = 0; i < loops; ++i) {
-            std::vector<int> hits;
+            SkTDArray<int> hits;
             SkRect query;
             query.fLeft   = rand.nextRangeF(0, GENERATE_EXTENTS);
             query.fTop    = rand.nextRangeF(0, GENERATE_EXTENTS);
@@ -95,7 +92,7 @@ private:
     SkRTree fTree;
     MakeRectProc fProc;
     SkString fName;
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 static inline SkRect make_XYordered_rects(SkRandom& rand, int index, int numRects) {

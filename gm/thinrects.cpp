@@ -5,30 +5,20 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypes.h"
+#include "gm.h"
 
 namespace skiagm {
 
 // Draw various width thin rects at 1/8 horizontal pixel increments
 class ThinRectsGM : public GM {
 public:
-    ThinRectsGM(bool round) : fRound(round) {
+    ThinRectsGM() {
         this->setBGColor(0xFF000000);
     }
 
 protected:
     SkString onShortName() override {
-        return SkString(fRound ? "thinroundrects" : "thinrects");
+        return SkString("thinrects");
     }
 
     SkISize onISize() override {
@@ -48,33 +38,33 @@ protected:
         for (int i = 0; i < 8; ++i) {
             canvas->save();
                 canvas->translate(i*0.125f, i*40.0f);
-                this->drawVertRects(canvas, white);
+                DrawVertRects(canvas, white);
 
                 canvas->translate(40.0f, 0.0f);
-                this->drawVertRects(canvas, green);
+                DrawVertRects(canvas, green);
             canvas->restore();
 
             canvas->save();
                 canvas->translate(80.0f, i*40.0f + i*0.125f);
-                this->drawHorizRects(canvas, white);
+                DrawHorizRects(canvas, white);
 
                 canvas->translate(40.0f, 0.0f);
-                this->drawHorizRects(canvas, green);
+                DrawHorizRects(canvas, green);
             canvas->restore();
 
             canvas->save();
                 canvas->translate(160.0f + i*0.125f,
                                   i*40.0f + i*0.125f);
-                this->drawSquares(canvas, white);
+                DrawSquares(canvas, white);
 
                 canvas->translate(40.0f, 0.0f);
-                this->drawSquares(canvas, green);
+                DrawSquares(canvas, green);
             canvas->restore();
         }
     }
 
 private:
-    void drawVertRects(SkCanvas* canvas, const SkPaint& p) {
+    static void DrawVertRects(SkCanvas* canvas, const SkPaint& p) {
         constexpr SkRect vertRects[] = {
             { 1,  1,    5.0f, 21 }, // 4 pix wide
             { 8,  1,   10.0f, 21 }, // 2 pix wide
@@ -85,20 +75,12 @@ private:
             { 29, 1,   29.0f, 21 }  // 0 pix wide
         };
 
-        static constexpr SkVector radii[4] = {{1/32.f, 2/32.f}, {3/32.f, 1/32.f}, {2/32.f, 3/32.f},
-                                              {1/32.f, 3/32.f}};
-        SkRRect rrect;
-        for (size_t j = 0; j < std::size(vertRects); ++j) {
-            if (fRound) {
-                rrect.setRectRadii(vertRects[j], radii);
-                canvas->drawRRect(rrect, p);
-            } else {
-                canvas->drawRect(vertRects[j], p);
-            }
+        for (size_t j = 0; j < SK_ARRAY_COUNT(vertRects); ++j) {
+            canvas->drawRect(vertRects[j], p);
         }
     }
 
-    void drawHorizRects(SkCanvas* canvas, const SkPaint& p) {
+    static void DrawHorizRects(SkCanvas* canvas, const SkPaint& p) {
         constexpr SkRect horizRects[] = {
             { 1, 1,  21,    5.0f }, // 4 pix high
             { 1, 8,  21,   10.0f }, // 2 pix high
@@ -109,18 +91,12 @@ private:
             { 1, 29, 21,   29.0f }  // 0 pix high
         };
 
-        SkRRect rrect;
-        for (size_t j = 0; j < std::size(horizRects); ++j) {
-            if (fRound) {
-                rrect.setNinePatch(horizRects[j], 1/32.f, 2/32.f, 3/32.f, 4/32.f);
-                canvas->drawRRect(rrect, p);
-            } else {
-                canvas->drawRect(horizRects[j], p);
-            }
+        for (size_t j = 0; j < SK_ARRAY_COUNT(horizRects); ++j) {
+            canvas->drawRect(horizRects[j], p);
         }
     }
 
-    void drawSquares(SkCanvas* canvas, const SkPaint& p) {
+    static void DrawSquares(SkCanvas* canvas, const SkPaint& p) {
         constexpr SkRect squares[] = {
             { 1,  1,     5.0f,    5.0f }, // 4 pix
             { 8,  8,    10.0f,   10.0f }, // 2 pix
@@ -131,49 +107,17 @@ private:
             { 29, 29,   29.0f,   29.0f }  // 0 pix
         };
 
-        SkRRect rrect;
-        for (size_t j = 0; j < std::size(squares); ++j) {
-            if (fRound) {
-                rrect.setRectXY(squares[j], 1/32.f, 2/32.f);
-                canvas->drawRRect(rrect, p);
-            } else {
-                canvas->drawRect(squares[j], p);
-            }
+        for (size_t j = 0; j < SK_ARRAY_COUNT(squares); ++j) {
+            canvas->drawRect(squares[j], p);
         }
     }
 
-    const bool fRound;
-
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM( return new ThinRectsGM(false); )
-DEF_GM( return new ThinRectsGM(true); )
+static GM* MyFactory(void*) { return new ThinRectsGM; }
+static GMRegistry reg(MyFactory);
 
-}  // namespace skiagm
-
-DEF_SIMPLE_GM_CAN_FAIL(clipped_thinrect, canvas, errorMsg, 256, 256) {
-    auto zoomed = canvas->makeSurface(canvas->imageInfo().makeWH(10, 10));
-    if (!zoomed) {
-        errorMsg->printf("makeSurface not supported");
-        return skiagm::DrawResult::kSkip;
-    }
-    auto zoomedCanvas = zoomed->getCanvas();
-
-    SkPaint p;
-    p.setColor(SK_ColorRED);
-    p.setAntiAlias(true);
-    p.setStyle(SkPaint::kFill_Style);
-    zoomedCanvas->save();
-    zoomedCanvas->clipRect(SkRect::MakeXYWH(0, 5, 256, 10), true /*doAntialias*/);
-    zoomedCanvas->drawRect(SkRect::MakeXYWH(0, 0, 100, 5.5), p);
-    zoomedCanvas->restore();
-
-    // Zoom-in. Should see one line of red representing zoomed in 1/2px coverage and *not*
-    // two lines of varying coverage from hairline rendering.
-    auto img = zoomed->makeImageSnapshot();
-    canvas->drawImageRect(img, SkRect::MakeXYWH(0, 10, 200, 200), SkSamplingOptions());
-    return skiagm::DrawResult::kOk;
 }

@@ -5,28 +5,15 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkData.h"
-#include "include/core/SkDrawable.h"
-#include "include/core/SkFlattenable.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkTypes.h"
-#include "src/core/SkColorFilterBase.h"
-#include "src/core/SkPathEffectBase.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkWriteBuffer.h"
-#include "src/shaders/SkShaderBase.h"
-#include "tests/Test.h"
-
-#include <cstdint>
-#include <string>
+#include "SkCanvas.h"
+#include "SkDrawable.h"
+#include "SkOnce.h"
+#include "SkPictureRecorder.h"
+#include "SkReadBuffer.h"
+#include "SkRect.h"
+#include "SkStream.h"
+#include "SkWriteBuffer.h"
+#include "Test.h"
 
 class IntDrawable : public SkDrawable {
 public:
@@ -83,7 +70,9 @@ public:
     }
 
     static sk_sp<SkFlattenable> CreateProc(SkReadBuffer& buffer) {
-        return sk_sp<PaintDrawable>(new PaintDrawable(buffer.readPaint()));
+        SkPaint paint;
+        buffer.readPaint(&paint);
+        return sk_sp<PaintDrawable>(new PaintDrawable(paint));
     }
 
     Factory getFactory() const override { return CreateProc; }
@@ -208,15 +197,12 @@ private:
     sk_sp<SkDrawable>       fDrawable;
 };
 
-// Register these drawables for deserialization some time before main().
-static struct Initializer {
-    Initializer() {
-        SK_REGISTER_FLATTENABLE(IntDrawable);
-        SK_REGISTER_FLATTENABLE(PaintDrawable);
-        SK_REGISTER_FLATTENABLE(CompoundDrawable);
-        SK_REGISTER_FLATTENABLE(RootDrawable);
-    }
-} initializer;
+static void register_test_drawables(SkReadBuffer& buffer) {
+    buffer.setCustomFactory(SkString("IntDrawable"), IntDrawable::CreateProc);
+    buffer.setCustomFactory(SkString("PaintDrawable"), PaintDrawable::CreateProc);
+    buffer.setCustomFactory(SkString("CompoundDrawable"), CompoundDrawable::CreateProc);
+    buffer.setCustomFactory(SkString("RootDrawable"), RootDrawable::CreateProc);
+}
 
 DEF_TEST(FlattenDrawable, r) {
     // Create and serialize the test drawable
@@ -231,6 +217,7 @@ DEF_TEST(FlattenDrawable, r) {
     sk_sp<SkData> data = SkData::MakeUninitialized(writeBuffer.bytesWritten());
     writeBuffer.writeToMemory(data->writable_data());
     SkReadBuffer readBuffer(data->data(), data->size());
+    register_test_drawables(readBuffer);
 
     // Deserialize and verify the drawable
     sk_sp<SkDrawable> out((SkDrawable*)readBuffer.readFlattenable(SkFlattenable::kSkDrawable_Type));
@@ -263,14 +250,13 @@ DEF_TEST(FlattenRecordedDrawable, r) {
     // Record a set of canvas draw commands
     SkPictureRecorder recorder;
     SkCanvas* canvas = recorder.beginRecording(1000.0f, 1000.0f);
+    canvas->drawPoint(42.0f, 17.0f, SK_ColorGREEN);
     SkPaint paint;
-    paint.setColor(SK_ColorGREEN);
-    canvas->drawPoint(42.0f, 17.0f, paint);
     paint.setColor(SK_ColorRED);
     canvas->drawPaint(paint);
     SkPaint textPaint;
     textPaint.setColor(SK_ColorBLUE);
-    canvas->drawString("TEXT", 467.0f, 100.0f, SkFont(), textPaint);
+    canvas->drawText("TEXT", 4, 467.0f, 100.0f, textPaint);
 
     // Draw some drawables as well
     sk_sp<SkDrawable> drawable(new IntDrawable(1, 2, 3, 4));
@@ -290,23 +276,10 @@ DEF_TEST(FlattenRecordedDrawable, r) {
     sk_sp<SkData> data = SkData::MakeUninitialized(writeBuffer.bytesWritten());
     writeBuffer.writeToMemory(data->writable_data());
     SkReadBuffer readBuffer(data->data(), data->size());
+    register_test_drawables(readBuffer);
 
     // Deserialize and verify the drawable
     sk_sp<SkDrawable> out((SkDrawable*)readBuffer.readFlattenable(SkFlattenable::kSkDrawable_Type));
     REPORTER_ASSERT(r, out);
     REPORTER_ASSERT(r, !strcmp("SkRecordedDrawable", out->getTypeName()));
 }
-
-// be sure these constructs compile, don't assert, and return null
-DEF_TEST(Flattenable_EmptyDeserialze, reporter) {
-    auto data = SkData::MakeEmpty();
-
-    #define test(name)  REPORTER_ASSERT(reporter, !name::Deserialize(data->data(), data->size()))
-    test(SkPathEffectBase);
-    test(SkMaskFilter);
-    test(SkShaderBase); // todo: make this just be shader!
-    test(SkColorFilterBase);
-    test(SkImageFilter);
-    #undef test
-}
-

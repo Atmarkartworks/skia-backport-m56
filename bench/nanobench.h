@@ -8,16 +8,18 @@
 #ifndef nanobench_DEFINED
 #define nanobench_DEFINED
 
-#include "bench/Benchmark.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkTypes.h"
-#include "tools/gpu/GrContextFactory.h"
-#include "tools/graphite/ContextFactory.h"
+#include "Benchmark.h"
+#include "SkImageInfo.h"
+#include "SkSurface.h"
+#include "SkTypes.h"
 
+#if SK_SUPPORT_GPU
+#include "GrContextFactory.h"
+#endif
+
+class ResultsWriter;
 class SkBitmap;
 class SkCanvas;
-class NanoJSONResultsWriter;
 
 struct Config {
     SkString name;
@@ -26,9 +28,15 @@ struct Config {
     SkAlphaType alpha;
     sk_sp<SkColorSpace> colorSpace;
     int samples;
+#if SK_SUPPORT_GPU
     sk_gpu_test::GrContextFactory::ContextType ctxType;
-    sk_gpu_test::GrContextFactory::ContextOverrides ctxOverrides;
-    uint32_t surfaceFlags;
+    sk_gpu_test::GrContextFactory::ContextOptions ctxOptions;
+    bool useDFText;
+#else
+    int bogusInt;
+    int bogusIntOption;
+    bool bogusBool;
+#endif
 };
 
 struct Target {
@@ -53,7 +61,7 @@ struct Target {
     /** Called between benchmarks (or between calibration and measured
         runs) to make sure all pending work in drivers / threads is
         complete. */
-    virtual void syncCPU() { }
+    virtual void fence() { }
 
     /** CPU-like targets can just be timed, but GPU-like
         targets need to pay attention to frame boundaries
@@ -68,11 +76,11 @@ struct Target {
         Returns false on error. */
     virtual bool capturePixels(SkBitmap* bmp);
 
-    /** Writes gathered stats using SkDebugf. */
-    virtual void dumpStats() {}
+    /** Writes any config-specific data to the log. */
+    virtual void fillOptions(ResultsWriter*) { }
 
     SkCanvas* getCanvas() const {
-        if (!surface) {
+        if (!surface.get()) {
             return nullptr;
         }
         return surface->getCanvas();

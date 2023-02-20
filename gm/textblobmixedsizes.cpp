@@ -5,32 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkSurfaceProps.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkBlurMask.h"
-#include "tools/Resources.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
 
-#include <string.h>
+#include "Resources.h"
+#include "SkBlurMask.h"
+#include "SkBlurMaskFilter.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkImage.h"
+#include "SkRandom.h"
+#include "SkStream.h"
+#include "SkSurface.h"
+#include "SkTextBlob.h"
+#include "SkTypeface.h"
 
 namespace skiagm {
 class TextBlobMixedSizes : public GM {
@@ -43,57 +30,65 @@ protected:
         SkTextBlobBuilder builder;
 
         // make textblob.  To stress distance fields, we choose sizes appropriately
-        SkFont font(MakeResourceAsTypeface("fonts/HangingS.ttf"), 262);
-        font.setSubpixel(true);
-        font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        paint.setSubpixelText(true);
+        paint.setLCDRenderText(true);
+        paint.setTypeface(MakeResourceAsTypeface("/fonts/HangingS.ttf"));
 
         const char* text = "Skia";
 
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, 0);
+        // extra large
+        paint.setTextSize(262);
+
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, 0);
 
         // large
         SkRect bounds;
-        font.measureText(text, strlen(text), SkTextEncoding::kUTF8, &bounds);
+        paint.measureText(text, strlen(text), &bounds);
         SkScalar yOffset = bounds.height();
-        font.setSize(162);
+        paint.setTextSize(162);
 
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, yOffset);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, yOffset);
 
         // Medium
-        font.measureText(text, strlen(text), SkTextEncoding::kUTF8, &bounds);
+        paint.measureText(text, strlen(text), &bounds);
         yOffset += bounds.height();
-        font.setSize(72);
+        paint.setTextSize(72);
 
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, yOffset);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, yOffset);
 
         // Small
-        font.measureText(text, strlen(text), SkTextEncoding::kUTF8, &bounds);
+        paint.measureText(text, strlen(text), &bounds);
         yOffset += bounds.height();
-        font.setSize(32);
+        paint.setTextSize(32);
 
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, yOffset);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, yOffset);
 
         // micro (will fall out of distance field text even if distance field text is enabled)
-        font.measureText(text, strlen(text), SkTextEncoding::kUTF8, &bounds);
+        paint.measureText(text, strlen(text), &bounds);
         yOffset += bounds.height();
-        font.setSize(14);
+        paint.setTextSize(14);
 
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, yOffset);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, yOffset);
 
         // Zero size.
-        font.measureText(text, strlen(text), SkTextEncoding::kUTF8, &bounds);
+        paint.measureText(text, strlen(text), &bounds);
         yOffset += bounds.height();
-        font.setSize(0);
+        paint.setTextSize(0);
 
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, yOffset);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, yOffset);
 
         // build
         fBlob = builder.make();
     }
 
     SkString onShortName() override {
-        return SkStringPrintf("textblobmixedsizes%s",
-                              fUseDFT ? "_df" : "");
+        SkString name("textblobmixedsizes");
+        if (fUseDFT) {
+            name.appendf("_df");
+        }
+        return name;
     }
 
     SkISize onISize() override {
@@ -104,23 +99,22 @@ protected:
         SkCanvas* canvas = inputCanvas;
         sk_sp<SkSurface> surface;
         if (fUseDFT) {
+#if SK_SUPPORT_GPU
             // Create a new Canvas to enable DFT
-            auto ctx = inputCanvas->recordingContext();
+            GrContext* ctx = inputCanvas->getGrContext();
             SkISize size = onISize();
-            sk_sp<SkColorSpace> colorSpace = inputCanvas->imageInfo().refColorSpace();
+            sk_sp<SkColorSpace> colorSpace = sk_ref_sp(inputCanvas->imageInfo().colorSpace());
             SkImageInfo info = SkImageInfo::MakeN32(size.width(), size.height(),
                                                     kPremul_SkAlphaType, colorSpace);
-            SkSurfaceProps inputProps;
-            inputCanvas->getProps(&inputProps);
-            SkSurfaceProps props(
-                    SkSurfaceProps::kUseDeviceIndependentFonts_Flag | inputProps.flags(),
-                    inputProps.pixelGeometry());
-            surface = SkSurface::MakeRenderTarget(ctx, skgpu::Budgeted::kNo, info, 0, &props);
-            canvas = surface ? surface->getCanvas() : inputCanvas;
+            SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag,
+                                 SkSurfaceProps::kLegacyFontHost_InitType);
+            surface = SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, 0, &props);
+            canvas = surface.get() ? surface->getCanvas() : inputCanvas;
             // init our new canvas with the old canvas's matrix
             canvas->setMatrix(inputCanvas->getTotalMatrix());
+#endif
         }
-        canvas->drawColor(SK_ColorWHITE);
+        canvas->drawColor(sk_tool_utils::color_to_565(SK_ColorWHITE));
 
         SkRect bounds = fBlob->bounds();
 
@@ -134,7 +128,7 @@ protected:
 
         SkPaint paint;
         if (!fUseDFT) {
-            paint.setColor(SK_ColorWHITE);
+            paint.setColor(sk_tool_utils::color_to_565(SK_ColorWHITE));
         }
         paint.setAntiAlias(false);
 
@@ -142,8 +136,8 @@ protected:
 
         // setup blur paint
         SkPaint blurPaint(paint);
-        blurPaint.setColor(SK_ColorBLACK);
-        blurPaint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, kSigma));
+        blurPaint.setColor(sk_tool_utils::color_to_565(SK_ColorBLACK));
+        blurPaint.setMaskFilter(SkBlurMaskFilter::Make(kNormal_SkBlurStyle, kSigma));
 
         for (int i = 0; i < 4; i++) {
             canvas->save();
@@ -171,13 +165,15 @@ protected:
         }
         canvas->restore();
 
+#if SK_SUPPORT_GPU
         // render offscreen buffer
         if (surface) {
             SkAutoCanvasRestore acr(inputCanvas, true);
             // since we prepended this matrix already, we blit using identity
             inputCanvas->resetMatrix();
-            inputCanvas->drawImage(surface->makeImageSnapshot().get(), 0, 0);
+            inputCanvas->drawImage(surface->makeImageSnapshot().get(), 0, 0, nullptr);
         }
+#endif
     }
 
 private:
@@ -188,11 +184,13 @@ private:
 
     bool fUseDFT;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM( return new TextBlobMixedSizes(false); )
+#if SK_SUPPORT_GPU
 DEF_GM( return new TextBlobMixedSizes(true); )
-}  // namespace skiagm
+#endif
+}

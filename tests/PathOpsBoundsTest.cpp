@@ -4,19 +4,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkTypes.h"
-#include "src/pathops/SkPathOpsBounds.h"
-#include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsCurve.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsQuad.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstddef>
+#include "PathOpsTestCommon.h"
+#include "SkPathOpsBounds.h"
+#include "SkPathOpsCurve.h"
+#include "Test.h"
 
 static const SkRect sectTests[][2] = {
     {{2, 0, 4, 1}, {4, 0, 6, 1}},
@@ -29,14 +20,14 @@ static const SkRect sectTests[][2] = {
     {{2, 0, 4, 1}, {4, 1, 5, 2}},  // touching just on a corner is OK
 };
 
-static const size_t sectTestsCount = std::size(sectTests);
+static const size_t sectTestsCount = SK_ARRAY_COUNT(sectTests);
 
 static const SkRect noSectTests[][2] = {
     {{2, 0, 4, 1}, {5, 0, 6, 1}},
     {{2, 0, 4, 1}, {3, 2, 5, 2}},
 };
 
-static const size_t noSectTestsCount = std::size(noSectTests);
+static const size_t noSectTestsCount = SK_ARRAY_COUNT(noSectTests);
 
 DEF_TEST(PathOpsBounds, reporter) {
     for (size_t index = 0; index < sectTestsCount; ++index) {
@@ -59,11 +50,11 @@ DEF_TEST(PathOpsBounds, reporter) {
     bounds.setEmpty();
     bounds.add(1, 2, 3, 4);
     SkPathOpsBounds expected;
-    expected.setLTRB(0, 0, 3, 4);
+    expected.set(0, 0, 3, 4);
     REPORTER_ASSERT(reporter, bounds == expected);
     bounds.setEmpty();
     SkPathOpsBounds ordinal;
-    ordinal.setLTRB(1, 2, 3, 4);
+    ordinal.set(1, 2, 3, 4);
     bounds.add(ordinal);
     REPORTER_ASSERT(reporter, bounds == expected);
     bounds.setEmpty();
@@ -74,10 +65,10 @@ DEF_TEST(PathOpsBounds, reporter) {
     SkDCurve curve;
     curve.fQuad.set(curvePts);
     curve.setQuadBounds(curvePts, 1, 0, 1, &bounds);
-    expected.setLTRB(0, 0, 3, 4);
+    expected.set(0, 0, 3, 4);
     REPORTER_ASSERT(reporter, bounds == expected);
     curve.fCubic.set(curvePts);
     curve.setCubicBounds(curvePts, 1, 0, 1, &bounds);
-    expected.setLTRB(0, 0, 5, 6);
+    expected.set(0, 0, 5, 6);
     REPORTER_ASSERT(reporter, bounds == expected);
 }

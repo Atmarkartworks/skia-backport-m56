@@ -1,36 +1,31 @@
 [
   {
     "cmd": [
-      "vpython3",
+      "python",
       "-u",
-      "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
-      "--json-output",
-      "/path/to/tmp/json",
-      "glob",
-      "[START_DIR]/perf",
+      "\nimport glob\nimport sys\nwith open(sys.argv[1], 'w') as f:\n  f.write('\\n'.join(glob.glob(sys.argv[2])))\n",
+      "/path/to/tmp/",
       "*.json"
     ],
-    "cwd": "[START_DIR]/perf",
-    "infra_step": true,
-    "name": "find results",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@glob@[START_DIR]/perf/nanobench_abc123.json@@@",
-      "@@@STEP_LOG_END@glob@@@"
-    ]
+    "cwd": "[CWD]/perfdata/Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Debug/data",
+    "name": "find results"
   },
   {
     "cmd": [
       "gsutil",
       "cp",
+      "-a",
+      "public-read",
       "-z",
       "json",
-      "[START_DIR]/perf/nanobench_abc123.json",
-      "gs://skia-perf/nano-json-v1/2012/05/14/12/Perf-Debian10-Clang-GCE-CPU-AVX2-x86_64-All-Debug/nanobench_abc123.json"
+      "[CWD]/perfdata/Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Debug/data/nanobench_abc123.json",
+      "gs://skia-perf/nano-json-v1/2012/05/14/12/Test-Ubuntu-GCC-GCE-CPU-AVX2-x86_64-Debug/nanobench_abc123.json"
     ],
-    "infra_step": true,
     "name": "upload"
   },
   {
-    "name": "$result"
+    "name": "$result",
+    "recipe_result": null,
+    "status_code": 0
   }
 ]

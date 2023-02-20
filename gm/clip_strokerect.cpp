@@ -5,13 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPath.h"
 
 class ClipStrokeRectGM : public skiagm::GM {
 public:
@@ -68,7 +64,7 @@ protected:
     }
 
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_GM(return new ClipStrokeRectGM;)

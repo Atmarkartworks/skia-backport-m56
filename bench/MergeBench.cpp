@@ -5,11 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkSurface.h"
-#include "include/effects/SkImageFilters.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkImageSource.h"
+#include "SkMergeImageFilter.h"
+#include "SkSurface.h"
 
 #define FILTER_WIDTH_SMALL  SkIntToScalar(32)
 #define FILTER_HEIGHT_SMALL SkIntToScalar(32)
@@ -20,10 +20,11 @@ static sk_sp<SkImage> make_bitmap() {
     sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(80, 80));
     surface->getCanvas()->clear(0x00000000);
     SkPaint paint;
+    paint.setAntiAlias(true);
     paint.setColor(0xFF884422);
-    SkFont font;
-    font.setSize(SkIntToScalar(96));
-    surface->getCanvas()->drawSimpleText("g", 1, SkTextEncoding::kUTF8, 15, 55, font, paint);
+    paint.setTextSize(SkIntToScalar(96));
+    const char* str = "g";
+    surface->getCanvas()->drawText(str, strlen(str), 15, 55, paint);
     return surface->makeImageSnapshot();
 }
 
@@ -71,19 +72,23 @@ protected:
         SkRect r = fIsSmall ? SkRect::MakeWH(FILTER_WIDTH_SMALL, FILTER_HEIGHT_SMALL) :
                               SkRect::MakeWH(FILTER_WIDTH_LARGE, FILTER_HEIGHT_LARGE);
         SkPaint paint;
-        paint.setImageFilter(SkImageFilters::Merge(SkImageFilters::Image(fCheckerboard),
-                                                   SkImageFilters::Image(fImage)));
+        paint.setImageFilter(this->mergeBitmaps());
         for (int i = 0; i < loops; i++) {
             canvas->drawRect(r, paint);
         }
     }
 
 private:
+    sk_sp<SkImageFilter> mergeBitmaps() {
+        return SkMergeImageFilter::Make(SkImageSource::Make(fCheckerboard),
+                                        SkImageSource::Make(fImage), SkBlendMode::kSrcOver);
+    }
+
     bool fIsSmall;
     bool fInitialized;
     sk_sp<SkImage> fImage, fCheckerboard;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -5,32 +5,33 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSamplingOptions.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkTileMode.h"
-#include "include/effects/SkPerlinNoiseShader.h"
-#include "tests/Test.h"
+#include "Test.h"
+#include "SkBitmap.h"
+#include "SkImage.h"
+#include "SkShader.h"
+#include "SkSurface.h"
+#include "SkData.h"
 
-static void check_isaimage(skiatest::Reporter* reporter, SkShader* shader,
-                           int expectedW, int expectedH,
-                           SkTileMode expectedX, SkTileMode expectedY,
-                           const SkMatrix& expectedM) {
-    SkTileMode tileModes[2];
+static void check_isabitmap(skiatest::Reporter* reporter, SkShader* shader,
+                            int expectedW, int expectedH,
+                            SkShader::TileMode expectedX, SkShader::TileMode expectedY,
+                            const SkMatrix& expectedM) {
+    SkShader::TileMode tileModes[2];
     SkMatrix localM;
+
+#ifdef SK_SUPPORT_LEGACY_SHADER_ISABITMAP
+    SkBitmap bm;
+    REPORTER_ASSERT(reporter, shader->isABitmap(&bm, &localM, tileModes));
+    REPORTER_ASSERT(reporter, bm.width() == expectedW);
+    REPORTER_ASSERT(reporter, bm.height() == expectedH);
+    REPORTER_ASSERT(reporter, localM == expectedM);
+    REPORTER_ASSERT(reporter, tileModes[0] == expectedX);
+    REPORTER_ASSERT(reporter, tileModes[1] == expectedY);
+#endif
 
     // wack these so we don't get a false positive
     localM.setScale(9999, -9999);
-    tileModes[0] = tileModes[1] = (SkTileMode)99;
+    tileModes[0] = tileModes[1] = (SkShader::TileMode)99;
 
     SkImage* image = shader->isAImage(&localM, tileModes);
     REPORTER_ASSERT(reporter, image);
@@ -41,36 +42,19 @@ static void check_isaimage(skiatest::Reporter* reporter, SkShader* shader,
     REPORTER_ASSERT(reporter, tileModes[1] == expectedY);
 }
 
-DEF_TEST(Shader_isAImage, reporter) {
+DEF_TEST(Shader_isABitmap, reporter) {
     const int W = 100;
     const int H = 100;
     SkBitmap bm;
     bm.allocN32Pixels(W, H);
-    auto img = bm.asImage();
-    const SkMatrix localM = SkMatrix::Scale(2, 3);
-    const SkTileMode tmx = SkTileMode::kRepeat;
-    const SkTileMode tmy = SkTileMode::kMirror;
+    auto img = SkImage::MakeFromBitmap(bm);
+    const SkMatrix localM = SkMatrix::MakeScale(2, 3);
+    const SkShader::TileMode tmx = SkShader::kRepeat_TileMode;
+    const SkShader::TileMode tmy = SkShader::kMirror_TileMode;
 
-    auto shader0 = bm.makeShader(tmx, tmy, SkSamplingOptions(), localM);
-    auto shader1 = bm.asImage()->makeShader(tmx, tmy, SkSamplingOptions(), localM);
+    auto shader0 = SkShader::MakeBitmapShader(bm, tmx, tmy, &localM);
+    auto shader1 = SkImage::MakeFromBitmap(bm)->makeShader(tmx, tmy, &localM);
 
-    check_isaimage(reporter, shader0.get(), W, H, tmx, tmy, localM);
-    check_isaimage(reporter, shader1.get(), W, H, tmx, tmy, localM);
-}
-
-// Make sure things are ok with just a single leg.
-DEF_TEST(ComposeShaderSingle, reporter) {
-    SkBitmap srcBitmap;
-    srcBitmap.allocN32Pixels(10, 10);
-    srcBitmap.eraseColor(SK_ColorRED);
-    SkCanvas canvas(srcBitmap);
-    SkPaint p;
-    p.setShader(
-        SkShaders::Blend(SkBlendMode::kClear,
-        SkShaders::Empty(),
-        SkPerlinNoiseShader::MakeFractalNoise(1.0f, 1.0f, 2, 0.0f)));
-    SkRRect rr;
-    SkVector rd[] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
-    rr.setRectRadii({0, 0, 0, 0}, rd);
-    canvas.drawRRect(rr, p);
+    check_isabitmap(reporter, shader0.get(), W, H, tmx, tmy, localM);
+    check_isabitmap(reporter, shader1.get(), W, H, tmx, tmy, localM);
 }

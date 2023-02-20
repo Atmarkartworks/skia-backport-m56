@@ -5,25 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkImageFilter.h"
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPixelRef.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypeface.h"
-#include "include/effects/SkImageFilters.h"
-#include "src/base/SkRandom.h"
-#include "tools/ToolUtils.h"
-
-#include <utility>
+#include "gm.h"
+#include "SkImageSource.h"
+#include "SkMagnifierImageFilter.h"
+#include "SkRandom.h"
+#include "SkSurface.h"
 
 #define WIDTH 500
 #define HEIGHT 500
@@ -31,7 +17,7 @@
 DEF_SIMPLE_GM_BG(imagemagnifier, canvas, WIDTH, HEIGHT, SK_ColorBLACK) {
         SkPaint filterPaint;
         filterPaint.setImageFilter(
-            SkImageFilters::Magnifier(
+            SkMagnifierImageFilter::Make(
                 SkRect::MakeXYWH(SkIntToScalar(100), SkIntToScalar(100),
                                  SkIntToScalar(WIDTH / 2),
                                  SkIntToScalar(HEIGHT / 2)),
@@ -39,14 +25,16 @@ DEF_SIMPLE_GM_BG(imagemagnifier, canvas, WIDTH, HEIGHT, SK_ColorBLACK) {
         canvas->saveLayer(nullptr, &filterPaint);
         const char* str = "The quick brown fox jumped over the lazy dog.";
         SkRandom rand;
-        SkFont      font(ToolUtils::create_portable_typeface());
         for (int i = 0; i < 25; ++i) {
             int x = rand.nextULessThan(WIDTH);
             int y = rand.nextULessThan(HEIGHT);
             SkPaint paint;
-            paint.setColor(ToolUtils::color_to_565(rand.nextBits(24) | 0xFF000000));
-            font.setSize(rand.nextRangeScalar(0, 300));
-            canvas->drawString(str, SkIntToScalar(x), SkIntToScalar(y), font, paint);
+            sk_tool_utils::set_portable_typeface(&paint);
+            paint.setColor(sk_tool_utils::color_to_565(rand.nextBits(24) | 0xFF000000));
+            paint.setTextSize(rand.nextRangeScalar(0, 300));
+            paint.setAntiAlias(true);
+            canvas->drawText(str, strlen(str), SkIntToScalar(x),
+                             SkIntToScalar(y), paint);
         }
         canvas->restore();
 }
@@ -55,32 +43,30 @@ DEF_SIMPLE_GM_BG(imagemagnifier, canvas, WIDTH, HEIGHT, SK_ColorBLACK) {
 #define WIDTH_HEIGHT 256
 
 static sk_sp<SkImage> make_img() {
-    SkBitmap bitmap;
-    bitmap.allocN32Pixels(WIDTH_HEIGHT, WIDTH_HEIGHT);
-    SkCanvas canvas(bitmap);
+    const SkImageInfo info = SkImageInfo::MakeN32Premul(WIDTH_HEIGHT, WIDTH_HEIGHT);
 
-    canvas.clear(0x0);
+    sk_sp<SkSurface> surf(SkSurface::MakeRaster(info));
+
+    SkCanvas* canvas = surf->getCanvas();
+
+    canvas->clear(0x0);
 
     SkPaint paint;
     paint.setColor(SK_ColorBLUE);
 
     for (float pos = 0; pos < WIDTH_HEIGHT; pos += 16) {
-        canvas.drawLine(0, pos, SkIntToScalar(WIDTH_HEIGHT), pos, paint);
-        canvas.drawLine(pos, 0, pos, SkIntToScalar(WIDTH_HEIGHT), paint);
+        canvas->drawLine(0, pos, SkIntToScalar(WIDTH_HEIGHT), pos, paint);
+        canvas->drawLine(pos, 0, pos, SkIntToScalar(WIDTH_HEIGHT), paint);
     }
 
-    SkBitmap result;
-    result.setInfo(SkImageInfo::MakeS32(WIDTH_HEIGHT, WIDTH_HEIGHT, kPremul_SkAlphaType));
-    result.setPixelRef(sk_ref_sp(bitmap.pixelRef()), 0, 0);
-
-    return result.asImage();
+    return surf->makeImageSnapshot();
 }
 
 DEF_SIMPLE_GM_BG(imagemagnifier_cropped, canvas, WIDTH_HEIGHT, WIDTH_HEIGHT, SK_ColorBLACK) {
 
     sk_sp<SkImage> image(make_img());
 
-    sk_sp<SkImageFilter> imageSource(SkImageFilters::Image(std::move(image)));
+    sk_sp<SkImageFilter> imageSource(SkImageSource::Make(std::move(image)));
 
     SkRect srcRect = SkRect::MakeWH(SkIntToScalar(WIDTH_HEIGHT-32),
                                     SkIntToScalar(WIDTH_HEIGHT-32));
@@ -89,11 +75,13 @@ DEF_SIMPLE_GM_BG(imagemagnifier_cropped, canvas, WIDTH_HEIGHT, WIDTH_HEIGHT, SK_
     constexpr SkScalar kInset = 64.0f;
 
     // Crop out a 16 pixel ring around the result
-    const SkIRect cropRect = SkIRect::MakeXYWH(16, 16, WIDTH_HEIGHT-32, WIDTH_HEIGHT-32);
+    const SkRect rect = SkRect::MakeXYWH(16, 16, WIDTH_HEIGHT-32, WIDTH_HEIGHT-32);
+    SkImageFilter::CropRect cropRect(rect);
 
     SkPaint filterPaint;
-    filterPaint.setImageFilter(SkImageFilters::Magnifier(
-            srcRect, kInset, std::move(imageSource),  &cropRect));
+    filterPaint.setImageFilter(SkMagnifierImageFilter::Make(srcRect, kInset,
+                                                            std::move(imageSource),
+                                                            &cropRect));
 
     canvas->saveLayer(nullptr, &filterPaint);
     canvas->restore();

@@ -5,34 +5,21 @@
  * found in the LICENSE file.
  */
 
-#ifndef SkBmpMaskCodec_DEFINED
-#define SkBmpMaskCodec_DEFINED
-
-#include "include/codec/SkCodec.h"
-#include "include/core/SkTypes.h"
-#include "src/codec/SkBmpBaseCodec.h"
-#include "src/codec/SkMaskSwizzler.h"
-#include "src/codec/SkMasks.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-
-class SkSampler;
-class SkStream;
-struct SkEncodedInfo;
-struct SkImageInfo;
+#include "SkBmpCodec.h"
+#include "SkImageInfo.h"
+#include "SkMaskSwizzler.h"
+#include "SkTypes.h"
 
 /*
  * This class implements the decoding for bmp images using bit masks
  */
-class SkBmpMaskCodec : public SkBmpBaseCodec {
+class SkBmpMaskCodec : public SkBmpCodec {
 public:
 
     /*
      * Creates an instance of the decoder
      *
-     * Called only by SkBmpCodec::MakeFromStream
+     * Called only by SkBmpCodec::NewFromStream
      * There should be no other callers despite this being public
      *
      * @param info contains properties of the encoded data
@@ -41,18 +28,19 @@ public:
      * @param masks color masks for certain bmp formats
      * @param rowOrder indicates whether rows are ordered top-down or bottom-up
      */
-    SkBmpMaskCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream>,
+    SkBmpMaskCodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
             uint16_t bitsPerPixel, SkMasks* masks,
             SkCodec::SkScanlineOrder rowOrder);
 
 protected:
 
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst,
-                       size_t dstRowBytes, const Options&,
-                       int*) override;
+                       size_t dstRowBytes, const Options&, SkPMColor*,
+                       int*, int*) override;
 
     SkCodec::Result onPrepareToDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options& options) override;
+            const SkCodec::Options& options, SkPMColor inputColorPtr[],
+            int* inputColorCount) override;
 
 private:
 
@@ -66,7 +54,7 @@ private:
 
     std::unique_ptr<SkMasks>        fMasks;
     std::unique_ptr<SkMaskSwizzler> fMaskSwizzler;
+    std::unique_ptr<uint8_t[]>      fSrcBuffer;
 
-    using INHERITED = SkBmpBaseCodec;
+    typedef SkBmpCodec INHERITED;
 };
-#endif  // SkBmpMaskCodec_DEFINED

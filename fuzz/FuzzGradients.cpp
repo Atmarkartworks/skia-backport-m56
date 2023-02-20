@@ -5,18 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "fuzz/Fuzz.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkSurface.h"
-#include "include/effects/SkGradientShader.h"
-#include "src/base/SkTLazy.h"
-#include "src/core/SkDebugUtils.h"
-#include "tools/flags/CommandLineFlags.h"
+#include "Fuzz.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkSurface.h"
+#include "SkTLazy.h"
 
 #include <algorithm>
 #include <vector>
-
-static DEFINE_bool2(verbose, v, false, "log verbose linear gradient description");
 
 const int MAX_COUNT = 400;
 
@@ -27,7 +23,7 @@ void makeMatrix(Fuzz* fuzz, SkMatrix* m) {
 }
 
 void initGradientParams(Fuzz* fuzz, std::vector<SkColor>* colors,
-                        std::vector<SkScalar>* pos, SkTileMode* mode) {
+                        std::vector<SkScalar>* pos, SkShader::TileMode* mode) {
     int count;
     fuzz->nextRange(&count, 0, MAX_COUNT);
 
@@ -35,7 +31,7 @@ void initGradientParams(Fuzz* fuzz, std::vector<SkColor>* colors,
     // smaller, which leads to more efficient fuzzing.
     uint8_t m;
     fuzz->nextRange(&m, 0, 2);
-    *mode = static_cast<SkTileMode>(m);
+    *mode = static_cast<SkShader::TileMode>(m);
 
     colors->clear();
     pos   ->clear();
@@ -54,54 +50,6 @@ void initGradientParams(Fuzz* fuzz, std::vector<SkColor>* colors,
     }
 }
 
-static void logOptionalMatrix(const char* label, const SkMatrix* m) {
-    if (!m) {
-        return;
-    }
-
-    SkDEBUGF("  %s: [ ", label);
-    for (int i = 0; i < 9; ++i) {
-        SkDEBUGF("%.9g ", m->get(i));
-    }
-    SkDEBUGF("]\n");
-}
-
-static void logLinearGradient(const SkPoint pts[2],
-                              const std::vector<SkColor>& colors,
-                              const std::vector<SkScalar> pos,
-                              SkTileMode mode,
-                              uint32_t flags,
-                              const SkMatrix* localMatrix,
-                              const SkMatrix* globalMatrix) {
-    if (!FLAGS_verbose) {
-        return;
-    }
-
-    SkDebugf("--- fuzzLinearGradient ---\n");
-    SkDebugf("  pts:\t\t[ (%.9g %.9g) (%.9g %.9g) ]\n",
-             pts[0].x(), pts[0].y(), pts[1].x(), pts[1].y());
-    SkDebugf("  colors:\t[ ");
-    for (auto color : colors) {
-        SkDebugf("0x%x ", color);
-    }
-
-    SkDebugf("]\n  pos:\t\t");
-    if (pos.empty()) {
-        SkDebugf("nullptr");
-    } else {
-        SkDebugf("[ ");
-        for (auto p : pos) {
-            SkDebugf("%f ", p);
-        }
-    }
-    SkDebugf("]\n");
-
-    SkDebugf("  mode:\t\t%s\n", SkTileModeToStr(mode));
-    SkDebugf("  flags:\t0x%x\n", flags);
-    logOptionalMatrix("local matrix", localMatrix);
-    logOptionalMatrix("global matrix", globalMatrix);
-}
-
 void fuzzLinearGradient(Fuzz* fuzz) {
     SkPoint pts[2];
     fuzz->next(&pts[0].fX, &pts[0].fY, &pts[1].fX, &pts[1].fY);
@@ -110,7 +58,7 @@ void fuzzLinearGradient(Fuzz* fuzz) {
 
     std::vector<SkColor> colors;
     std::vector<SkScalar> pos;
-    SkTileMode mode;
+    SkShader::TileMode mode;
     initGradientParams(fuzz, &colors, &pos, &mode);
 
     SkPaint p;
@@ -128,12 +76,10 @@ void fuzzLinearGradient(Fuzz* fuzz) {
     if (useGlobalMatrix) {
         SkMatrix gm;
         makeMatrix(fuzz, &gm);
-        logLinearGradient(pts, colors, pos, mode, flags, localMatrix.getMaybeNull(), &gm);
         SkCanvas* c = surface->getCanvas();
         c->setMatrix(gm);
         c->drawPaint(p);
     } else {
-        logLinearGradient(pts, colors, pos, mode, flags, localMatrix.getMaybeNull(), nullptr);
         surface->getCanvas()->drawPaint(p);
     }
 }
@@ -148,7 +94,7 @@ void fuzzRadialGradient(Fuzz* fuzz) {
 
     std::vector<SkColor> colors;
     std::vector<SkScalar> pos;
-    SkTileMode mode;
+    SkShader::TileMode mode;
     initGradientParams(fuzz, &colors, &pos, &mode);
 
     SkPaint p;
@@ -186,7 +132,7 @@ void fuzzTwoPointConicalGradient(Fuzz* fuzz) {
 
     std::vector<SkColor> colors;
     std::vector<SkScalar> pos;
-    SkTileMode mode;
+    SkShader::TileMode mode;
     initGradientParams(fuzz, &colors, &pos, &mode);
 
     SkPaint p;
@@ -220,7 +166,7 @@ void fuzzSweepGradient(Fuzz* fuzz) {
 
     std::vector<SkColor> colors;
     std::vector<SkScalar> pos;
-    SkTileMode mode;
+    SkShader::TileMode mode;
     initGradientParams(fuzz, &colors, &pos, &mode);
 
     SkPaint p;
@@ -255,19 +201,19 @@ DEF_FUZZ(Gradients, fuzz) {
 
     switch(i) {
         case 0:
-            SkDEBUGF("LinearGradient\n");
+            SkDebugf("LinearGradient\n");
             fuzzLinearGradient(fuzz);
             return;
         case 1:
-            SkDEBUGF("RadialGradient\n");
+            SkDebugf("RadialGradient\n");
             fuzzRadialGradient(fuzz);
             return;
         case 2:
-            SkDEBUGF("TwoPointConicalGradient\n");
+            SkDebugf("TwoPointConicalGradient\n");
             fuzzTwoPointConicalGradient(fuzz);
             return;
     }
-    SkDEBUGF("SweepGradient\n");
+    SkDebugf("SweepGradient\n");
     fuzzSweepGradient(fuzz);
     return;
 }

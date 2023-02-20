@@ -5,23 +5,23 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkAnnotation.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "src/core/SkAnnotationKeys.h"
+#include "SkAnnotation.h"
+#include "SkAnnotationKeys.h"
+#include "SkCanvas.h"
+#include "SkPoint.h"
+#include "SkRect.h"
 
 const char* SkAnnotationKeys::URL_Key() {
     return "SkAnnotationKey_URL";
-}
+};
 
 const char* SkAnnotationKeys::Define_Named_Dest_Key() {
     return "SkAnnotationKey_Define_Named_Dest";
-}
+};
 
 const char* SkAnnotationKeys::Link_Named_Dest_Key() {
     return "SkAnnotationKey_Link_Named_Dest";
-}
+};
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 

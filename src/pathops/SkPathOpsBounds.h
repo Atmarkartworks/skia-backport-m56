@@ -7,8 +7,8 @@
 #ifndef SkPathOpBounds_DEFINED
 #define SkPathOpBounds_DEFINED
 
-#include "include/core/SkRect.h"
-#include "src/pathops/SkPathOpsRect.h"
+#include "SkPathOpsRect.h"
+#include "SkRect.h"
 
 // SkPathOpsBounds, unlike SkRect, does not consider a line to be empty.
 struct SkPathOpsBounds : public SkRect {
@@ -59,7 +59,7 @@ struct SkPathOpsBounds : public SkRect {
                fRight >= pt.fX && fBottom >= pt.fY;
     }
 
-    using INHERITED = SkRect;
+    typedef SkRect INHERITED;
 };
 
 #endif

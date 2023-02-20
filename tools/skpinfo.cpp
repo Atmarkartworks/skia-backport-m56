@@ -5,20 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPicture.h"
-#include "include/core/SkStream.h"
-#include "include/private/base/SkTo.h"
-#include "src/core/SkFontDescriptor.h"
-#include "src/core/SkPictureData.h"
-#include "src/core/SkPicturePriv.h"
-#include "tools/flags/CommandLineFlags.h"
+#include "SkCommandLineFlags.h"
+#include "SkPicture.h"
+#include "SkPictureData.h"
+#include "SkStream.h"
+#include "SkFontDescriptor.h"
 
-static DEFINE_string2(input, i, "", "skp on which to report");
-static DEFINE_bool2(version, v, true, "version");
-static DEFINE_bool2(cullRect, c, true, "cullRect");
-static DEFINE_bool2(flags, f, true, "flags");
-static DEFINE_bool2(tags, t, true, "tags");
-static DEFINE_bool2(quiet, q, false, "quiet");
+DEFINE_string2(input, i, "", "skp on which to report");
+DEFINE_bool2(version, v, true, "version");
+DEFINE_bool2(cullRect, c, true, "cullRect");
+DEFINE_bool2(flags, f, true, "flags");
+DEFINE_bool2(tags, t, true, "tags");
+DEFINE_bool2(quiet, q, false, "quiet");
 
 // This tool can print simple information about an SKP but its main use
 // is just to check if an SKP has been truncated during the recording
@@ -31,11 +29,12 @@ static const int kInvalidTag = 3;
 static const int kMissingInput = 4;
 static const int kIOError = 5;
 
-int main(int argc, char** argv) {
-    CommandLineFlags::SetUsage("Prints information about an skp file");
-    CommandLineFlags::Parse(argc, argv);
+int tool_main(int argc, char** argv);
+int tool_main(int argc, char** argv) {
+    SkCommandLineFlags::SetUsage("Prints information about an skp file");
+    SkCommandLineFlags::Parse(argc, argv);
 
-    if (FLAGS_input.size() != 1) {
+    if (FLAGS_input.count() != 1) {
         if (!FLAGS_quiet) {
             SkDebugf("Missing input file\n");
         }
@@ -53,8 +52,7 @@ int main(int argc, char** argv) {
     size_t totStreamSize = stream.getLength();
 
     SkPictInfo info;
-    if (!SkPicture_StreamIsSKP(&stream, &info)) {
-        SkDebugf("Unsupported version %d\n", info.getVersion());
+    if (!SkPicture::InternalOnly_StreamIsSKP(&stream, &info)) {
         return kNotAnSKP;
     }
 
@@ -66,10 +64,30 @@ int main(int argc, char** argv) {
                  info.fCullRect.fLeft, info.fCullRect.fTop,
                  info.fCullRect.fRight, info.fCullRect.fBottom);
     }
+    if (FLAGS_flags && !FLAGS_quiet) {
+        SkDebugf("Flags: ");
+        bool needsSeparator = false;
+        if (info.fFlags & SkPictInfo::kCrossProcess_Flag) {
+            SkDebugf("kCrossProcess");
+            needsSeparator = true;
+        }
+        if (info.fFlags & SkPictInfo::kScalarIsFloat_Flag) {
+            if (needsSeparator) {
+                SkDebugf("|");
+            }
+            SkDebugf("kScalarIsFloat");
+            needsSeparator = true;
+        }
+        if (info.fFlags & SkPictInfo::kPtrIs64Bit_Flag) {
+            if (needsSeparator) {
+                SkDebugf("|");
+            }
+            SkDebugf("kPtrIs64Bit");
+        }
+        SkDebugf("\n");
+    }
 
-    bool hasData;
-    if (!stream.readBool(&hasData)) { return kTruncatedFile; }
-    if (!hasData) {
+    if (!stream.readBool()) {
         // If we read true there's a picture playback object flattened
         // in the file; if false, there isn't a playback, so we're done
         // reading the file.
@@ -77,14 +95,12 @@ int main(int argc, char** argv) {
     }
 
     for (;;) {
-        uint32_t tag;
-        if (!stream.readU32(&tag)) { return kTruncatedFile; }
+        uint32_t tag = stream.readU32();
         if (SK_PICT_EOF_TAG == tag) {
             break;
         }
 
-        uint32_t chunkSize;
-        if (!stream.readU32(&chunkSize)) { return kTruncatedFile; }
+        uint32_t chunkSize = stream.readU32();
         size_t curPos = stream.getPosition();
 
         // "move" doesn't error out when seeking beyond the end of file
@@ -137,6 +153,7 @@ int main(int argc, char** argv) {
                 SkDebugf("Exiting early due to format limitations\n");
             }
             return kSuccess;       // TODO: need to store size in bytes
+            break;
         case SK_PICT_BUFFER_SIZE_TAG:
             if (FLAGS_tags && !FLAGS_quiet) {
                 SkDebugf("SK_PICT_BUFFER_SIZE_TAG %d\n", chunkSize);
@@ -159,3 +176,9 @@ int main(int argc, char** argv) {
 
     return kSuccess;
 }
+
+#if !defined SK_BUILD_FOR_IOS
+int main(int argc, char * const argv[]) {
+    return tool_main(argc, (char**) argv);
+}
+#endif

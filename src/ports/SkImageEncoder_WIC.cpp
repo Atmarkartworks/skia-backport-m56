@@ -5,21 +5,37 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
+#include "SkTypes.h"
 
-#if defined(SK_BUILD_FOR_WIN)
+#if defined(SK_BUILD_FOR_WIN32)
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkImageEncoder.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkUnPreMultiply.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkAutoMalloc.h"
-#include "src/encode/SkImageEncoderPriv.h"
-#include "src/utils/win/SkAutoCoInitialize.h"
-#include "src/utils/win/SkIStream.h"
-#include "src/utils/win/SkTScopedComPtr.h"
+// Workaround for:
+// http://connect.microsoft.com/VisualStudio/feedback/details/621653/
+// http://crbug.com/225822
+// In VS2010 both intsafe.h and stdint.h define the following without guards.
+// SkTypes brought in windows.h and stdint.h and the following defines are
+// not used by this file. However, they may be re-introduced by wincodec.h.
+#undef INT8_MIN
+#undef INT16_MIN
+#undef INT32_MIN
+#undef INT64_MIN
+#undef INT8_MAX
+#undef UINT8_MAX
+#undef INT16_MAX
+#undef UINT16_MAX
+#undef INT32_MAX
+#undef UINT32_MAX
+#undef INT64_MAX
+#undef UINT64_MAX
+
 #include <wincodec.h>
+#include "SkAutoCoInitialize.h"
+#include "SkBitmap.h"
+#include "SkImageEncoder.h"
+#include "SkIStream.h"
+#include "SkStream.h"
+#include "SkTScopedComPtr.h"
+#include "SkUnPreMultiply.h"
 
 //All Windows SDKs back to XPSP2 export the CLSID_WICImagingFactory symbol.
 //In the Windows8 SDK the CLSID_WICImagingFactory symbol is still exported
@@ -30,30 +46,36 @@
 #undef CLSID_WICImagingFactory
 #endif
 
-bool SkEncodeImageWithWIC(SkWStream* stream, const SkPixmap& pixmap,
-                          SkEncodedImageFormat format, int quality) {
+class SkImageEncoder_WIC : public SkImageEncoder {
+public:
+    SkImageEncoder_WIC(Type t) : fType(t) {}
+
+protected:
+    virtual bool onEncode(SkWStream* stream, const SkBitmap& bm, int quality);
+
+private:
+    Type fType;
+};
+
+bool SkImageEncoder_WIC::onEncode(SkWStream* stream
+                                , const SkBitmap& bitmapOrig
+                                , int quality)
+{
     GUID type;
-    switch (format) {
-        case SkEncodedImageFormat::kJPEG:
+    switch (fType) {
+        case kJPEG_Type:
             type = GUID_ContainerFormatJpeg;
             break;
-        case SkEncodedImageFormat::kPNG:
+        case kPNG_Type:
             type = GUID_ContainerFormatPng;
             break;
         default:
             return false;
     }
-    SkBitmap bitmapOrig;
-    if (!bitmapOrig.installPixels(pixmap)) {
-        return false;
-    }
-    bitmapOrig.setImmutable();
 
     // First convert to BGRA if necessary.
     SkBitmap bitmap;
-    if (!bitmap.tryAllocPixels(bitmapOrig.info().makeColorType(kBGRA_8888_SkColorType)) ||
-        !bitmapOrig.readPixels(bitmap.info(), bitmap.getPixels(), bitmap.rowBytes(), 0, 0))
-    {
+    if (!bitmapOrig.copyTo(&bitmap, kBGRA_8888_SkColorType)) {
         return false;
     }
 
@@ -75,7 +97,7 @@ bool SkEncodeImageWithWIC(SkWStream* stream, const SkPixmap& pixmap,
     size_t rowBytes = bitmap.rowBytes();
     SkAutoMalloc pixelStorage;
     WICPixelFormatGUID formatDesired = GUID_WICPixelFormat32bppBGRA;
-    if (SkEncodedImageFormat::kJPEG == format) {
+    if (kJPEG_Type == fType) {
         formatDesired = GUID_WICPixelFormat24bppBGR;
         rowBytes = SkAlign4(bitmap.width() * 3);
         pixelStorage.reset(rowBytes * bitmap.height());
@@ -83,9 +105,9 @@ bool SkEncodeImageWithWIC(SkWStream* stream, const SkPixmap& pixmap,
             uint8_t* dstRow = SkTAddOffset<uint8_t>(pixelStorage.get(), y * rowBytes);
             for (int x = 0; x < bitmap.width(); x++) {
                 uint32_t bgra = *bitmap.getAddr32(x, y);
-                dstRow[0] = (uint8_t) ((bgra >>  0) & 0xFF);
-                dstRow[1] = (uint8_t) ((bgra >>  8) & 0xFF);
-                dstRow[2] = (uint8_t) ((bgra >> 16) & 0xFF);
+                dstRow[0] = (uint8_t) (bgra >>  0);
+                dstRow[1] = (uint8_t) (bgra >>  8);
+                dstRow[2] = (uint8_t) (bgra >> 16);
                 dstRow += 3;
             }
         }
@@ -137,11 +159,10 @@ bool SkEncodeImageWithWIC(SkWStream* stream, const SkPixmap& pixmap,
     }
 
     if (SUCCEEDED(hr)) {
-        PROPBAG2 name;
-        memset(&name, 0, sizeof(name));
+        PROPBAG2 name = { 0 };
         name.dwType = PROPBAG2_TYPE_DATA;
         name.vt = VT_R4;
-        name.pstrName = const_cast<LPOLESTR>(L"ImageQuality");
+        name.pstrName = L"ImageQuality";
 
         VARIANT value;
         VariantInit(&value);
@@ -195,4 +216,25 @@ bool SkEncodeImageWithWIC(SkWStream* stream, const SkPixmap& pixmap,
     return SUCCEEDED(hr);
 }
 
-#endif // defined(SK_BUILD_FOR_WIN)
+///////////////////////////////////////////////////////////////////////////////
+
+#ifdef SK_USE_WIC_ENCODER
+static SkImageEncoder* sk_imageencoder_wic_factory(SkImageEncoder::Type t) {
+    switch (t) {
+        case SkImageEncoder::kPNG_Type:
+        case SkImageEncoder::kJPEG_Type:
+            break;
+        default:
+            return nullptr;
+    }
+    return new SkImageEncoder_WIC(t);
+}
+
+static SkImageEncoder_EncodeReg gEReg(sk_imageencoder_wic_factory);
+#endif
+
+SkImageEncoder* CreateImageEncoder_WIC(SkImageEncoder::Type type) {
+    return new SkImageEncoder_WIC(type);
+}
+
+#endif // defined(SK_BUILD_FOR_WIN32)

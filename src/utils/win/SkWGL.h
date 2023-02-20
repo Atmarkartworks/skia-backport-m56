@@ -5,18 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkRefCnt.h"
+#include "SkRefCnt.h"
 
 #ifndef SkWGL_DEFINED
 #define SkWGL_DEFINED
 
-#include "src/base/SkLeanWindows.h"
+#include "SkLeanWindows.h"
 
 /**
- * Working with WGL extensions can be a pain. Among the reasons is that you must
+ * Working with WGL extensions can be a pain. Among the reasons is that You must
  * have a GL context to get the proc addresses, but you want to use the procs to
- * create a context in the first place. So you have to create a placeholder GL
- * ctx to get the proc addresses.
+ * create a context in the first place. So you have to create a dummy GL ctx to
+ * get the proc addresses.
  *
  * This file helps by providing SkCreateWGLInterface(). It returns a struct of
  * function pointers that it initializes. It also has a helper function to query
@@ -83,8 +83,7 @@ public:
      * priority are:
      *     * Choose formats with the smallest sample count that is >=
      *       desiredSampleCount (or the largest sample count if all formats have
-     *       fewer samples than desiredSampleCount.) If desiredSampleCount is 1 then
-     *       all msaa formats are excluded from consideration.
+     *       fewer samples than desiredSampleCount.)
      *     * Choose formats with the fewest color samples when coverage sampling
      *       is available.
      *     * If the above rules leave multiple formats, choose the one that
@@ -106,16 +105,16 @@ private:
     typedef int (WINAPI* ReleasePbufferDCProc)(HPBUFFER, HDC);
     typedef BOOL (WINAPI* DestroyPbufferProc)(HPBUFFER);
 
-    static GetExtensionsStringProc fGetExtensionsString;
-    static ChoosePixelFormatProc fChoosePixelFormat;
-    static GetPixelFormatAttribfvProc fGetPixelFormatAttribfv;
-    static GetPixelFormatAttribivProc fGetPixelFormatAttribiv;
-    static CreateContextAttribsProc fCreateContextAttribs;
-    static SwapIntervalProc fSwapInterval;
-    static CreatePbufferProc fCreatePbuffer;
-    static GetPbufferDCProc fGetPbufferDC;
-    static ReleasePbufferDCProc fReleasePbufferDC;
-    static DestroyPbufferProc fDestroyPbuffer;
+    GetExtensionsStringProc fGetExtensionsString;
+    ChoosePixelFormatProc fChoosePixelFormat;
+    GetPixelFormatAttribfvProc fGetPixelFormatAttribfv;
+    GetPixelFormatAttribivProc fGetPixelFormatAttribiv;
+    CreateContextAttribsProc fCreateContextAttribs;
+    SwapIntervalProc fSwapInterval;
+    CreatePbufferProc fCreatePbuffer;
+    GetPbufferDCProc fGetPbufferDC;
+    ReleasePbufferDCProc fReleasePbufferDC;
+    DestroyPbufferProc fDestroyPbuffer;
 };
 
 enum SkWGLContextRequest {
@@ -131,12 +130,10 @@ enum SkWGLContextRequest {
 /**
  * Helper to create an OpenGL context for a DC using WGL. Configs with a sample count >= to
  * msaaSampleCount are preferred but if none is available then a context with a lower sample count
- * (including non-MSAA) will be created. If msaaSampleCount is 1 then this will fail if a non-msaa
- * context cannot be created. If preferCoreProfile is true but a core profile cannot be created
- * then a compatible profile context will be created.
+ * (including non-MSAA) will be created. If preferCoreProfile is true but a core profile cannot be
+ * created then a compatible profile context will be created.
  */
-HGLRC SkCreateWGLContext(HDC dc, int msaaSampleCount, bool deepColor, SkWGLContextRequest context,
-                         HGLRC shareContext = nullptr);
+HGLRC SkCreateWGLContext(HDC dc, int msaaSampleCount, bool deepColor, SkWGLContextRequest context);
 
 /**
  * Helper class for creating a pbuffer context and deleting all the handles when finished. This
@@ -145,10 +142,10 @@ HGLRC SkCreateWGLContext(HDC dc, int msaaSampleCount, bool deepColor, SkWGLConte
  */
 class SkWGLPbufferContext : public SkRefCnt {
 public:
-    static sk_sp<SkWGLPbufferContext> Create(HDC parentDC, SkWGLContextRequest contextType,
-                                             HGLRC shareContext);
+    static SkWGLPbufferContext* Create(HDC parentDC, int msaaSampleCount,
+                                       SkWGLContextRequest contextType);
 
-    ~SkWGLPbufferContext() override;
+    virtual ~SkWGLPbufferContext();
 
     HDC getDC() const { return fDC; }
     HGLRC getGLRC() const { return fGLRC; }

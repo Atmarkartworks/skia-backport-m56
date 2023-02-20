@@ -8,7 +8,7 @@
 #ifndef SkOSPath_DEFINED
 #define SkOSPath_DEFINED
 
-#include "include/core/SkString.h"
+#include "SkString.h"
 
 /**
  *  Functions for modifying SkStrings which represent paths on the filesystem.
@@ -16,9 +16,9 @@
 class SkOSPath {
 public:
 #ifdef _WIN32
-    static constexpr char SEPARATOR = '\\';
+    const static char SEPARATOR = '\\';
 #else
-    static constexpr char SEPARATOR = '/';
+    const static char SEPARATOR = '/';
 #endif
 
     /**

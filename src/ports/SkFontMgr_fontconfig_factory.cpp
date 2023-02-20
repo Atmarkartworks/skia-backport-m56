@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkFontMgr.h"
-#include "include/core/SkTypes.h"
-#include "include/ports/SkFontMgr_fontconfig.h"
+#include "SkFontMgr.h"
+#include "SkFontMgr_fontconfig.h"
+#include "SkTypes.h"
 
-sk_sp<SkFontMgr> SkFontMgr::Factory() {
+SkFontMgr* SkFontMgr::Factory() {
     return SkFontMgr_New_FontConfig(nullptr);
 }

@@ -5,13 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkBlurMask.h"
+#include "Benchmark.h"
+#include "SkBlurMask.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkRandom.h"
+#include "SkShader.h"
+#include "SkString.h"
 
 #define SMALL   SkIntToScalar(2)
 #define REAL    1.5f
@@ -39,7 +39,7 @@ public:
     }
 
 protected:
-    const char* onGetName() override {
+    virtual const char* onGetName() {
         return fName.c_str();
     }
 
@@ -51,7 +51,7 @@ protected:
         fName = name;
     }
 
-    void onDraw(int loops, SkCanvas*) override {
+    virtual void onDraw(int loops, SkCanvas*) {
         SkPaint paint;
         this->setupPaint(&paint);
 
@@ -70,7 +70,7 @@ protected:
     virtual void makeBlurryRect(const SkRect&) = 0;
     virtual void preBenchSetup(const SkRect&) {}
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 
@@ -97,7 +97,7 @@ protected:
         SkMask::FreeImage(mask.fImage);
     }
 private:
-    using INHERITED = BlurRectBench;
+    typedef BlurRectBench INHERITED;
 };
 
 class BlurRectSeparableBench: public BlurRectBench {
@@ -105,7 +105,7 @@ class BlurRectSeparableBench: public BlurRectBench {
 public:
     BlurRectSeparableBench(SkScalar rad) : INHERITED(rad) { }
 
-    ~BlurRectSeparableBench() override {
+    ~BlurRectSeparableBench() {
         SkMask::FreeImage(fSrcMask.fImage);
     }
 
@@ -123,7 +123,7 @@ protected:
 
     SkMask fSrcMask;
 private:
-    using INHERITED = BlurRectBench;
+    typedef BlurRectBench INHERITED;
 };
 
 class BlurRectBoxFilterBench: public BlurRectSeparableBench {
@@ -145,13 +145,13 @@ protected:
     void makeBlurryRect(const SkRect&) override {
         SkMask mask;
         if (!SkBlurMask::BoxBlur(&mask, fSrcMask, SkBlurMask::ConvertRadiusToSigma(this->radius()),
-                                 kNormal_SkBlurStyle)) {
+                                 kNormal_SkBlurStyle, kHigh_SkBlurQuality)) {
             return;
         }
         SkMask::FreeImage(mask.fImage);
     }
 private:
-    using INHERITED = BlurRectSeparableBench;
+    typedef BlurRectSeparableBench INHERITED;
 };
 
 class BlurRectGaussianBench: public BlurRectSeparableBench {
@@ -179,7 +179,7 @@ protected:
         SkMask::FreeImage(mask.fImage);
     }
 private:
-    using INHERITED = BlurRectSeparableBench;
+    typedef BlurRectSeparableBench INHERITED;
 };
 
 DEF_BENCH(return new BlurRectBoxFilterBench(SMALL);)

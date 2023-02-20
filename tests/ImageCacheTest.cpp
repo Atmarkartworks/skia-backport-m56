@@ -5,15 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkTypes.h"
-#include "include/private/chromium/SkDiscardableMemory.h"
-#include "src/core/SkResourceCache.h"
-#include "src/lazy/SkDiscardableMemoryPool.h"
-#include "tests/Test.h"
-
-#include <cstddef>
-#include <cstdint>
+#include "SkDiscardableMemory.h"
+#include "SkResourceCache.h"
+#include "Test.h"
 
 namespace {
 static void* gGlobalAddress;
@@ -43,7 +37,7 @@ struct TestingRec : public SkResourceCache::Rec {
         return true;
     }
 };
-}  // namespace
+}
 
 static const int COUNT = 10;
 static const int DIM = 256;
@@ -111,6 +105,8 @@ static void test_cache_purge_shared_id(skiatest::Reporter* reporter, SkResourceC
     }
 }
 
+#include "SkDiscardableMemoryPool.h"
+
 static SkDiscardableMemoryPool* gPool;
 static SkDiscardableMemory* pool_factory(size_t bytes) {
     SkASSERT(gPool);
@@ -125,7 +121,7 @@ DEF_TEST(ImageCache, reporter) {
         test_cache(reporter, cache, true);
     }
     {
-        sk_sp<SkDiscardableMemoryPool> pool(SkDiscardableMemoryPool::Make(defLimit));
+        sk_sp<SkDiscardableMemoryPool> pool(SkDiscardableMemoryPool::Create(defLimit, nullptr));
         gPool = pool.get();
         SkResourceCache cache(pool_factory);
         test_cache(reporter, cache, true);

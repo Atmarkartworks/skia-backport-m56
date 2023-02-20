@@ -5,65 +5,26 @@
  * found in the LICENSE file.
  */
 
-#include "include/effects/SkTableMaskFilter.h"
 
-#include "include/core/SkFlattenable.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkFixed.h"
-#include "include/private/base/SkAlign.h"
-#include "include/private/base/SkFloatingPoint.h"
-#include "include/private/base/SkTPin.h"
-#include "src/core/SkMask.h"
-#include "src/core/SkMaskFilterBase.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkWriteBuffer.h"
+#include "SkFixed.h"
+#include "SkReadBuffer.h"
+#include "SkString.h"
+#include "SkTableMaskFilter.h"
+#include "SkWriteBuffer.h"
 
-#include <cmath>
-#include <cstdint>
-#include <cstring>
-
-class SkMatrix;
-
-class SkTableMaskFilterImpl : public SkMaskFilterBase {
-public:
-    explicit SkTableMaskFilterImpl(const uint8_t table[256]);
-
-    SkMask::Format getFormat() const override;
-    bool filterMask(SkMask*, const SkMask&, const SkMatrix&, SkIPoint*) const override;
-
-protected:
-    ~SkTableMaskFilterImpl() override;
-
-    void flatten(SkWriteBuffer&) const override;
-
-private:
-    SK_FLATTENABLE_HOOKS(SkTableMaskFilterImpl)
-
-    SkTableMaskFilterImpl();
-
-    uint8_t fTable[256];
-
-    using INHERITED = SkMaskFilter;
-};
-
-SkTableMaskFilterImpl::SkTableMaskFilterImpl() {
+SkTableMaskFilter::SkTableMaskFilter() {
     for (int i = 0; i < 256; i++) {
         fTable[i] = i;
     }
 }
 
-SkTableMaskFilterImpl::SkTableMaskFilterImpl(const uint8_t table[256]) {
+SkTableMaskFilter::SkTableMaskFilter(const uint8_t table[256]) {
     memcpy(fTable, table, sizeof(fTable));
 }
 
-SkTableMaskFilterImpl::~SkTableMaskFilterImpl() {}
+SkTableMaskFilter::~SkTableMaskFilter() {}
 
-bool SkTableMaskFilterImpl::filterMask(SkMask* dst, const SkMask& src,
+bool SkTableMaskFilter::filterMask(SkMask* dst, const SkMask& src,
                                  const SkMatrix&, SkIPoint* margin) const {
     if (src.fFormat != SkMask::kA8_Format) {
         return false;
@@ -105,39 +66,23 @@ bool SkTableMaskFilterImpl::filterMask(SkMask* dst, const SkMask& src,
     return true;
 }
 
-SkMask::Format SkTableMaskFilterImpl::getFormat() const {
+SkMask::Format SkTableMaskFilter::getFormat() const {
     return SkMask::kA8_Format;
 }
 
-void SkTableMaskFilterImpl::flatten(SkWriteBuffer& wb) const {
+void SkTableMaskFilter::flatten(SkWriteBuffer& wb) const {
     wb.writeByteArray(fTable, 256);
 }
 
-sk_sp<SkFlattenable> SkTableMaskFilterImpl::CreateProc(SkReadBuffer& buffer) {
+sk_sp<SkFlattenable> SkTableMaskFilter::CreateProc(SkReadBuffer& buffer) {
     uint8_t table[256];
     if (!buffer.readByteArray(table, 256)) {
         return nullptr;
     }
-    return sk_sp<SkFlattenable>(SkTableMaskFilter::Create(table));
+    return sk_sp<SkFlattenable>(Create(table));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-SkMaskFilter* SkTableMaskFilter::Create(const uint8_t table[256]) {
-    return new SkTableMaskFilterImpl(table);
-}
-
-SkMaskFilter* SkTableMaskFilter::CreateGamma(SkScalar gamma) {
-    uint8_t table[256];
-    MakeGammaTable(table, gamma);
-    return new SkTableMaskFilterImpl(table);
-}
-
-SkMaskFilter* SkTableMaskFilter::CreateClip(uint8_t min, uint8_t max) {
-    uint8_t table[256];
-    MakeClipTable(table, min, max);
-    return new SkTableMaskFilterImpl(table);
-}
 
 void SkTableMaskFilter::MakeGammaTable(uint8_t table[256], SkScalar gamma) {
     const float dx = 1 / 255.0f;
@@ -184,3 +129,17 @@ void SkTableMaskFilter::MakeClipTable(uint8_t table[256], uint8_t min,
     SkDebugf("\n\n");
 #endif
 }
+
+#ifndef SK_IGNORE_TO_STRING
+void SkTableMaskFilter::toString(SkString* str) const {
+    str->append("SkTableMaskFilter: (");
+
+    str->append("table: ");
+    for (int i = 0; i < 255; ++i) {
+        str->appendf("%d, ", fTable[i]);
+    }
+    str->appendf("%d", fTable[255]);
+
+    str->append(")");
+}
+#endif

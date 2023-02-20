@@ -5,31 +5,27 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypeface.h"
-#include "include/core/SkTypes.h"
-#include "src/base/SkRandom.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkPath.h"
+#include "SkRandom.h"
 
 // https://bug.skia.org/1316 shows that this cubic, when slightly clipped, creates big
 // (incorrect) changes to its control points.
 class ClippedCubicGM : public skiagm::GM {
-    SkString onShortName() override { return SkString("clippedcubic"); }
+public:
+    ClippedCubicGM() {}
 
-    SkISize onISize() override { return {1240, 390}; }
+protected:
 
-    void onDraw(SkCanvas* canvas) override {
+    SkString onShortName() {
+        return SkString("clippedcubic");
+    }
+
+    SkISize onISize() { return SkISize::Make(1240, 390); }
+
+    virtual void onDraw(SkCanvas* canvas) {
         SkPath path;
         path.moveTo(0, 0);
         path.cubicTo(140, 150, 40, 10, 170, 150);
@@ -52,13 +48,23 @@ class ClippedCubicGM : public skiagm::GM {
             canvas->translate(0, bounds.height());
         }
     }
+
+private:
+    typedef skiagm::GM INHERITED;
 };
 
 
 class ClippedCubic2GM : public skiagm::GM {
-    SkString onShortName() override { return SkString("clippedcubic2"); }
+public:
+    ClippedCubic2GM() {}
 
-    SkISize onISize() override { return {1240, 390}; }
+protected:
+
+    SkString onShortName() override {
+        return SkString("clippedcubic2");
+    }
+
+    SkISize onISize() override { return SkISize::Make(1240, 390); }
 
     void onDraw(SkCanvas* canvas) override {
         canvas->save();
@@ -114,18 +120,25 @@ class ClippedCubic2GM : public skiagm::GM {
     SkPath fPath;
     SkPath fFlipped;
 private:
-    using INHERITED = skiagm::GM;
+    typedef skiagm::GM INHERITED;
 };
 
 
 class CubicPathGM : public skiagm::GM {
-    SkString onShortName() override { return SkString("cubicpath"); }
+public:
+    CubicPathGM() {}
 
-    SkISize onISize() override { return {1240, 390}; }
+protected:
+
+    SkString onShortName() {
+        return SkString("cubicpath");
+    }
+
+    SkISize onISize() { return SkISize::Make(1240, 390); }
 
     void drawPath(SkPath& path,SkCanvas* canvas,SkColor color,
                   const SkRect& clip,SkPaint::Cap cap, SkPaint::Join join,
-                  SkPaint::Style style, SkPathFillType fill,
+                  SkPaint::Style style, SkPath::FillType fill,
                   SkScalar strokeWidth) {
         path.setFillType(fill);
         SkPaint paint;
@@ -140,16 +153,16 @@ class CubicPathGM : public skiagm::GM {
         canvas->restore();
     }
 
-    void onDraw(SkCanvas* canvas) override {
+    virtual void onDraw(SkCanvas* canvas) {
         struct FillAndName {
-            SkPathFillType fFill;
+            SkPath::FillType fFill;
             const char*      fName;
         };
         constexpr FillAndName gFills[] = {
-            {SkPathFillType::kWinding, "Winding"},
-            {SkPathFillType::kEvenOdd, "Even / Odd"},
-            {SkPathFillType::kInverseWinding, "Inverse Winding"},
-            {SkPathFillType::kInverseEvenOdd, "Inverse Even / Odd"},
+            {SkPath::kWinding_FillType, "Winding"},
+            {SkPath::kEvenOdd_FillType, "Even / Odd"},
+            {SkPath::kInverseWinding_FillType, "Inverse Winding"},
+            {SkPath::kInverseEvenOdd_FillType, "Inverse Even / Odd"},
         };
         struct StyleAndName {
             SkPaint::Style fStyle;
@@ -184,27 +197,31 @@ class CubicPathGM : public skiagm::GM {
         SkPaint titlePaint;
         titlePaint.setColor(SK_ColorBLACK);
         titlePaint.setAntiAlias(true);
-        SkFont     font(ToolUtils::create_portable_typeface(), 15);
+        sk_tool_utils::set_portable_typeface(&titlePaint);
+        titlePaint.setTextSize(15 * SK_Scalar1);
         const char title[] = "Cubic Drawn Into Rectangle Clips With "
                              "Indicated Style, Fill and Linecaps, with stroke width 10";
-        canvas->drawString(title, 20, 20, font, titlePaint);
+        canvas->drawText(title, strlen(title),
+                            20 * SK_Scalar1,
+                            20 * SK_Scalar1,
+                            titlePaint);
 
         SkRandom rand;
         SkRect rect = SkRect::MakeWH(100*SK_Scalar1, 30*SK_Scalar1);
         canvas->save();
         canvas->translate(10 * SK_Scalar1, 30 * SK_Scalar1);
         canvas->save();
-        for (size_t cap = 0; cap < std::size(gCaps); ++cap) {
+        for (size_t cap = 0; cap < SK_ARRAY_COUNT(gCaps); ++cap) {
             if (0 < cap) {
-                canvas->translate((rect.width() + 40 * SK_Scalar1) * std::size(gStyles), 0);
+                canvas->translate((rect.width() + 40 * SK_Scalar1) * SK_ARRAY_COUNT(gStyles), 0);
             }
             canvas->save();
-            for (size_t fill = 0; fill < std::size(gFills); ++fill) {
+            for (size_t fill = 0; fill < SK_ARRAY_COUNT(gFills); ++fill) {
                 if (0 < fill) {
                     canvas->translate(0, rect.height() + 40 * SK_Scalar1);
                 }
                 canvas->save();
-                for (size_t style = 0; style < std::size(gStyles); ++style) {
+                for (size_t style = 0; style < SK_ARRAY_COUNT(gStyles); ++style) {
                     if (0 < style) {
                         canvas->translate(rect.width() + 40 * SK_Scalar1, 0);
                     }
@@ -223,10 +240,21 @@ class CubicPathGM : public skiagm::GM {
 
                     SkPaint labelPaint;
                     labelPaint.setColor(color);
-                    font.setSize(10);
-                    canvas->drawString(gStyles[style].fName, 0, rect.height() + 12, font, labelPaint);
-                    canvas->drawString(gFills[fill].fName, 0, rect.height() + 24, font, labelPaint);
-                    canvas->drawString(gCaps[cap].fName, 0, rect.height() + 36, font, labelPaint);
+                    labelPaint.setAntiAlias(true);
+                    sk_tool_utils::set_portable_typeface(&labelPaint);
+                    labelPaint.setTextSize(10 * SK_Scalar1);
+                    canvas->drawText(gStyles[style].fName,
+                                        strlen(gStyles[style].fName),
+                                        0, rect.height() + 12 * SK_Scalar1,
+                                        labelPaint);
+                    canvas->drawText(gFills[fill].fName,
+                                        strlen(gFills[fill].fName),
+                                        0, rect.height() + 24 * SK_Scalar1,
+                                        labelPaint);
+                    canvas->drawText(gCaps[cap].fName,
+                                        strlen(gCaps[cap].fName),
+                                        0, rect.height() + 36 * SK_Scalar1,
+                                        labelPaint);
                 }
                 canvas->restore();
             }
@@ -235,16 +263,26 @@ class CubicPathGM : public skiagm::GM {
         canvas->restore();
         canvas->restore();
     }
+
+private:
+    typedef skiagm::GM INHERITED;
 };
 
 class CubicClosePathGM : public skiagm::GM {
-    SkString onShortName() override { return SkString("cubicclosepath"); }
+public:
+    CubicClosePathGM() {}
 
-    SkISize onISize() override { return {1240, 390}; }
+protected:
+
+    SkString onShortName() {
+        return SkString("cubicclosepath");
+    }
+
+    SkISize onISize() { return SkISize::Make(1240, 390); }
 
     void drawPath(SkPath& path,SkCanvas* canvas,SkColor color,
                   const SkRect& clip,SkPaint::Cap cap, SkPaint::Join join,
-                  SkPaint::Style style, SkPathFillType fill,
+                  SkPaint::Style style, SkPath::FillType fill,
                   SkScalar strokeWidth) {
         path.setFillType(fill);
         SkPaint paint;
@@ -259,16 +297,16 @@ class CubicClosePathGM : public skiagm::GM {
         canvas->restore();
     }
 
-    void onDraw(SkCanvas* canvas) override {
+    virtual void onDraw(SkCanvas* canvas) {
         struct FillAndName {
-            SkPathFillType fFill;
+            SkPath::FillType fFill;
             const char*      fName;
         };
         constexpr FillAndName gFills[] = {
-            {SkPathFillType::kWinding, "Winding"},
-            {SkPathFillType::kEvenOdd, "Even / Odd"},
-            {SkPathFillType::kInverseWinding, "Inverse Winding"},
-            {SkPathFillType::kInverseEvenOdd, "Inverse Even / Odd"},
+            {SkPath::kWinding_FillType, "Winding"},
+            {SkPath::kEvenOdd_FillType, "Even / Odd"},
+            {SkPath::kInverseWinding_FillType, "Inverse Winding"},
+            {SkPath::kInverseEvenOdd_FillType, "Inverse Even / Odd"},
         };
         struct StyleAndName {
             SkPaint::Style fStyle;
@@ -304,27 +342,31 @@ class CubicClosePathGM : public skiagm::GM {
         SkPaint titlePaint;
         titlePaint.setColor(SK_ColorBLACK);
         titlePaint.setAntiAlias(true);
-        SkFont     font(ToolUtils::create_portable_typeface(), 15);
+        sk_tool_utils::set_portable_typeface(&titlePaint);
+        titlePaint.setTextSize(15 * SK_Scalar1);
         const char title[] = "Cubic Closed Drawn Into Rectangle Clips With "
                              "Indicated Style, Fill and Linecaps, with stroke width 10";
-        canvas->drawString(title, 20, 20, font, titlePaint);
+        canvas->drawText(title, strlen(title),
+                            20 * SK_Scalar1,
+                            20 * SK_Scalar1,
+                            titlePaint);
 
         SkRandom rand;
         SkRect rect = SkRect::MakeWH(100*SK_Scalar1, 30*SK_Scalar1);
         canvas->save();
         canvas->translate(10 * SK_Scalar1, 30 * SK_Scalar1);
         canvas->save();
-        for (size_t cap = 0; cap < std::size(gCaps); ++cap) {
+        for (size_t cap = 0; cap < SK_ARRAY_COUNT(gCaps); ++cap) {
             if (0 < cap) {
-                canvas->translate((rect.width() + 40 * SK_Scalar1) * std::size(gStyles), 0);
+                canvas->translate((rect.width() + 40 * SK_Scalar1) * SK_ARRAY_COUNT(gStyles), 0);
             }
             canvas->save();
-            for (size_t fill = 0; fill < std::size(gFills); ++fill) {
+            for (size_t fill = 0; fill < SK_ARRAY_COUNT(gFills); ++fill) {
                 if (0 < fill) {
                     canvas->translate(0, rect.height() + 40 * SK_Scalar1);
                 }
                 canvas->save();
-                for (size_t style = 0; style < std::size(gStyles); ++style) {
+                for (size_t style = 0; style < SK_ARRAY_COUNT(gStyles); ++style) {
                     if (0 < style) {
                         canvas->translate(rect.width() + 40 * SK_Scalar1, 0);
                     }
@@ -344,10 +386,20 @@ class CubicClosePathGM : public skiagm::GM {
                     SkPaint labelPaint;
                     labelPaint.setColor(color);
                     labelPaint.setAntiAlias(true);
-                    font.setSize(10);
-                    canvas->drawString(gStyles[style].fName, 0, rect.height() + 12, font, labelPaint);
-                    canvas->drawString(gFills[fill].fName, 0, rect.height() + 24, font, labelPaint);
-                    canvas->drawString(gCaps[cap].fName, 0, rect.height() + 36, font, labelPaint);
+                    sk_tool_utils::set_portable_typeface(&labelPaint);
+                    labelPaint.setTextSize(10 * SK_Scalar1);
+                    canvas->drawText(gStyles[style].fName,
+                                        strlen(gStyles[style].fName),
+                                        0, rect.height() + 12 * SK_Scalar1,
+                                        labelPaint);
+                    canvas->drawText(gFills[fill].fName,
+                                        strlen(gFills[fill].fName),
+                                        0, rect.height() + 24 * SK_Scalar1,
+                                        labelPaint);
+                    canvas->drawText(gCaps[cap].fName,
+                                        strlen(gCaps[cap].fName),
+                                        0, rect.height() + 36 * SK_Scalar1,
+                                        labelPaint);
                 }
                 canvas->restore();
             }
@@ -356,6 +408,9 @@ class CubicClosePathGM : public skiagm::GM {
         canvas->restore();
         canvas->restore();
     }
+
+private:
+    typedef skiagm::GM INHERITED;
 };
 
 DEF_SIMPLE_GM(bug5099, canvas, 50, 50) {
@@ -368,30 +423,6 @@ DEF_SIMPLE_GM(bug5099, canvas, 50, 50) {
     SkPath path;
     path.moveTo(6, 27);
     path.cubicTo(31.5f, 1.5f, 3.5f, 4.5f, 29, 29);
-    canvas->drawPath(path, p);
-}
-
-DEF_SIMPLE_GM(bug6083, canvas, 100, 50) {
-    SkPaint p;
-    p.setColor(SK_ColorRED);
-    p.setAntiAlias(true);
-    p.setStyle(SkPaint::kStroke_Style);
-    p.setStrokeWidth(15);
-    canvas->translate(-500, -130);
-    SkPath path;
-    path.moveTo(500.988f, 155.200f);
-    path.lineTo(526.109f, 155.200f);
-    SkPoint p1 = { 526.109f, 155.200f };
-    SkPoint p2 = { 525.968f, 212.968f };
-    SkPoint p3 = { 526.109f, 241.840f };
-    path.cubicTo(p1, p2, p3);
-    canvas->drawPath(path, p);
-    canvas->translate(50, 0);
-    path.reset();
-    p2.set(525.968f, 213.172f);
-    path.moveTo(500.988f, 155.200f);
-    path.lineTo(526.109f, 155.200f);
-    path.cubicTo(p1, p2, p3);
     canvas->drawPath(path, p);
 }
 

@@ -4,11 +4,11 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "bench/Benchmark.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
-#include "src/core/SkMatrixUtils.h"
+#include "Benchmark.h"
+#include "SkMatrix.h"
+#include "SkMatrixUtils.h"
+#include "SkRandom.h"
+#include "SkString.h"
 
 class MatrixBench : public Benchmark {
     SkString    fName;
@@ -37,7 +37,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 
@@ -53,13 +53,13 @@ protected:
         m2.reset();
 
         // xor into a volatile prevents these comparisons from being optimized away.
-        [[maybe_unused]] volatile bool junk = false;
+        volatile bool junk = false;
         junk ^= (m0 == m1);
         junk ^= (m1 == m2);
         junk ^= (m2 == m0);
     }
 private:
-    using INHERITED = MatrixBench;
+    typedef MatrixBench INHERITED;
 };
 
 class ScaleMatrixBench : public MatrixBench {
@@ -80,11 +80,11 @@ protected:
 private:
     SkMatrix fM0, fM1, fM2;
     SkScalar fSX, fSY;
-    using INHERITED = MatrixBench;
+    typedef MatrixBench INHERITED;
 };
 
 // having unknown values in our arrays can throw off the timing a lot, perhaps
-// handling NaN values is a lot slower. Anyway, this is just meant to put
+// handling NaN values is a lot slower. Anyway, this guy is just meant to put
 // reasonable values in our arrays.
 template <typename T> void init9(T array[9]) {
     SkRandom rand;
@@ -116,7 +116,7 @@ protected:
                        fArray[3], fArray[4], fArray[5],
                        fArray[6], fArray[7], fArray[8]);
         // xoring into a volatile prevents the compiler from optimizing these away
-        [[maybe_unused]] volatile int junk = 0;
+        volatile int junk = 0;
         junk ^= (fMatrix.getType());
         fMatrix.dirtyMatrixTypeCache();
         junk ^= (fMatrix.getType());
@@ -137,7 +137,7 @@ private:
     SkMatrix fMatrix;
     float fArray[9];
     SkRandom fRnd;
-    using INHERITED = MatrixBench;
+    typedef MatrixBench INHERITED;
 };
 
 class DecomposeMatrixBench : public MatrixBench {
@@ -165,7 +165,7 @@ protected:
 private:
     SkMatrix fMatrix[10];
     SkRandom fRandom;
-    using INHERITED = MatrixBench;
+    typedef MatrixBench INHERITED;
 };
 
 class InvertMapRectMatrixBench : public MatrixBench {
@@ -220,7 +220,7 @@ private:
     SkMatrix fMatrix;
     int fFlags;
     unsigned fIteration;
-    using INHERITED = MatrixBench;
+    typedef MatrixBench INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -266,7 +266,7 @@ DEF_BENCH( return new InvertMapRectMatrixBench(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static SkMatrix make_trans() { return SkMatrix::Translate(2, 3); }
+static SkMatrix make_trans() { return SkMatrix::MakeTrans(2, 3); }
 static SkMatrix make_scale() { SkMatrix m(make_trans()); m.postScale(1.5f, 0.5f); return m; }
 static SkMatrix make_afine() { SkMatrix m(make_trans()); m.postRotate(15); return m; }
 
@@ -313,7 +313,7 @@ public:
         fM.setScale(2, 3);
         fM.postTranslate(1, 2);
 
-        fR.setLTRB(10, 10, 100, 200);
+        fR.set(10, 10, 100, 200);
     }
 
     void performTest() override {

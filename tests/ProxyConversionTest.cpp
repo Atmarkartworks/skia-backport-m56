@@ -7,169 +7,80 @@
 
 // This is a GPU-backend specific test.
 
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkTypes.h"
-#include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/gpu/RefCntedCallback.h"
-#include "src/gpu/SkBackingFit.h"
-#include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrGpu.h"
-#include "src/gpu/ganesh/GrProxyProvider.h"
-#include "src/gpu/ganesh/GrRenderTarget.h"
-#include "src/gpu/ganesh/GrRenderTargetProxy.h"
-#include "src/gpu/ganesh/GrSurfaceProxy.h"
-#include "src/gpu/ganesh/GrTextureProxy.h"
-#include "tests/CtsEnforcement.h"
-#include "tests/Test.h"
+#include "Test.h"
 
-#include <utility>
+#if SK_SUPPORT_GPU
+#include "GrSurfaceProxy.h"
+#include "GrTextureProxy.h"
+#include "GrRenderTargetProxy.h"
 
-struct GrContextOptions;
+static sk_sp<GrSurfaceProxy> make_wrapped_FBO0(GrTextureProvider* provider,
+                                               skiatest::Reporter* reporter,
+                                               const GrSurfaceDesc& desc) {
+    GrBackendRenderTargetDesc backendDesc;
+    backendDesc.fWidth = desc.fWidth;
+    backendDesc.fHeight = desc.fHeight;
+    backendDesc.fConfig = desc.fConfig;
+    backendDesc.fOrigin = desc.fOrigin;
+    backendDesc.fSampleCnt = desc.fSampleCnt;
+    backendDesc.fStencilBits = 8;
+    backendDesc.fRenderTargetHandle = 0;
 
-static sk_sp<GrSurfaceProxy> make_wrapped_rt(GrProxyProvider* provider,
-                                             GrGpu* gpu,
-                                             skiatest::Reporter* reporter,
-                                             const SkISize& size,
-                                             GrColorType colorType) {
-    auto backendRT = gpu->createTestingOnlyBackendRenderTarget(size, colorType);
-    return provider->wrapBackendRenderTarget(backendRT, nullptr);
+    sk_sp<GrRenderTarget> defaultFBO(provider->wrapBackendRenderTarget(backendDesc));
+    SkASSERT(!defaultFBO->asTexture());
+
+    return GrSurfaceProxy::MakeWrapped(std::move(defaultFBO));
 }
 
-void clean_up_wrapped_rt(GrGpu* gpu, sk_sp<GrSurfaceProxy> proxy) {
-    SkASSERT(proxy->unique());
-    SkASSERT(proxy->peekRenderTarget());
-    GrBackendRenderTarget rt = proxy->peekRenderTarget()->getBackendRenderTarget();
-    proxy.reset();
-    gpu->deleteTestingOnlyBackendRenderTarget(rt);
+static sk_sp<GrSurfaceProxy> make_wrapped_offscreen_rt(GrTextureProvider* provider, 
+                                                       skiatest::Reporter* reporter,
+                                                       const GrSurfaceDesc& desc,
+                                                       SkBudgeted budgeted) {
+    SkASSERT(kRenderTarget_GrSurfaceFlag == desc.fFlags);
+
+    sk_sp<GrTexture> tex(provider->createTexture(desc, budgeted));
+
+    return GrSurfaceProxy::MakeWrapped(std::move(tex));
 }
 
-static sk_sp<GrSurfaceProxy> make_offscreen_rt(GrProxyProvider* provider,
-                                               SkISize dimensions,
-                                               GrColorType colorType) {
-    return provider->testingOnly_createInstantiatedProxy(dimensions,
-                                                         colorType,
-                                                         GrRenderable::kYes,
-                                                         1,
-                                                         SkBackingFit::kExact,
-                                                         skgpu::Budgeted::kYes,
-                                                         GrProtected::kNo);
+static sk_sp<GrSurfaceProxy> make_wrapped_texture(GrTextureProvider* provider, 
+                                                  const GrSurfaceDesc& desc,
+                                                  SkBudgeted budgeted) {
+    sk_sp<GrTexture> tex(provider->createTexture(desc, budgeted));
+
+    return GrSurfaceProxy::MakeWrapped(std::move(tex));
 }
 
-static sk_sp<GrSurfaceProxy> make_texture(GrProxyProvider* provider,
-                                          SkISize dimensions,
-                                          GrColorType colorType,
-                                          GrRenderable renderable) {
-    return provider->testingOnly_createInstantiatedProxy(dimensions,
-                                                         colorType,
-                                                         renderable,
-                                                         1,
-                                                         SkBackingFit::kExact,
-                                                         skgpu::Budgeted::kYes,
-                                                         GrProtected::kNo);
-}
+// Test converting between RenderTargetProxies and TextureProxies for wrapped
+// Proxies
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(WrappedProxyConversionTest, reporter, ctxInfo) {
+    GrTextureProvider* provider = ctxInfo.grContext()->textureProvider();
 
-// Test converting between RenderTargetProxies and TextureProxies for preinstantiated Proxies
-DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PreinstantiatedProxyConversionTest,
-                                       reporter,
-                                       ctxInfo,
-                                       CtsEnforcement::kApiLevel_T) {
-    auto context = ctxInfo.directContext();
-    GrProxyProvider* proxyProvider = context->priv().proxyProvider();
-    GrGpu* gpu = context->priv().getGpu();
+    GrSurfaceDesc desc;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
+    desc.fWidth = 64;
+    desc.fHeight = 64;
+    desc.fConfig = kRGBA_8888_GrPixelConfig;
 
-    static constexpr auto kSize = SkISize::Make(64, 64);
-    static constexpr auto kColorType = GrColorType::kRGBA_8888;
-
-    {
+    if (kOpenGL_GrBackend == ctxInfo.backend()) {
         // External on-screen render target.
-        sk_sp<GrSurfaceProxy> sProxy(
-                make_wrapped_rt(proxyProvider, gpu, reporter, kSize, kColorType));
-        if (sProxy) {
-            // RenderTarget-only
-            GrRenderTargetProxy* rtProxy = sProxy->asRenderTargetProxy();
-            REPORTER_ASSERT(reporter, rtProxy);
-            REPORTER_ASSERT(reporter, !rtProxy->asTextureProxy());
-            REPORTER_ASSERT(reporter, rtProxy->asRenderTargetProxy() == rtProxy);
-            clean_up_wrapped_rt(gpu, std::move(sProxy));
-        }
+        sk_sp<GrSurfaceProxy> sProxy(make_wrapped_FBO0(provider, reporter, desc));
+
+        // RenderTarget-only
+        GrRenderTargetProxy* rtProxy = sProxy->asRenderTargetProxy();
+        REPORTER_ASSERT(reporter, rtProxy);
+        REPORTER_ASSERT(reporter, !rtProxy->asTextureProxy());
+        REPORTER_ASSERT(reporter, rtProxy->asRenderTargetProxy() == rtProxy);
     }
 
     {
         // Internal offscreen render target.
-        sk_sp<GrSurfaceProxy> sProxy(make_offscreen_rt(proxyProvider, kSize, kColorType));
-        if (sProxy) {
-            // Both RenderTarget and Texture
-            GrRenderTargetProxy* rtProxy = sProxy->asRenderTargetProxy();
-            REPORTER_ASSERT(reporter, rtProxy);
-            GrTextureProxy* tProxy = rtProxy->asTextureProxy();
-            REPORTER_ASSERT(reporter, tProxy);
-            REPORTER_ASSERT(reporter, tProxy->asRenderTargetProxy() == rtProxy);
-            REPORTER_ASSERT(reporter, rtProxy->asRenderTargetProxy() == rtProxy);
-        }
-    }
-
-    {
-        // Internal offscreen render target - but through GrTextureProxy
-        sk_sp<GrSurfaceProxy> sProxy(
-                make_texture(proxyProvider, kSize, kColorType, GrRenderable::kYes));
-        if (sProxy) {
-            // Both RenderTarget and Texture
-            GrTextureProxy* tProxy = sProxy->asTextureProxy();
-            REPORTER_ASSERT(reporter, tProxy);
-            GrRenderTargetProxy* rtProxy = tProxy->asRenderTargetProxy();
-            REPORTER_ASSERT(reporter, rtProxy);
-            REPORTER_ASSERT(reporter, rtProxy->asTextureProxy() == tProxy);
-            REPORTER_ASSERT(reporter, tProxy->asTextureProxy() == tProxy);
-        }
-    }
-
-    {
-        // force no-RT
-        sk_sp<GrSurfaceProxy> sProxy(
-                make_texture(proxyProvider, kSize, kColorType, GrRenderable::kNo));
-        if (sProxy) {
-            // Texture-only
-            GrTextureProxy* tProxy = sProxy->asTextureProxy();
-            REPORTER_ASSERT(reporter, tProxy);
-            REPORTER_ASSERT(reporter, tProxy->asTextureProxy() == tProxy);
-            REPORTER_ASSERT(reporter, !tProxy->asRenderTargetProxy());
-        }
-    }
-}
-
-// Test converting between RenderTargetProxies and TextureProxies for deferred
-// Proxies
-DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DefferredProxyConversionTest,
-                                       reporter,
-                                       ctxInfo,
-                                       CtsEnforcement::kApiLevel_T) {
-    auto context = ctxInfo.directContext();
-    GrProxyProvider* proxyProvider = context->priv().proxyProvider();
-    const GrCaps* caps = context->priv().caps();
-
-    static constexpr SkISize kDims = {64, 64};
-
-    const GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kRGBA_8888,
-                                                                 GrRenderable::kYes);
-    {
-        sk_sp<GrTextureProxy> proxy = proxyProvider->createProxy(format,
-                                                                 kDims,
-                                                                 GrRenderable::kYes,
-                                                                 1,
-                                                                 GrMipmapped::kNo,
-                                                                 SkBackingFit::kApprox,
-                                                                 skgpu::Budgeted::kYes,
-                                                                 GrProtected::kNo,
-                                                                 /*label=*/{});
+        sk_sp<GrSurfaceProxy> sProxy(make_wrapped_offscreen_rt(provider,
+                                                               reporter, desc,
+                                                               SkBudgeted::kYes));
 
         // Both RenderTarget and Texture
-        GrRenderTargetProxy* rtProxy = proxy->asRenderTargetProxy();
+        GrRenderTargetProxy* rtProxy = sProxy->asRenderTargetProxy();
         REPORTER_ASSERT(reporter, rtProxy);
         GrTextureProxy* tProxy = rtProxy->asTextureProxy();
         REPORTER_ASSERT(reporter, tProxy);
@@ -178,18 +89,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DefferredProxyConversionTest,
     }
 
     {
-        sk_sp<GrTextureProxy> proxy = proxyProvider->createProxy(format,
-                                                                 kDims,
-                                                                 GrRenderable::kYes,
-                                                                 1,
-                                                                 GrMipmapped::kNo,
-                                                                 SkBackingFit::kApprox,
-                                                                 skgpu::Budgeted::kYes,
-                                                                 GrProtected::kNo,
-                                                                 /*label=*/{});
+        // Internal offscreen render target - but through GrTextureProxy
+        sk_sp<GrSurfaceProxy> sProxy(make_wrapped_texture(provider,  desc, SkBudgeted::kYes));
 
-        // Both RenderTarget and Texture - but via GrTextureProxy
-        GrTextureProxy* tProxy = proxy->asTextureProxy();
+        // Both RenderTarget and Texture
+        GrTextureProxy* tProxy = sProxy->asTextureProxy();
         REPORTER_ASSERT(reporter, tProxy);
         GrRenderTargetProxy* rtProxy = tProxy->asRenderTargetProxy();
         REPORTER_ASSERT(reporter, rtProxy);
@@ -198,19 +102,69 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DefferredProxyConversionTest,
     }
 
     {
-        sk_sp<GrTextureProxy> proxy = proxyProvider->createProxy(format,
-                                                                 kDims,
-                                                                 GrRenderable::kNo,
-                                                                 1,
-                                                                 GrMipmapped::kNo,
-                                                                 SkBackingFit::kApprox,
-                                                                 skgpu::Budgeted::kYes,
-                                                                 GrProtected::kNo,
-                                                                 /*label=*/{});
+        desc.fFlags = kNone_GrSurfaceFlags; // force no-RT
+
+        sk_sp<GrSurfaceProxy> sProxy(make_wrapped_texture(provider,  desc, SkBudgeted::kYes));
+
         // Texture-only
-        GrTextureProxy* tProxy = proxy->asTextureProxy();
+        GrTextureProxy* tProxy = sProxy->asTextureProxy();
         REPORTER_ASSERT(reporter, tProxy);
         REPORTER_ASSERT(reporter, tProxy->asTextureProxy() == tProxy);
         REPORTER_ASSERT(reporter, !tProxy->asRenderTargetProxy());
     }
 }
+
+// Test converting between RenderTargetProxies and TextureProxies for deferred
+// Proxies
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DefferredProxyConversionTest, reporter, ctxInfo) {
+    const GrCaps& caps = *ctxInfo.grContext()->caps();
+
+    GrSurfaceDesc desc;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
+    desc.fWidth = 64;
+    desc.fHeight = 64;
+    desc.fConfig = kRGBA_8888_GrPixelConfig;
+
+    {
+        sk_sp<GrSurfaceProxy> sProxy(GrSurfaceProxy::MakeDeferred(caps, desc,
+                                                                  SkBackingFit::kApprox,
+                                                                  SkBudgeted::kYes));
+
+        // Both RenderTarget and Texture
+        GrRenderTargetProxy* rtProxy = sProxy->asRenderTargetProxy();
+        REPORTER_ASSERT(reporter, rtProxy);
+        GrTextureProxy* tProxy = rtProxy->asTextureProxy();
+        REPORTER_ASSERT(reporter, tProxy);
+        REPORTER_ASSERT(reporter, tProxy->asRenderTargetProxy() == rtProxy);
+        REPORTER_ASSERT(reporter, rtProxy->asRenderTargetProxy() == rtProxy);
+    }
+    
+    {
+        sk_sp<GrSurfaceProxy> sProxy(GrSurfaceProxy::MakeDeferred(caps, desc,
+                                                                  SkBackingFit::kApprox,
+                                                                  SkBudgeted::kYes));
+
+        // Both RenderTarget and Texture - but via GrTextureProxy
+        GrTextureProxy* tProxy = sProxy->asTextureProxy();
+        REPORTER_ASSERT(reporter, tProxy);
+        GrRenderTargetProxy* rtProxy = tProxy->asRenderTargetProxy();
+        REPORTER_ASSERT(reporter, rtProxy);
+        REPORTER_ASSERT(reporter, rtProxy->asTextureProxy() == tProxy);
+        REPORTER_ASSERT(reporter, tProxy->asTextureProxy() == tProxy);
+    }
+
+    {
+        desc.fFlags = kNone_GrSurfaceFlags; // force no-RT
+
+        sk_sp<GrSurfaceProxy> sProxy(GrSurfaceProxy::MakeDeferred(caps, desc,
+                                                                  SkBackingFit::kApprox,
+                                                                  SkBudgeted::kYes));
+
+        // Texture-only
+        GrTextureProxy* tProxy = sProxy->asTextureProxy();
+        REPORTER_ASSERT(reporter, tProxy);
+        REPORTER_ASSERT(reporter, tProxy->asTextureProxy() == tProxy);
+        REPORTER_ASSERT(reporter, !tProxy->asRenderTargetProxy());
+    }
+}
+#endif

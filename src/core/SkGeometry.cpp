@@ -5,40 +5,25 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkGeometry.h"
+#include "SkGeometry.h"
+#include "SkMatrix.h"
+#include "SkNx.h"
 
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPoint3.h"
-#include "include/core/SkRect.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkFloatingPoint.h"
-#include "include/private/base/SkTPin.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkBezierCurves.h"
-#include "src/base/SkCubics.h"
-#include "src/base/SkVx.h"
-#include "src/core/SkPointPriv.h"
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-
-namespace {
-
-using float2 = skvx::float2;
-using float4 = skvx::float4;
-
-SkVector to_vector(const float2& x) {
+static SkVector to_vector(const Sk2s& x) {
     SkVector vector;
     x.store(&vector);
     return vector;
 }
 
+/** If defined, this makes eval_quad and eval_cubic do more setup (sometimes
+    involving integer multiplies by 2 or 3, but fewer calls to SkScalarMul.
+    May also introduce overflow of fixed when we compute our setup.
+*/
+//    #define DIRECT_EVAL_OF_POLYNOMIALS
+
 ////////////////////////////////////////////////////////////////////////
 
-int is_not_monotonic(SkScalar a, SkScalar b, SkScalar c) {
+static int is_not_monotonic(SkScalar a, SkScalar b, SkScalar c) {
     SkScalar ab = a - b;
     SkScalar bc = b - c;
     if (ab < 0) {
@@ -49,7 +34,11 @@ int is_not_monotonic(SkScalar a, SkScalar b, SkScalar c) {
 
 ////////////////////////////////////////////////////////////////////////
 
-int valid_unit_divide(SkScalar numer, SkScalar denom, SkScalar* ratio) {
+static bool is_unit_interval(SkScalar x) {
+    return x > 0 && x < SK_Scalar1;
+}
+
+static int valid_unit_divide(SkScalar numer, SkScalar denom, SkScalar* ratio) {
     SkASSERT(ratio);
 
     if (numer < 0) {
@@ -73,17 +62,6 @@ int valid_unit_divide(SkScalar numer, SkScalar denom, SkScalar* ratio) {
     return 1;
 }
 
-// Just returns its argument, but makes it easy to set a break-point to know when
-// SkFindUnitQuadRoots is going to return 0 (an error).
-int return_check_zero(int value) {
-    if (value == 0) {
-        return 0;
-    }
-    return value;
-}
-
-} // namespace
-
 /** From Numerical Recipes in C.
 
     Q = -1/2 (B + sign(B) sqrt[B*B - 4*A*C])
@@ -94,34 +72,33 @@ int SkFindUnitQuadRoots(SkScalar A, SkScalar B, SkScalar C, SkScalar roots[2]) {
     SkASSERT(roots);
 
     if (A == 0) {
-        return return_check_zero(valid_unit_divide(-C, B, roots));
+        return valid_unit_divide(-C, B, roots);
     }
 
     SkScalar* r = roots;
 
-    // use doubles so we don't overflow temporarily trying to compute R
-    double dr = (double)B * B - 4 * (double)A * C;
-    if (dr < 0) {
-        return return_check_zero(0);
+    SkScalar R = B*B - 4*A*C;
+    if (R < 0 || !SkScalarIsFinite(R)) {  // complex roots
+        // if R is infinite, it's possible that it may still produce
+        // useful results if the operation was repeated in doubles
+        // the flipside is determining if the more precise answer
+        // isn't useful because surrounding machinery (e.g., subtracting
+        // the axis offset from C) already discards the extra precision
+        // more investigation and unit tests required...
+        return 0;
     }
-    dr = sqrt(dr);
-    SkScalar R = SkDoubleToScalar(dr);
-    if (!SkScalarIsFinite(R)) {
-        return return_check_zero(0);
-    }
+    R = SkScalarSqrt(R);
 
     SkScalar Q = (B < 0) ? -(B-R)/2 : -(B+R)/2;
     r += valid_unit_divide(Q, A, r);
     r += valid_unit_divide(C, Q, r);
     if (r - roots == 2) {
-        if (roots[0] > roots[1]) {
-            using std::swap;
-            swap(roots[0], roots[1]);
-        } else if (roots[0] == roots[1]) { // nearly-equal?
+        if (roots[0] > roots[1])
+            SkTSwap<SkScalar>(roots[0], roots[1]);
+        else if (roots[0] == roots[1])  // nearly-equal?
             r -= 1; // skip the double root
-        }
     }
-    return return_check_zero((int)(r - roots));
+    return (int)(r - roots);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -153,33 +130,31 @@ SkVector SkEvalQuadTangentAt(const SkPoint src[3], SkScalar t) {
     SkASSERT(src);
     SkASSERT(t >= 0 && t <= SK_Scalar1);
 
-    float2 P0 = from_point(src[0]);
-    float2 P1 = from_point(src[1]);
-    float2 P2 = from_point(src[2]);
+    Sk2s P0 = from_point(src[0]);
+    Sk2s P1 = from_point(src[1]);
+    Sk2s P2 = from_point(src[2]);
 
-    float2 B = P1 - P0;
-    float2 A = P2 - P1 - B;
-    float2 T = A * t + B;
+    Sk2s B = P1 - P0;
+    Sk2s A = P2 - P1 - B;
+    Sk2s T = A * Sk2s(t) + B;
 
     return to_vector(T + T);
 }
 
-static inline float2 interp(const float2& v0,
-                            const float2& v1,
-                            const float2& t) {
+static inline Sk2s interp(const Sk2s& v0, const Sk2s& v1, const Sk2s& t) {
     return v0 + (v1 - v0) * t;
 }
 
 void SkChopQuadAt(const SkPoint src[3], SkPoint dst[5], SkScalar t) {
     SkASSERT(t > 0 && t < SK_Scalar1);
 
-    float2 p0 = from_point(src[0]);
-    float2 p1 = from_point(src[1]);
-    float2 p2 = from_point(src[2]);
-    float2 tt(t);
+    Sk2s p0 = from_point(src[0]);
+    Sk2s p1 = from_point(src[1]);
+    Sk2s p2 = from_point(src[2]);
+    Sk2s tt(t);
 
-    float2 p01 = interp(p0, p1, tt);
-    float2 p12 = interp(p1, p2, tt);
+    Sk2s p01 = interp(p0, p1, tt);
+    Sk2s p12 = interp(p1, p2, tt);
 
     dst[0] = to_point(p0);
     dst[1] = to_point(p01);
@@ -190,69 +165,6 @@ void SkChopQuadAt(const SkPoint src[3], SkPoint dst[5], SkScalar t) {
 
 void SkChopQuadAtHalf(const SkPoint src[3], SkPoint dst[5]) {
     SkChopQuadAt(src, dst, 0.5f);
-}
-
-float SkMeasureAngleBetweenVectors(SkVector a, SkVector b) {
-    float cosTheta = sk_ieee_float_divide(a.dot(b), sqrtf(a.dot(a) * b.dot(b)));
-    // Pin cosTheta such that if it is NaN (e.g., if a or b was 0), then we return acos(1) = 0.
-    cosTheta = std::max(std::min(1.f, cosTheta), -1.f);
-    return acosf(cosTheta);
-}
-
-SkVector SkFindBisector(SkVector a, SkVector b) {
-    std::array<SkVector, 2> v;
-    if (a.dot(b) >= 0) {
-        // a,b are within +/-90 degrees apart.
-        v = {a, b};
-    } else if (a.cross(b) >= 0) {
-        // a,b are >90 degrees apart. Find the bisector of their interior normals instead. (Above 90
-        // degrees, the original vectors start cancelling each other out which eventually becomes
-        // unstable.)
-        v[0].set(-a.fY, +a.fX);
-        v[1].set(+b.fY, -b.fX);
-    } else {
-        // a,b are <-90 degrees apart. Find the bisector of their interior normals instead. (Below
-        // -90 degrees, the original vectors start cancelling each other out which eventually
-        // becomes unstable.)
-        v[0].set(+a.fY, -a.fX);
-        v[1].set(-b.fY, +b.fX);
-    }
-    // Return "normalize(v[0]) + normalize(v[1])".
-    skvx::float2 x0_x1{v[0].fX, v[1].fX};
-    skvx::float2 y0_y1{v[0].fY, v[1].fY};
-    auto invLengths = 1.0f / sqrt(x0_x1 * x0_x1 + y0_y1 * y0_y1);
-    x0_x1 *= invLengths;
-    y0_y1 *= invLengths;
-    return SkPoint{x0_x1[0] + x0_x1[1], y0_y1[0] + y0_y1[1]};
-}
-
-float SkFindQuadMidTangent(const SkPoint src[3]) {
-    // Tangents point in the direction of increasing T, so tan0 and -tan1 both point toward the
-    // midtangent. The bisector of tan0 and -tan1 is orthogonal to the midtangent:
-    //
-    //     n dot midtangent = 0
-    //
-    SkVector tan0 = src[1] - src[0];
-    SkVector tan1 = src[2] - src[1];
-    SkVector bisector = SkFindBisector(tan0, -tan1);
-
-    // The midtangent can be found where (F' dot bisector) = 0:
-    //
-    //   0 = (F'(T) dot bisector) = |2*T 1| * |p0 - 2*p1 + p2| * |bisector.x|
-    //                                        |-2*p0 + 2*p1  |   |bisector.y|
-    //
-    //                     = |2*T 1| * |tan1 - tan0| * |nx|
-    //                                 |2*tan0     |   |ny|
-    //
-    //                     = 2*T * ((tan1 - tan0) dot bisector) + (2*tan0 dot bisector)
-    //
-    //   T = (tan0 dot bisector) / ((tan0 - tan1) dot bisector)
-    float T = sk_ieee_float_divide(tan0.dot(bisector), (tan0 - tan1).dot(bisector));
-    if (!(T > 0 && T < 1)) {  // Use "!(positive_logic)" so T=nan will take this branch.
-        T = .5;  // The quadratic was a line or near-line. Just chop at .5.
-    }
-
-    return T;
 }
 
 /** Quad'(t) = At + B, where
@@ -344,73 +256,88 @@ SkScalar SkFindQuadMaxCurvature(const SkPoint src[3]) {
     SkScalar    Ay = src[1].fY - src[0].fY;
     SkScalar    Bx = src[0].fX - src[1].fX - src[1].fX + src[2].fX;
     SkScalar    By = src[0].fY - src[1].fY - src[1].fY + src[2].fY;
+    SkScalar    t = 0;  // 0 means don't chop
 
-    SkScalar numer = -(Ax * Bx + Ay * By);
-    SkScalar denom = Bx * Bx + By * By;
-    if (denom < 0) {
-        numer = -numer;
-        denom = -denom;
-    }
-    if (numer <= 0) {
-        return 0;
-    }
-    if (numer >= denom) {  // Also catches denom=0.
-        return 1;
-    }
-    SkScalar t = numer / denom;
-    SkASSERT((0 <= t && t < 1) || SkScalarIsNaN(t));
+    (void)valid_unit_divide(-(Ax * Bx + Ay * By), Bx * Bx + By * By, &t);
     return t;
 }
 
 int SkChopQuadAtMaxCurvature(const SkPoint src[3], SkPoint dst[5]) {
     SkScalar t = SkFindQuadMaxCurvature(src);
-    if (t > 0 && t < 1) {
-        SkChopQuadAt(src, dst, t);
-        return 2;
-    } else {
+    if (t == 0) {
         memcpy(dst, src, 3 * sizeof(SkPoint));
         return 1;
+    } else {
+        SkChopQuadAt(src, dst, t);
+        return 2;
     }
 }
 
 void SkConvertQuadToCubic(const SkPoint src[3], SkPoint dst[4]) {
-    float2 scale(SkDoubleToScalar(2.0 / 3.0));
-    float2 s0 = from_point(src[0]);
-    float2 s1 = from_point(src[1]);
-    float2 s2 = from_point(src[2]);
+    Sk2s scale(SkDoubleToScalar(2.0 / 3.0));
+    Sk2s s0 = from_point(src[0]);
+    Sk2s s1 = from_point(src[1]);
+    Sk2s s2 = from_point(src[2]);
 
-    dst[0] = to_point(s0);
+    dst[0] = src[0];
     dst[1] = to_point(s0 + (s1 - s0) * scale);
     dst[2] = to_point(s2 + (s1 - s2) * scale);
-    dst[3] = to_point(s2);
+    dst[3] = src[2];
 }
 
 //////////////////////////////////////////////////////////////////////////////
 ///// CUBICS // CUBICS // CUBICS // CUBICS // CUBICS // CUBICS // CUBICS /////
 //////////////////////////////////////////////////////////////////////////////
 
+#ifdef SK_SUPPORT_LEGACY_EVAL_CUBIC
+static SkScalar eval_cubic(const SkScalar src[], SkScalar t) {
+    SkASSERT(src);
+    SkASSERT(t >= 0 && t <= SK_Scalar1);
+
+    if (t == 0) {
+        return src[0];
+    }
+
+#ifdef DIRECT_EVAL_OF_POLYNOMIALS
+    SkScalar D = src[0];
+    SkScalar A = src[6] + 3*(src[2] - src[4]) - D;
+    SkScalar B = 3*(src[4] - src[2] - src[2] + D);
+    SkScalar C = 3*(src[2] - D);
+
+    return SkScalarMulAdd(SkScalarMulAdd(SkScalarMulAdd(A, t, B), t, C), t, D);
+#else
+    SkScalar    ab = SkScalarInterp(src[0], src[2], t);
+    SkScalar    bc = SkScalarInterp(src[2], src[4], t);
+    SkScalar    cd = SkScalarInterp(src[4], src[6], t);
+    SkScalar    abc = SkScalarInterp(ab, bc, t);
+    SkScalar    bcd = SkScalarInterp(bc, cd, t);
+    return SkScalarInterp(abc, bcd, t);
+#endif
+}
+#endif
+
 static SkVector eval_cubic_derivative(const SkPoint src[4], SkScalar t) {
     SkQuadCoeff coeff;
-    float2 P0 = from_point(src[0]);
-    float2 P1 = from_point(src[1]);
-    float2 P2 = from_point(src[2]);
-    float2 P3 = from_point(src[3]);
+    Sk2s P0 = from_point(src[0]);
+    Sk2s P1 = from_point(src[1]);
+    Sk2s P2 = from_point(src[2]);
+    Sk2s P3 = from_point(src[3]);
 
-    coeff.fA = P3 + 3 * (P1 - P2) - P0;
+    coeff.fA = P3 + Sk2s(3) * (P1 - P2) - P0;
     coeff.fB = times_2(P2 - times_2(P1) + P0);
     coeff.fC = P1 - P0;
     return to_vector(coeff.eval(t));
 }
 
 static SkVector eval_cubic_2ndDerivative(const SkPoint src[4], SkScalar t) {
-    float2 P0 = from_point(src[0]);
-    float2 P1 = from_point(src[1]);
-    float2 P2 = from_point(src[2]);
-    float2 P3 = from_point(src[3]);
-    float2 A = P3 + 3 * (P1 - P2) - P0;
-    float2 B = P2 - times_2(P1) + P0;
+    Sk2s P0 = from_point(src[0]);
+    Sk2s P1 = from_point(src[1]);
+    Sk2s P2 = from_point(src[2]);
+    Sk2s P3 = from_point(src[3]);
+    Sk2s A = P3 + Sk2s(3) * (P1 - P2) - P0;
+    Sk2s B = P2 - times_2(P1) + P0;
 
-    return to_vector(A * t + B);
+    return to_vector(A * Sk2s(t) + B);
 }
 
 void SkEvalCubicAt(const SkPoint src[4], SkScalar t, SkPoint* loc,
@@ -419,7 +346,11 @@ void SkEvalCubicAt(const SkPoint src[4], SkScalar t, SkPoint* loc,
     SkASSERT(t >= 0 && t <= SK_Scalar1);
 
     if (loc) {
+#ifdef SK_SUPPORT_LEGACY_EVAL_CUBIC
+        loc->set(eval_cubic(&src[0].fX, t), eval_cubic(&src[0].fY, t));
+#else
         *loc = to_point(SkCubicCoeff(src).eval(t));
+#endif
     }
     if (tangent) {
         // The derivative equation returns a zero tangent vector when t is 0 or 1, and the
@@ -459,112 +390,92 @@ int SkFindCubicExtrema(SkScalar a, SkScalar b, SkScalar c, SkScalar d,
     return SkFindUnitQuadRoots(A, B, C, tValues);
 }
 
-// This does not return b when t==1, but it otherwise seems to get better precision than
-// "a*(1 - t) + b*t" for things like chopping cubics on exact cusp points.
-// The responsibility falls on the caller to check that t != 1 before calling.
-template<int N, typename T>
-inline static skvx::Vec<N,T> unchecked_mix(const skvx::Vec<N,T>& a, const skvx::Vec<N,T>& b,
-                                           const skvx::Vec<N,T>& t) {
-    return (b - a)*t + a;
-}
-
 void SkChopCubicAt(const SkPoint src[4], SkPoint dst[7], SkScalar t) {
-    SkASSERT(0 <= t && t <= 1);
+    SkASSERT(t > 0 && t < SK_Scalar1);
 
-    if (t == 1) {
-        memcpy(dst, src, sizeof(SkPoint) * 4);
-        dst[4] = dst[5] = dst[6] = src[3];
-        return;
-    }
+    Sk2s    p0 = from_point(src[0]);
+    Sk2s    p1 = from_point(src[1]);
+    Sk2s    p2 = from_point(src[2]);
+    Sk2s    p3 = from_point(src[3]);
+    Sk2s    tt(t);
 
-    float2 p0 = skvx::bit_pun<float2>(src[0]);
-    float2 p1 = skvx::bit_pun<float2>(src[1]);
-    float2 p2 = skvx::bit_pun<float2>(src[2]);
-    float2 p3 = skvx::bit_pun<float2>(src[3]);
-    float2 T = t;
+    Sk2s    ab = interp(p0, p1, tt);
+    Sk2s    bc = interp(p1, p2, tt);
+    Sk2s    cd = interp(p2, p3, tt);
+    Sk2s    abc = interp(ab, bc, tt);
+    Sk2s    bcd = interp(bc, cd, tt);
+    Sk2s    abcd = interp(abc, bcd, tt);
 
-    float2 ab = unchecked_mix(p0, p1, T);
-    float2 bc = unchecked_mix(p1, p2, T);
-    float2 cd = unchecked_mix(p2, p3, T);
-    float2 abc = unchecked_mix(ab, bc, T);
-    float2 bcd = unchecked_mix(bc, cd, T);
-    float2 abcd = unchecked_mix(abc, bcd, T);
-
-    dst[0] = skvx::bit_pun<SkPoint>(p0);
-    dst[1] = skvx::bit_pun<SkPoint>(ab);
-    dst[2] = skvx::bit_pun<SkPoint>(abc);
-    dst[3] = skvx::bit_pun<SkPoint>(abcd);
-    dst[4] = skvx::bit_pun<SkPoint>(bcd);
-    dst[5] = skvx::bit_pun<SkPoint>(cd);
-    dst[6] = skvx::bit_pun<SkPoint>(p3);
+    dst[0] = src[0];
+    dst[1] = to_point(ab);
+    dst[2] = to_point(abc);
+    dst[3] = to_point(abcd);
+    dst[4] = to_point(bcd);
+    dst[5] = to_point(cd);
+    dst[6] = src[3];
 }
 
-void SkChopCubicAt(const SkPoint src[4], SkPoint dst[10], float t0, float t1) {
-    SkASSERT(0 <= t0 && t0 <= t1 && t1 <= 1);
+/*  http://code.google.com/p/skia/issues/detail?id=32
 
-    if (t1 == 1) {
-        SkChopCubicAt(src, dst, t0);
-        dst[7] = dst[8] = dst[9] = src[3];
-        return;
+    This test code would fail when we didn't check the return result of
+    valid_unit_divide in SkChopCubicAt(... tValues[], int roots). The reason is
+    that after the first chop, the parameters to valid_unit_divide are equal
+    (thanks to finite float precision and rounding in the subtracts). Thus
+    even though the 2nd tValue looks < 1.0, after we renormalize it, we end
+    up with 1.0, hence the need to check and just return the last cubic as
+    a degenerate clump of 4 points in the sampe place.
+
+    static void test_cubic() {
+        SkPoint src[4] = {
+            { 556.25000, 523.03003 },
+            { 556.23999, 522.96002 },
+            { 556.21997, 522.89001 },
+            { 556.21997, 522.82001 }
+        };
+        SkPoint dst[10];
+        SkScalar tval[] = { 0.33333334f, 0.99999994f };
+        SkChopCubicAt(src, dst, tval, 2);
     }
-
-    // Perform both chops in parallel using 4-lane SIMD.
-    float4 p00, p11, p22, p33, T;
-    p00.lo = p00.hi = skvx::bit_pun<float2>(src[0]);
-    p11.lo = p11.hi = skvx::bit_pun<float2>(src[1]);
-    p22.lo = p22.hi = skvx::bit_pun<float2>(src[2]);
-    p33.lo = p33.hi = skvx::bit_pun<float2>(src[3]);
-    T.lo = t0;
-    T.hi = t1;
-
-    float4 ab = unchecked_mix(p00, p11, T);
-    float4 bc = unchecked_mix(p11, p22, T);
-    float4 cd = unchecked_mix(p22, p33, T);
-    float4 abc = unchecked_mix(ab, bc, T);
-    float4 bcd = unchecked_mix(bc, cd, T);
-    float4 abcd = unchecked_mix(abc, bcd, T);
-    float4 middle = unchecked_mix(abc, bcd, skvx::shuffle<2,3,0,1>(T));
-
-    dst[0] = skvx::bit_pun<SkPoint>(p00.lo);
-    dst[1] = skvx::bit_pun<SkPoint>(ab.lo);
-    dst[2] = skvx::bit_pun<SkPoint>(abc.lo);
-    dst[3] = skvx::bit_pun<SkPoint>(abcd.lo);
-    middle.store(dst + 4);
-    dst[6] = skvx::bit_pun<SkPoint>(abcd.hi);
-    dst[7] = skvx::bit_pun<SkPoint>(bcd.hi);
-    dst[8] = skvx::bit_pun<SkPoint>(cd.hi);
-    dst[9] = skvx::bit_pun<SkPoint>(p33.hi);
-}
+ */
 
 void SkChopCubicAt(const SkPoint src[4], SkPoint dst[],
-                   const SkScalar tValues[], int tCount) {
-    SkASSERT(std::all_of(tValues, tValues + tCount, [](SkScalar t) { return t >= 0 && t <= 1; }));
-    SkASSERT(std::is_sorted(tValues, tValues + tCount));
+                   const SkScalar tValues[], int roots) {
+#ifdef SK_DEBUG
+    {
+        for (int i = 0; i < roots - 1; i++)
+        {
+            SkASSERT(is_unit_interval(tValues[i]));
+            SkASSERT(is_unit_interval(tValues[i+1]));
+            SkASSERT(tValues[i] < tValues[i+1]);
+        }
+    }
+#endif
 
     if (dst) {
-        if (tCount == 0) { // nothing to chop
+        if (roots == 0) { // nothing to chop
             memcpy(dst, src, 4*sizeof(SkPoint));
         } else {
-            int i = 0;
-            for (; i < tCount - 1; i += 2) {
-                // Do two chops at once.
-                float2 tt = float2::Load(tValues + i);
-                if (i != 0) {
-                    float lastT = tValues[i - 1];
-                    tt = skvx::pin((tt - lastT) / (1 - lastT), float2(0), float2(1));
-                }
-                SkChopCubicAt(src, dst, tt[0], tt[1]);
-                src = dst = dst + 6;
-            }
-            if (i < tCount) {
-                // Chop the final cubic if there was an odd number of chops.
-                SkASSERT(i + 1 == tCount);
-                float t = tValues[i];
-                if (i != 0) {
-                    float lastT = tValues[i - 1];
-                    t = SkTPin(sk_ieee_float_divide(t - lastT, 1 - lastT), 0.f, 1.f);
-                }
+            SkScalar    t = tValues[0];
+            SkPoint     tmp[4];
+
+            for (int i = 0; i < roots; i++) {
                 SkChopCubicAt(src, dst, t);
+                if (i == roots - 1) {
+                    break;
+                }
+
+                dst += 3;
+                // have src point to the remaining cubic (after the chop)
+                memcpy(tmp, dst, 4 * sizeof(SkPoint));
+                src = tmp;
+
+                // watch out in case the renormalized t isn't in range
+                if (!valid_unit_divide(tValues[i+1] - tValues[i],
+                                       SK_Scalar1 - tValues[i], &t)) {
+                    // if we can't, just create a degenerate cubic
+                    dst[4] = dst[5] = dst[6] = src[3];
+                    break;
+                }
             }
         }
     }
@@ -572,113 +483,6 @@ void SkChopCubicAt(const SkPoint src[4], SkPoint dst[],
 
 void SkChopCubicAtHalf(const SkPoint src[4], SkPoint dst[7]) {
     SkChopCubicAt(src, dst, 0.5f);
-}
-
-float SkMeasureNonInflectCubicRotation(const SkPoint pts[4]) {
-    SkVector a = pts[1] - pts[0];
-    SkVector b = pts[2] - pts[1];
-    SkVector c = pts[3] - pts[2];
-    if (a.isZero()) {
-        return SkMeasureAngleBetweenVectors(b, c);
-    }
-    if (b.isZero()) {
-        return SkMeasureAngleBetweenVectors(a, c);
-    }
-    if (c.isZero()) {
-        return SkMeasureAngleBetweenVectors(a, b);
-    }
-    // Postulate: When no points are colocated and there are no inflection points in T=0..1, the
-    // rotation is: 360 degrees, minus the angle [p0,p1,p2], minus the angle [p1,p2,p3].
-    return 2*SK_ScalarPI - SkMeasureAngleBetweenVectors(a,-b) - SkMeasureAngleBetweenVectors(b,-c);
-}
-
-static skvx::float4 fma(const skvx::float4& f, float m, const skvx::float4& a) {
-    return skvx::fma(f, skvx::float4(m), a);
-}
-
-// Finds the root nearest 0.5. Returns 0.5 if the roots are undefined or outside 0..1.
-static float solve_quadratic_equation_for_midtangent(float a, float b, float c, float discr) {
-    // Quadratic formula from Numerical Recipes in C:
-    float q = -.5f * (b + copysignf(sqrtf(discr), b));
-    // The roots are q/a and c/q. Pick the midtangent closer to T=.5.
-    float _5qa = -.5f*q*a;
-    float T = fabsf(q*q + _5qa) < fabsf(a*c + _5qa) ? sk_ieee_float_divide(q,a)
-                                                    : sk_ieee_float_divide(c,q);
-    if (!(T > 0 && T < 1)) {  // Use "!(positive_logic)" so T=NaN will take this branch.
-        // Either the curve is a flat line with no rotation or FP precision failed us. Chop at .5.
-        T = .5;
-    }
-    return T;
-}
-
-static float solve_quadratic_equation_for_midtangent(float a, float b, float c) {
-    return solve_quadratic_equation_for_midtangent(a, b, c, b*b - 4*a*c);
-}
-
-float SkFindCubicMidTangent(const SkPoint src[4]) {
-    // Tangents point in the direction of increasing T, so tan0 and -tan1 both point toward the
-    // midtangent. The bisector of tan0 and -tan1 is orthogonal to the midtangent:
-    //
-    //     bisector dot midtangent == 0
-    //
-    SkVector tan0 = (src[0] == src[1]) ? src[2] - src[0] : src[1] - src[0];
-    SkVector tan1 = (src[2] == src[3]) ? src[3] - src[1] : src[3] - src[2];
-    SkVector bisector = SkFindBisector(tan0, -tan1);
-
-    // Find the T value at the midtangent. This is a simple quadratic equation:
-    //
-    //     midtangent dot bisector == 0, or using a tangent matrix C' in power basis form:
-    //
-    //                   |C'x  C'y|
-    //     |T^2  T  1| * |.    .  | * |bisector.x| == 0
-    //                   |.    .  |   |bisector.y|
-    //
-    // The coeffs for the quadratic equation we need to solve are therefore:  C' * bisector
-    static const skvx::float4 kM[4] = {skvx::float4(-1,  2, -1,  0),
-                                       skvx::float4( 3, -4,  1,  0),
-                                       skvx::float4(-3,  2,  0,  0)};
-    auto C_x = fma(kM[0], src[0].fX,
-               fma(kM[1], src[1].fX,
-               fma(kM[2], src[2].fX, skvx::float4(src[3].fX, 0,0,0))));
-    auto C_y = fma(kM[0], src[0].fY,
-               fma(kM[1], src[1].fY,
-               fma(kM[2], src[2].fY, skvx::float4(src[3].fY, 0,0,0))));
-    auto coeffs = C_x * bisector.x() + C_y * bisector.y();
-
-    // Now solve the quadratic for T.
-    float T = 0;
-    float a=coeffs[0], b=coeffs[1], c=coeffs[2];
-    float discr = b*b - 4*a*c;
-    if (discr > 0) {  // This will only be false if the curve is a line.
-        return solve_quadratic_equation_for_midtangent(a, b, c, discr);
-    } else {
-        // This is a 0- or 360-degree flat line. It doesn't have single points of midtangent.
-        // (tangent == midtangent at every point on the curve except the cusp points.)
-        // Chop in between both cusps instead, if any. There can be up to two cusps on a flat line,
-        // both where the tangent is perpendicular to the starting tangent:
-        //
-        //     tangent dot tan0 == 0
-        //
-        coeffs = C_x * tan0.x() + C_y * tan0.y();
-        a = coeffs[0];
-        b = coeffs[1];
-        if (a != 0) {
-            // We want the point in between both cusps. The midpoint of:
-            //
-            //     (-b +/- sqrt(b^2 - 4*a*c)) / (2*a)
-            //
-            // Is equal to:
-            //
-            //     -b / (2*a)
-            T = -b / (2*a);
-        }
-        if (!(T > 0 && T < 1)) {  // Use "!(positive_logic)" so T=NaN will take this branch.
-            // Either the curve is a flat line with no rotation or FP precision failed us. Chop at
-            // .5.
-            T = .5;
-        }
-        return T;
-    }
 }
 
 static void flatten_double_cubic_extrema(SkScalar coords[14]) {
@@ -736,7 +540,7 @@ int SkChopCubicAtXExtrema(const SkPoint src[4], SkPoint dst[10]) {
     C = d - 3c + 3b - a
     (BxCy - ByCx)t^2 + (AxCy - AyCx)t + AxBy - AyBx == 0
 */
-int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[2]) {
+int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[]) {
     SkScalar    Ax = src[1].fX - src[0].fX;
     SkScalar    Ay = src[1].fY - src[0].fY;
     SkScalar    Bx = src[2].fX - 2 * src[1].fX + src[0].fX;
@@ -750,7 +554,7 @@ int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[2]) {
                                tValues);
 }
 
-int SkChopCubicAtInflections(const SkPoint src[4], SkPoint dst[10]) {
+int SkChopCubicAtInflections(const SkPoint src[], SkPoint dst[10]) {
     SkScalar    tValues[2];
     int         count = SkFindCubicInflections(src, tValues);
 
@@ -764,116 +568,73 @@ int SkChopCubicAtInflections(const SkPoint src[4], SkPoint dst[10]) {
     return count + 1;
 }
 
+// See http://http.developer.nvidia.com/GPUGems3/gpugems3_ch25.html (from the book GPU Gems 3)
+// discr(I) = d0^2 * (3*d1^2 - 4*d0*d2)
+// Classification:
+// discr(I) > 0        Serpentine
+// discr(I) = 0        Cusp
+// discr(I) < 0        Loop
+// d0 = d1 = 0         Quadratic
+// d0 = d1 = d2 = 0    Line
+// p0 = p1 = p2 = p3   Point
+static SkCubicType classify_cubic(const SkPoint p[4], const SkScalar d[3]) {
+    if (p[0] == p[1] && p[0] == p[2] && p[0] == p[3]) {
+        return kPoint_SkCubicType;
+    }
+    const SkScalar discr = d[0] * d[0] * (3.f * d[1] * d[1] - 4.f * d[0] * d[2]);
+    if (discr > SK_ScalarNearlyZero) {
+        return kSerpentine_SkCubicType;
+    } else if (discr < -SK_ScalarNearlyZero) {
+        return kLoop_SkCubicType;
+    } else {
+        if (0.f == d[0] && 0.f == d[1]) {
+            return (0.f == d[2] ? kLine_SkCubicType : kQuadratic_SkCubicType);
+        } else {
+            return kCusp_SkCubicType;
+        }
+    }
+}
+
 // Assumes the third component of points is 1.
 // Calcs p0 . (p1 x p2)
-static double calc_dot_cross_cubic(const SkPoint& p0, const SkPoint& p1, const SkPoint& p2) {
-    const double xComp = (double) p0.fX * ((double) p1.fY - (double) p2.fY);
-    const double yComp = (double) p0.fY * ((double) p2.fX - (double) p1.fX);
-    const double wComp = (double) p1.fX * (double) p2.fY - (double) p1.fY * (double) p2.fX;
+static SkScalar calc_dot_cross_cubic(const SkPoint& p0, const SkPoint& p1, const SkPoint& p2) {
+    const SkScalar xComp = p0.fX * (p1.fY - p2.fY);
+    const SkScalar yComp = p0.fY * (p2.fX - p1.fX);
+    const SkScalar wComp = p1.fX * p2.fY - p1.fY * p2.fX;
     return (xComp + yComp + wComp);
 }
 
-// Returns a positive power of 2 that, when multiplied by n, and excepting the two edge cases listed
-// below, shifts the exponent of n to yield a magnitude somewhere inside [1..2).
-// Returns 2^1023 if abs(n) < 2^-1022 (including 0).
-// Returns NaN if n is Inf or NaN.
-inline static double previous_inverse_pow2(double n) {
-    uint64_t bits;
-    memcpy(&bits, &n, sizeof(double));
-    bits = ((1023llu*2 << 52) + ((1llu << 52) - 1)) - bits; // exp=-exp
-    bits &= (0x7ffllu) << 52; // mantissa=1.0, sign=0
-    memcpy(&n, &bits, sizeof(double));
-    return n;
+// Calc coefficients of I(s,t) where roots of I are inflection points of curve
+// I(s,t) = t*(3*d0*s^2 - 3*d1*s*t + d2*t^2)
+// d0 = a1 - 2*a2+3*a3
+// d1 = -a2 + 3*a3
+// d2 = 3*a3
+// a1 = p0 . (p3 x p2)
+// a2 = p1 . (p0 x p3)
+// a3 = p2 . (p1 x p0)
+// Places the values of d1, d2, d3 in array d passed in
+static void calc_cubic_inflection_func(const SkPoint p[4], SkScalar d[3]) {
+    SkScalar a1 = calc_dot_cross_cubic(p[0], p[3], p[2]);
+    SkScalar a2 = calc_dot_cross_cubic(p[1], p[0], p[3]);
+    SkScalar a3 = calc_dot_cross_cubic(p[2], p[1], p[0]);
+
+    // need to scale a's or values in later calculations will grow to high
+    SkScalar max = SkScalarAbs(a1);
+    max = SkMaxScalar(max, SkScalarAbs(a2));
+    max = SkMaxScalar(max, SkScalarAbs(a3));
+    max = 1.f/max;
+    a1 = a1 * max;
+    a2 = a2 * max;
+    a3 = a3 * max;
+
+    d[2] = 3.f * a3;
+    d[1] = d[2] - a2;
+    d[0] = d[1] - a2 + a1;
 }
 
-inline static void write_cubic_inflection_roots(double t0, double s0, double t1, double s1,
-                                                double* t, double* s) {
-    t[0] = t0;
-    s[0] = s0;
-
-    // This copysign/abs business orients the implicit function so positive values are always on the
-    // "left" side of the curve.
-    t[1] = -copysign(t1, t1 * s1);
-    s[1] = -fabs(s1);
-
-    // Ensure t[0]/s[0] <= t[1]/s[1] (s[1] is negative from above).
-    if (copysign(s[1], s[0]) * t[0] > -fabs(s[0]) * t[1]) {
-        using std::swap;
-        swap(t[0], t[1]);
-        swap(s[0], s[1]);
-    }
-}
-
-SkCubicType SkClassifyCubic(const SkPoint P[4], double t[2], double s[2], double d[4]) {
-    // Find the cubic's inflection function, I = [T^3  -3T^2  3T  -1] dot D. (D0 will always be 0
-    // for integral cubics.)
-    //
-    // See "Resolution Independent Curve Rendering using Programmable Graphics Hardware",
-    // 4.2 Curve Categorization:
-    //
-    // https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/p1000-loop.pdf
-    double A1 = calc_dot_cross_cubic(P[0], P[3], P[2]);
-    double A2 = calc_dot_cross_cubic(P[1], P[0], P[3]);
-    double A3 = calc_dot_cross_cubic(P[2], P[1], P[0]);
-
-    double D3 = 3 * A3;
-    double D2 = D3 - A2;
-    double D1 = D2 - A2 + A1;
-
-    // Shift the exponents in D so the largest magnitude falls somewhere in 1..2. This protects us
-    // from overflow down the road while solving for roots and KLM functionals.
-    double Dmax = std::max(std::max(fabs(D1), fabs(D2)), fabs(D3));
-    double norm = previous_inverse_pow2(Dmax);
-    D1 *= norm;
-    D2 *= norm;
-    D3 *= norm;
-
-    if (d) {
-        d[3] = D3;
-        d[2] = D2;
-        d[1] = D1;
-        d[0] = 0;
-    }
-
-    // Now use the inflection function to classify the cubic.
-    //
-    // See "Resolution Independent Curve Rendering using Programmable Graphics Hardware",
-    // 4.4 Integral Cubics:
-    //
-    // https://www.microsoft.com/en-us/research/wp-content/uploads/2005/01/p1000-loop.pdf
-    if (0 != D1) {
-        double discr = 3*D2*D2 - 4*D1*D3;
-        if (discr > 0) { // Serpentine.
-            if (t && s) {
-                double q = 3*D2 + copysign(sqrt(3*discr), D2);
-                write_cubic_inflection_roots(q, 6*D1, 2*D3, q, t, s);
-            }
-            return SkCubicType::kSerpentine;
-        } else if (discr < 0) { // Loop.
-            if (t && s) {
-                double q = D2 + copysign(sqrt(-discr), D2);
-                write_cubic_inflection_roots(q, 2*D1, 2*(D2*D2 - D3*D1), D1*q, t, s);
-            }
-            return SkCubicType::kLoop;
-        } else { // Cusp.
-            if (t && s) {
-                write_cubic_inflection_roots(D2, 2*D1, D2, 2*D1, t, s);
-            }
-            return SkCubicType::kLocalCusp;
-        }
-    } else {
-        if (0 != D2) { // Cusp at T=infinity.
-            if (t && s) {
-                write_cubic_inflection_roots(D3, 3*D2, 1, 0, t, s); // T1=infinity.
-            }
-            return SkCubicType::kCuspAtInfinity;
-        } else { // Degenerate.
-            if (t && s) {
-                write_cubic_inflection_roots(1, 0, 1, 0, t, s); // T0=T1=infinity.
-            }
-            return 0 != D3 ? SkCubicType::kQuadratic : SkCubicType::kLineOrPoint;
-        }
-    }
+SkCubicType SkClassifyCubic(const SkPoint src[4], SkScalar d[3]) {
+    calc_cubic_inflection_func(src, d);
+    return classify_cubic(src, d);
 }
 
 template <typename T> void bubble_sort(T array[], int count) {
@@ -907,7 +668,7 @@ static int collaps_duplicates(SkScalar array[], int count) {
 
 #ifdef SK_DEBUG
 
-#define TEST_COLLAPS_ENTRY(array)   array, std::size(array)
+#define TEST_COLLAPS_ENTRY(array)   array, SK_ARRAY_COUNT(array)
 
 static void test_collaps_duplicates() {
     static bool gOnce;
@@ -933,7 +694,7 @@ static void test_collaps_duplicates() {
         { TEST_COLLAPS_ENTRY(src5), 2 },
         { TEST_COLLAPS_ENTRY(src6), 3 },
     };
-    for (size_t i = 0; i < std::size(data); ++i) {
+    for (size_t i = 0; i < SK_ARRAY_COUNT(data); ++i) {
         SkScalar dst[3];
         memcpy(dst, data[i].fData, data[i].fCount * sizeof(dst[0]));
         int count = collaps_duplicates(dst, data[i].fCount);
@@ -978,19 +739,34 @@ static int solve_cubic_poly(const SkScalar coeff[4], SkScalar tValues[3]) {
     SkScalar R2MinusQ3 = R * R - Q3;
     SkScalar adiv3 = a / 3;
 
+    SkScalar*   roots = tValues;
+    SkScalar    r;
+
     if (R2MinusQ3 < 0) { // we have 3 real roots
         // the divide/root can, due to finite precisions, be slightly outside of -1...1
-        SkScalar theta = SkScalarACos(SkTPin(R / SkScalarSqrt(Q3), -1.0f, 1.0f));
+        SkScalar theta = SkScalarACos(SkScalarPin(R / SkScalarSqrt(Q3), -1, 1));
         SkScalar neg2RootQ = -2 * SkScalarSqrt(Q);
 
-        tValues[0] = SkTPin(neg2RootQ * SkScalarCos(theta/3) - adiv3, 0.0f, 1.0f);
-        tValues[1] = SkTPin(neg2RootQ * SkScalarCos((theta + 2*SK_ScalarPI)/3) - adiv3, 0.0f, 1.0f);
-        tValues[2] = SkTPin(neg2RootQ * SkScalarCos((theta - 2*SK_ScalarPI)/3) - adiv3, 0.0f, 1.0f);
+        r = neg2RootQ * SkScalarCos(theta/3) - adiv3;
+        if (is_unit_interval(r)) {
+            *roots++ = r;
+        }
+        r = neg2RootQ * SkScalarCos((theta + 2*SK_ScalarPI)/3) - adiv3;
+        if (is_unit_interval(r)) {
+            *roots++ = r;
+        }
+        r = neg2RootQ * SkScalarCos((theta - 2*SK_ScalarPI)/3) - adiv3;
+        if (is_unit_interval(r)) {
+            *roots++ = r;
+        }
         SkDEBUGCODE(test_collaps_duplicates();)
 
         // now sort the roots
-        bubble_sort(tValues, 3);
-        return collaps_duplicates(tValues, 3);
+        int count = (int)(roots - tValues);
+        SkASSERT((unsigned)count <= 3);
+        bubble_sort(tValues, count);
+        count = collaps_duplicates(tValues, count);
+        roots = tValues + count;    // so we compute the proper count below
     } else {              // we have 1 real root
         SkScalar A = SkScalarAbs(R) + SkScalarSqrt(R2MinusQ3);
         A = SkScalarCubeRoot(A);
@@ -1000,9 +776,13 @@ static int solve_cubic_poly(const SkScalar coeff[4], SkScalar tValues[3]) {
         if (A != 0) {
             A += Q / A;
         }
-        tValues[0] = SkTPin(A - adiv3, 0.0f, 1.0f);
-        return 1;
+        r = A - adiv3;
+        if (is_unit_interval(r)) {
+            *roots++ = r;
+        }
     }
+
+    return (int)(roots - tValues);
 }
 
 /*  Looking for F' dot F'' == 0
@@ -1049,10 +829,19 @@ int SkFindCubicMaxCurvature(const SkPoint src[4], SkScalar tValues[3]) {
         coeffX[i] += coeffY[i];
     }
 
-    int numRoots = solve_cubic_poly(coeffX, tValues);
+    SkScalar    t[3];
+    int         count = solve_cubic_poly(coeffX, t);
+    int         maxCount = 0;
+
     // now remove extrema where the curvature is zero (mins)
     // !!!! need a test for this !!!!
-    return numRoots;
+    for (i = 0; i < count; i++) {
+        // if (not_min_curvature())
+        if (t[i] > 0 && t[i] < SK_Scalar1) {
+            tValues[maxCount++] = t[i];
+        }
+    }
+    return maxCount;
 }
 
 int SkChopCubicAtMaxCurvature(const SkPoint src[4], SkPoint dst[13],
@@ -1063,16 +852,7 @@ int SkChopCubicAtMaxCurvature(const SkPoint src[4], SkPoint dst[13],
         tValues = t_storage;
     }
 
-    SkScalar roots[3];
-    int rootCount = SkFindCubicMaxCurvature(src, roots);
-
-    // Throw out values not inside 0..1.
-    int count = 0;
-    for (int i = 0; i < rootCount; ++i) {
-        if (0 < roots[i] && roots[i] < 1) {
-            tValues[count++] = roots[i];
-        }
-    }
+    int count = SkFindCubicMaxCurvature(src, tValues);
 
     if (dst) {
         if (count == 0) {
@@ -1084,135 +864,31 @@ int SkChopCubicAtMaxCurvature(const SkPoint src[4], SkPoint dst[13],
     return count + 1;
 }
 
-// Returns a constant proportional to the dimensions of the cubic.
-// Constant found through experimentation -- maybe there's a better way....
-static SkScalar calc_cubic_precision(const SkPoint src[4]) {
-    return (SkPointPriv::DistanceToSqd(src[1], src[0]) + SkPointPriv::DistanceToSqd(src[2], src[1])
-            + SkPointPriv::DistanceToSqd(src[3], src[2])) * 1e-8f;
-}
+#include "../pathops/SkPathOpsCubic.h"
 
-// Returns true if both points src[testIndex], src[testIndex+1] are in the same half plane defined
-// by the line segment src[lineIndex], src[lineIndex+1].
-static bool on_same_side(const SkPoint src[4], int testIndex, int lineIndex) {
-    SkPoint origin = src[lineIndex];
-    SkVector line = src[lineIndex + 1] - origin;
-    SkScalar crosses[2];
-    for (int index = 0; index < 2; ++index) {
-        SkVector testLine = src[testIndex + index] - origin;
-        crosses[index] = line.cross(testLine);
-    }
-    return crosses[0] * crosses[1] >= 0;
-}
+typedef int (SkDCubic::*InterceptProc)(double intercept, double roots[3]) const;
 
-// Return location (in t) of cubic cusp, if there is one.
-// Note that classify cubic code does not reliably return all cusp'd cubics, so
-// it is not called here.
-SkScalar SkFindCubicCusp(const SkPoint src[4]) {
-    // When the adjacent control point matches the end point, it behaves as if
-    // the cubic has a cusp: there's a point of max curvature where the derivative
-    // goes to zero. Ideally, this would be where t is zero or one, but math
-    // error makes not so. It is not uncommon to create cubics this way; skip them.
-    if (src[0] == src[1]) {
-        return -1;
-    }
-    if (src[2] == src[3]) {
-        return -1;
-    }
-    // Cubics only have a cusp if the line segments formed by the control and end points cross.
-    // Detect crossing if line ends are on opposite sides of plane formed by the other line.
-    if (on_same_side(src, 0, 2) || on_same_side(src, 2, 0)) {
-        return -1;
-    }
-    // Cubics may have multiple points of maximum curvature, although at most only
-    // one is a cusp.
-    SkScalar maxCurvature[3];
-    int roots = SkFindCubicMaxCurvature(src, maxCurvature);
-    for (int index = 0; index < roots; ++index) {
-        SkScalar testT = maxCurvature[index];
-        if (0 >= testT || testT >= 1) {  // no need to consider max curvature on the end
-            continue;
-        }
-        // A cusp is at the max curvature, and also has a derivative close to zero.
-        // Choose the 'close to zero' meaning by comparing the derivative length
-        // with the overall cubic size.
-        SkVector dPt = eval_cubic_derivative(src, testT);
-        SkScalar dPtMagnitude = SkPointPriv::LengthSqd(dPt);
-        SkScalar precision = calc_cubic_precision(src);
-        if (dPtMagnitude < precision) {
-            // All three max curvature t values may be close to the cusp;
-            // return the first one.
-            return testT;
-        }
-    }
-    return -1;
-}
-
-static bool close_enough_to_zero(double x) {
-    return std::fabs(x) < 0.00001;
-}
-
-static bool first_axis_intersection(const double coefficients[8], bool yDirection,
-                                    double axisIntercept, double* solution) {
-    auto [A, B, C, D] = SkBezierCubic::ConvertToPolynomial(coefficients, yDirection);
-    D -= axisIntercept;
-    double roots[3] = {0, 0, 0};
-    int count = SkCubics::RootsValidT(A, B, C, D, roots);
-    if (count == 0) {
-        return false;
-    }
-    // Verify that at least one of the roots is accurate.
-    for (int i = 0; i < count; i++) {
-        if (close_enough_to_zero(SkCubics::EvalAt(A, B, C, D, roots[i]))) {
-            *solution = roots[i];
-            return true;
-        }
-    }
-    // None of the roots returned by our normal cubic solver were correct enough
-    // (e.g. https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=55732)
-    // So we need to fallback to a more accurate solution.
-    count = SkCubics::BinarySearchRootsValidT(A, B, C, D, roots);
-    if (count == 0) {
-        return false;
-    }
-    for (int i = 0; i < count; i++) {
-        if (close_enough_to_zero(SkCubics::EvalAt(A, B, C, D, roots[i]))) {
-            *solution = roots[i];
-            return true;
-        }
-    }
-    return false;
-}
-
-bool SkChopMonoCubicAtY(const SkPoint src[4], SkScalar y, SkPoint dst[7]) {
-    double coefficients[8] = {src[0].fX, src[0].fY, src[1].fX, src[1].fY,
-                              src[2].fX, src[2].fY, src[3].fX, src[3].fY};
-    double solution = 0;
-    if (first_axis_intersection(coefficients, true, y, &solution)) {
-        double cubicPair[14];
-        SkBezierCubic::Subdivide(coefficients, solution, cubicPair);
-        for (int i = 0; i < 7; i ++) {
-            dst[i].fX = sk_double_to_float(cubicPair[i*2]);
-            dst[i].fY = sk_double_to_float(cubicPair[i*2 + 1]);
+static bool cubic_dchop_at_intercept(const SkPoint src[4], SkScalar intercept, SkPoint dst[7],
+                                     InterceptProc method) {
+    SkDCubic cubic;
+    double roots[3];
+    int count = (cubic.set(src).*method)(intercept, roots);
+    if (count > 0) {
+        SkDCubicPair pair = cubic.chopAt(roots[0]);
+        for (int i = 0; i < 7; ++i) {
+            dst[i] = pair.pts[i].asSkPoint();
         }
         return true;
     }
     return false;
 }
 
-bool SkChopMonoCubicAtX(const SkPoint src[4], SkScalar x, SkPoint dst[7]) {
-    double coefficients[8] = {src[0].fX, src[0].fY, src[1].fX, src[1].fY,
-                                  src[2].fX, src[2].fY, src[3].fX, src[3].fY};
-    double solution = 0;
-    if (first_axis_intersection(coefficients, false, x, &solution)) {
-        double cubicPair[14];
-        SkBezierCubic::Subdivide(coefficients, solution, cubicPair);
-        for (int i = 0; i < 7; i ++) {
-            dst[i].fX = sk_double_to_float(cubicPair[i*2]);
-            dst[i].fY = sk_double_to_float(cubicPair[i*2 + 1]);
-        }
-        return true;
-    }
-    return false;
+bool SkChopMonoCubicAtY(SkPoint src[4], SkScalar y, SkPoint dst[7]) {
+    return cubic_dchop_at_intercept(src, y, dst, &SkDCubic::horizontalIntersect);
+}
+
+bool SkChopMonoCubicAtX(SkPoint src[4], SkScalar x, SkPoint dst[7]) {
+    return cubic_dchop_at_intercept(src, x, dst, &SkDCubic::verticalIntersect);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1272,6 +948,18 @@ static bool conic_find_extrema(const SkScalar src[], SkScalar w, SkScalar* t) {
     return false;
 }
 
+struct SkP3D {
+    SkScalar fX, fY, fZ;
+
+    void set(SkScalar x, SkScalar y, SkScalar z) {
+        fX = x; fY = y; fZ = z;
+    }
+
+    void projectDown(SkPoint* dst) const {
+        dst->set(fX / fZ, fY / fZ);
+    }
+};
+
 // We only interpolate one dimension at a time (the first, at +0, +3, +6).
 static void p3d_interp(const SkScalar src[7], SkScalar dst[7], SkScalar t) {
     SkScalar ab = SkScalarInterp(src[0], src[3], t);
@@ -1281,19 +969,15 @@ static void p3d_interp(const SkScalar src[7], SkScalar dst[7], SkScalar t) {
     dst[6] = bc;
 }
 
-static void ratquad_mapTo3D(const SkPoint src[3], SkScalar w, SkPoint3 dst[3]) {
+static void ratquad_mapTo3D(const SkPoint src[3], SkScalar w, SkP3D dst[]) {
     dst[0].set(src[0].fX * 1, src[0].fY * 1, 1);
     dst[1].set(src[1].fX * w, src[1].fY * w, w);
     dst[2].set(src[2].fX * 1, src[2].fY * 1, 1);
 }
 
-static SkPoint project_down(const SkPoint3& src) {
-    return {src.fX / src.fZ, src.fY / src.fZ};
-}
-
 // return false if infinity or NaN is generated; caller must check
 bool SkConic::chopAt(SkScalar t, SkConic dst[2]) const {
-    SkPoint3 tmp[3], tmp2[3];
+    SkP3D tmp[3], tmp2[3];
 
     ratquad_mapTo3D(fPts, fW, tmp);
 
@@ -1302,9 +986,9 @@ bool SkConic::chopAt(SkScalar t, SkConic dst[2]) const {
     p3d_interp(&tmp[0].fZ, &tmp2[0].fZ, t);
 
     dst[0].fPts[0] = fPts[0];
-    dst[0].fPts[1] = project_down(tmp2[0]);
-    dst[0].fPts[2] = project_down(tmp2[1]); dst[1].fPts[0] = dst[0].fPts[2];
-    dst[1].fPts[1] = project_down(tmp2[2]);
+    tmp2[0].projectDown(&dst[0].fPts[1]);
+    tmp2[1].projectDown(&dst[0].fPts[2]); dst[1].fPts[0] = dst[0].fPts[2];
+    tmp2[2].projectDown(&dst[1].fPts[1]);
     dst[1].fPts[2] = fPts[2];
 
     // to put in "standard form", where w0 and w2 are both 1, we compute the
@@ -1337,21 +1021,21 @@ void SkConic::chopAt(SkScalar t1, SkScalar t2, SkConic* dst) const {
         }
     }
     SkConicCoeff coeff(*this);
-    float2 tt1(t1);
-    float2 aXY = coeff.fNumer.eval(tt1);
-    float2 aZZ = coeff.fDenom.eval(tt1);
-    float2 midTT((t1 + t2) / 2);
-    float2 dXY = coeff.fNumer.eval(midTT);
-    float2 dZZ = coeff.fDenom.eval(midTT);
-    float2 tt2(t2);
-    float2 cXY = coeff.fNumer.eval(tt2);
-    float2 cZZ = coeff.fDenom.eval(tt2);
-    float2 bXY = times_2(dXY) - (aXY + cXY) * 0.5f;
-    float2 bZZ = times_2(dZZ) - (aZZ + cZZ) * 0.5f;
+    Sk2s tt1(t1);
+    Sk2s aXY = coeff.fNumer.eval(tt1);
+    Sk2s aZZ = coeff.fDenom.eval(tt1);
+    Sk2s midTT((t1 + t2) / 2);
+    Sk2s dXY = coeff.fNumer.eval(midTT);
+    Sk2s dZZ = coeff.fDenom.eval(midTT);
+    Sk2s tt2(t2);
+    Sk2s cXY = coeff.fNumer.eval(tt2);
+    Sk2s cZZ = coeff.fDenom.eval(tt2);
+    Sk2s bXY = times_2(dXY) - (aXY + cXY) * Sk2s(0.5f);
+    Sk2s bZZ = times_2(dZZ) - (aZZ + cZZ) * Sk2s(0.5f);
     dst->fPts[0] = to_point(aXY / aZZ);
     dst->fPts[1] = to_point(bXY / bZZ);
     dst->fPts[2] = to_point(cXY / cZZ);
-    float2 ww = bZZ / sqrt(aZZ * cZZ);
+    Sk2s ww = bZZ / (aZZ * cZZ).sqrt();
     dst->fW = ww[0];
 }
 
@@ -1366,17 +1050,17 @@ SkVector SkConic::evalTangentAt(SkScalar t) const {
     if ((t == 0 && fPts[0] == fPts[1]) || (t == 1 && fPts[1] == fPts[2])) {
         return fPts[2] - fPts[0];
     }
-    float2 p0 = from_point(fPts[0]);
-    float2 p1 = from_point(fPts[1]);
-    float2 p2 = from_point(fPts[2]);
-    float2 ww(fW);
+    Sk2s p0 = from_point(fPts[0]);
+    Sk2s p1 = from_point(fPts[1]);
+    Sk2s p2 = from_point(fPts[2]);
+    Sk2s ww(fW);
 
-    float2 p20 = p2 - p0;
-    float2 p10 = p1 - p0;
+    Sk2s p20 = p2 - p0;
+    Sk2s p10 = p1 - p0;
 
-    float2 C = ww * p10;
-    float2 A = ww * p20 - p20;
-    float2 B = p20 - C - C;
+    Sk2s C = ww * p10;
+    Sk2s A = ww * p20 - p20;
+    Sk2s B = p20 - C - C;
 
     return to_vector(SkQuadCoeff(A, B, C).eval(t));
 }
@@ -1397,27 +1081,20 @@ static SkScalar subdivide_w_value(SkScalar w) {
 }
 
 void SkConic::chop(SkConic * SK_RESTRICT dst) const {
-    float2 scale = SkScalarInvert(SK_Scalar1 + fW);
+    Sk2s scale = Sk2s(SkScalarInvert(SK_Scalar1 + fW));
     SkScalar newW = subdivide_w_value(fW);
 
-    float2 p0 = from_point(fPts[0]);
-    float2 p1 = from_point(fPts[1]);
-    float2 p2 = from_point(fPts[2]);
-    float2 ww(fW);
+    Sk2s p0 = from_point(fPts[0]);
+    Sk2s p1 = from_point(fPts[1]);
+    Sk2s p2 = from_point(fPts[2]);
+    Sk2s ww(fW);
 
-    float2 wp1 = ww * p1;
-    float2 m = (p0 + times_2(wp1) + p2) * scale * 0.5f;
-    SkPoint mPt = to_point(m);
-    if (!mPt.isFinite()) {
-        double w_d = fW;
-        double w_2 = w_d * 2;
-        double scale_half = 1 / (1 + w_d) * 0.5;
-        mPt.fX = SkDoubleToScalar((fPts[0].fX + w_2 * fPts[1].fX + fPts[2].fX) * scale_half);
-        mPt.fY = SkDoubleToScalar((fPts[0].fY + w_2 * fPts[1].fY + fPts[2].fY) * scale_half);
-    }
+    Sk2s wp1 = ww * p1;
+    Sk2s m = (p0 + times_2(wp1) + p2) * scale * Sk2s(0.5f);
+
     dst[0].fPts[0] = fPts[0];
     dst[0].fPts[1] = to_point((p0 + wp1) * scale);
-    dst[0].fPts[2] = dst[1].fPts[0] = mPt;
+    dst[0].fPts[2] = dst[1].fPts[0] = to_point(m);
     dst[1].fPts[1] = to_point((wp1 + p2) * scale);
     dst[1].fPts[2] = fPts[2];
 
@@ -1448,7 +1125,7 @@ bool SkConic::asQuadTol(SkScalar tol) const {
 #define kMaxConicToQuadPOW2     5
 
 int SkConic::computeQuadPOW2(SkScalar tol) const {
-    if (tol < 0 || !SkScalarIsFinite(tol) || !SkPointPriv::AreFinite(fPts, 3)) {
+    if (tol < 0 || !SkScalarIsFinite(tol)) {
         return 0;
     }
 
@@ -1463,7 +1140,7 @@ int SkConic::computeQuadPOW2(SkScalar tol) const {
         error *= 0.25f;
     }
     // float version -- using ceil gives the same results as the above.
-    if ((false)) {
+    if (false) {
         SkScalar err = SkScalarSqrt(x * x + y * y);
         if (err <= tol) {
             return 0;
@@ -1482,7 +1159,7 @@ int SkConic::computeQuadPOW2(SkScalar tol) const {
     return pow2;
 }
 
-// This was originally developed and tested for pathops: see SkOpTypes.h
+// This was originally developed and tested for pathops: see SkOpTypes.h 
 // returns true if (a <= b <= c) || (a >= b >= c)
 static bool between(SkScalar a, SkScalar b, SkScalar c) {
     return (a - b) * (c - b) <= 0;
@@ -1498,7 +1175,7 @@ static SkPoint* subdivide(const SkConic& src, SkPoint pts[], int level) {
         SkConic dst[2];
         src.chop(dst);
         const SkScalar startY = src.fPts[0].fY;
-        SkScalar endY = src.fPts[2].fY;
+        const SkScalar endY = src.fPts[2].fY;
         if (between(startY, src.fPts[1].fY, endY)) {
             // If the input is monotonic and the output is not, the scan converter hangs.
             // Ensure that the chopped conics maintain their y-order.
@@ -1537,8 +1214,8 @@ int SkConic::chopIntoQuadsPOW2(SkPoint pts[], int pow2) const {
         SkConic dst[2];
         this->chop(dst);
         // check to see if the first chop generates a pair of lines
-        if (SkPointPriv::EqualsWithinTolerance(dst[0].fPts[1], dst[0].fPts[2]) &&
-                SkPointPriv::EqualsWithinTolerance(dst[1].fPts[0], dst[1].fPts[1])) {
+        if (dst[0].fPts[1].equalsWithinTolerance(dst[0].fPts[2])
+                && dst[1].fPts[0].equalsWithinTolerance(dst[1].fPts[1])) {
             pts[1] = pts[2] = pts[3] = dst[0].fPts[1];  // set ctrl == end to make lines
             pts[4] = dst[1].fPts[2];
             pow2 = 1;
@@ -1551,7 +1228,7 @@ commonFinitePtCheck:
     const int quadCount = 1 << pow2;
     const int ptCount = 2 * quadCount + 1;
     SkASSERT(endPts - pts == ptCount);
-    if (!SkPointPriv::AreFinite(pts, ptCount)) {
+    if (!SkPointsAreFinite(pts, ptCount)) {
         // if we generated a non-finite, pin ourselves to the middle of the hull,
         // as our first and last are already on the first/last pts of the hull.
         for (int i = 1; i < ptCount - 1; ++i) {
@@ -1559,43 +1236,6 @@ commonFinitePtCheck:
         }
     }
     return 1 << pow2;
-}
-
-float SkConic::findMidTangent() const {
-    // Tangents point in the direction of increasing T, so tan0 and -tan1 both point toward the
-    // midtangent. The bisector of tan0 and -tan1 is orthogonal to the midtangent:
-    //
-    //     bisector dot midtangent = 0
-    //
-    SkVector tan0 = fPts[1] - fPts[0];
-    SkVector tan1 = fPts[2] - fPts[1];
-    SkVector bisector = SkFindBisector(tan0, -tan1);
-
-    // Start by finding the tangent function's power basis coefficients. These define a tangent
-    // direction (scaled by some uniform value) as:
-    //                                                |T^2|
-    //     Tangent_Direction(T) = dx,dy = |A  B  C| * |T  |
-    //                                    |.  .  .|   |1  |
-    //
-    // The derivative of a conic has a cumbersome order-4 denominator. However, this isn't necessary
-    // if we are only interested in a vector in the same *direction* as a given tangent line. Since
-    // the denominator scales dx and dy uniformly, we can throw it out completely after evaluating
-    // the derivative with the standard quotient rule. This leaves us with a simpler quadratic
-    // function that we use to find a tangent.
-    SkVector A = (fPts[2] - fPts[0]) * (fW - 1);
-    SkVector B = (fPts[2] - fPts[0]) - (fPts[1] - fPts[0]) * (fW*2);
-    SkVector C = (fPts[1] - fPts[0]) * fW;
-
-    // Now solve for "bisector dot midtangent = 0":
-    //
-    //                            |T^2|
-    //     bisector * |A  B  C| * |T  | = 0
-    //                |.  .  .|   |1  |
-    //
-    float a = bisector.dot(A);
-    float b = bisector.dot(B);
-    float c = bisector.dot(C);
-    return solve_quadratic_equation_for_midtangent(a, b, c);
 }
 
 bool SkConic::findXExtrema(SkScalar* t) const {
@@ -1655,11 +1295,11 @@ void SkConic::computeTightBounds(SkRect* bounds) const {
     if (this->findYExtrema(&t)) {
         this->evalAt(t, &pts[count++]);
     }
-    bounds->setBounds(pts, count);
+    bounds->set(pts, count);
 }
 
 void SkConic::computeFastBounds(SkRect* bounds) const {
-    bounds->setBounds(fPts, 3);
+    bounds->set(fPts, 3);
 }
 
 #if 0  // unimplemented
@@ -1669,23 +1309,24 @@ bool SkConic::findMaxCurvature(SkScalar* t) const {
 }
 #endif
 
-SkScalar SkConic::TransformW(const SkPoint pts[3], SkScalar w, const SkMatrix& matrix) {
+SkScalar SkConic::TransformW(const SkPoint pts[], SkScalar w,
+                             const SkMatrix& matrix) {
     if (!matrix.hasPerspective()) {
         return w;
     }
 
-    SkPoint3 src[3], dst[3];
+    SkP3D src[3], dst[3];
 
     ratquad_mapTo3D(pts, w, src);
 
-    matrix.mapHomogeneousPoints(dst, src, 3);
+    matrix.mapHomogeneousPoints(&dst[0].fX, &src[0].fX, 3);
 
     // w' = sqrt(w1*w1/w0*w2)
-    // use doubles temporarily, to handle small numer/denom
-    double w0 = dst[0].fZ;
-    double w1 = dst[1].fZ;
-    double w2 = dst[2].fZ;
-    return sk_double_to_float(sqrt(sk_ieee_double_divide(w1 * w1, w0 * w2)));
+    SkScalar w0 = dst[0].fZ;
+    SkScalar w1 = dst[1].fZ;
+    SkScalar w2 = dst[2].fZ;
+    w = SkScalarSqrt((w1 * w1) / (w0 * w2));
+    return w;
 }
 
 int SkConic::BuildUnitArc(const SkVector& uStart, const SkVector& uStop, SkRotationDirection dir,
@@ -1755,10 +1396,10 @@ int SkConic::BuildUnitArc(const SkVector& uStart, const SkVector& uStop, SkRotat
         //
         const SkScalar cosThetaOver2 = SkScalarSqrt((1 + dot) / 2);
         offCurve.setLength(SkScalarInvert(cosThetaOver2));
-        if (!SkPointPriv::EqualsWithinTolerance(lastQ, offCurve)) {
+        if (!lastQ.equalsWithinTolerance(offCurve)) {
             dst[conicCount].set(lastQ, offCurve, finalP, cosThetaOver2);
             conicCount += 1;
-        }
+        } 
     }
 
     // now handle counter-clockwise and the initial unitStart rotation

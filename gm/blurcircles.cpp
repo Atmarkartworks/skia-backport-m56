@@ -5,18 +5,12 @@
 * found in the LICENSE file.
 */
 
-#include "gm/gm.h"
-#include "include/core/SkBlurTypes.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMaskFilter.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "src/core/SkBlurMask.h"
+#include "gm.h"
+#include "SkBlurMask.h"
+#include "SkBlurMaskFilter.h"
+#include "SkCanvas.h"
+#include "SkPaint.h"
+#include "SkString.h"
 
 class BlurCirclesGM : public skiagm::GM {
 public:
@@ -34,12 +28,13 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        const float blurRadii[kNumBlurs] = {1.f, 5.f, 10.f, 20.f};
+        const float blurRadii[kNumBlurs] = { 1,5,10,20 };
 
         for (int i = 0; i < kNumBlurs; ++i) {
-            fBlurFilters[i] = SkMaskFilter::MakeBlur(
+            fBlurFilters[i] = SkBlurMaskFilter::Make(
                                     kNormal_SkBlurStyle,
-                                    SkBlurMask::ConvertRadiusToSigma(blurRadii[i]));
+                                    SkBlurMask::ConvertRadiusToSigma(SkIntToScalar(blurRadii[i])),
+                                    SkBlurMaskFilter::kHighQuality_BlurFlag);
         }
     }
 
@@ -47,32 +42,27 @@ protected:
         canvas->scale(1.5f, 1.5f);
         canvas->translate(50,50);
 
-        const float circleRadii[] = {5.f, 10.f, 25.f, 50.f};
+        const int circleRadii[] = { 5,10,25,50 };
 
         for (size_t i = 0; i < kNumBlurs; ++i) {
             SkAutoCanvasRestore autoRestore(canvas, true);
-            canvas->translate(0, 150.f*i);
-            for (size_t j = 0; j < std::size(circleRadii); ++j) {
+            canvas->translate(0, SkIntToScalar(150*i));
+            for (size_t j = 0; j < SK_ARRAY_COUNT(circleRadii); ++j) {
                 SkPaint paint;
                 paint.setColor(SK_ColorBLACK);
                 paint.setMaskFilter(fBlurFilters[i]);
 
-                static constexpr SkPoint kCenter = {50.f, 50.f};
-                // Throw a rotation in the mix to make sure GPU fast path handles it correctly.
-                canvas->save();
-                canvas->rotate(j*22.f, kCenter.fX, kCenter.fY);
-                canvas->drawCircle(kCenter, circleRadii[j], paint);
-                canvas->restore();
-                canvas->translate(150.f, 0.f);
+                canvas->drawCircle(SkIntToScalar(50),SkIntToScalar(50),SkIntToScalar(circleRadii[j]),paint);
+                canvas->translate(SkIntToScalar(150), 0);
             }
         }
     }
 private:
-    inline static constexpr int kNumBlurs = 4;
+    static constexpr int kNumBlurs = 4;
 
     sk_sp<SkMaskFilter> fBlurFilters[kNumBlurs];
 
-    using INHERITED =         skiagm::GM;
+    typedef         skiagm::GM INHERITED;
 };
 
 DEF_GM(return new BlurCirclesGM();)

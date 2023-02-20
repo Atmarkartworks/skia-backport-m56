@@ -4,43 +4,31 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
+ 
 #ifndef SKSL_EXTENSION
 #define SKSL_EXTENSION
 
-#include "include/private/SkSLProgramElement.h"
+#include "SkSLProgramElement.h"
 
 namespace SkSL {
 
-/**
- * An extension declaration.
+/** 
+ * An extension declaration. 
  */
-class Extension final : public ProgramElement {
-public:
-    inline static constexpr Kind kIRNodeKind = Kind::kExtension;
-
-    Extension(Position pos, std::string_view name)
-        : INHERITED(pos, kIRNodeKind)
-        , fName(name) {}
-
-    std::string_view name() const {
-        return fName;
-    }
-
-    std::unique_ptr<ProgramElement> clone() const override {
-        return std::unique_ptr<ProgramElement>(new Extension(fPosition, this->name()));
-    }
+struct Extension : public ProgramElement {
+    Extension(Position position, std::string name)
+    : INHERITED(position, kExtension_Kind) 
+    , fName(std::move(name)) {}
 
     std::string description() const override {
-        return "#extension " + std::string(this->name()) + " : enable";
+        return "#extension " + fName + " : enable";
     }
 
-private:
-    std::string_view fName;
+    const std::string fName;
 
-    using INHERITED = ProgramElement;
+    typedef ProgramElement INHERITED;
 };
 
-}  // namespace SkSL
+} // namespace
 
 #endif

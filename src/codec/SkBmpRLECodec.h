@@ -4,24 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#ifndef SkBmpRLECodec_DEFINED
-#define SkBmpRLECodec_DEFINED
 
-#include "include/codec/SkCodec.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkTypes.h"
-#include "src/codec/SkBmpCodec.h"
-#include "src/codec/SkColorTable.h"
-#include "src/codec/SkSampler.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-
-class SkStream;
-enum SkColorType : int;
-struct SkEncodedInfo;
-struct SkImageInfo;
+#include "SkBmpCodec.h"
+#include "SkColorTable.h"
+#include "SkImageInfo.h"
+#include "SkSampler.h"
+#include "SkTypes.h"
 
 /*
  * This class implements the decoding for bmp images that use an RLE encoding
@@ -32,7 +20,7 @@ public:
     /*
      * Creates an instance of the decoder
      *
-     * Called only by SkBmpCodec::MakeFromStream
+     * Called only by SkBmpCodec::NewFromStream
      * There should be no other callers despite this being public
      *
      * @param info contains properties of the encoded data
@@ -44,23 +32,25 @@ public:
      * @param offset the offset of the image pixel data from the end of the
      *               headers
      * @param rowOrder indicates whether rows are ordered top-down or bottom-up
+     * @param RLEBytes indicates the amount of data left in the stream
+     *                 after decoding the headers
      */
-    SkBmpRLECodec(SkEncodedInfo&& info, std::unique_ptr<SkStream>,
+    SkBmpRLECodec(int width, int height, const SkEncodedInfo& info, SkStream* stream,
             uint16_t bitsPerPixel, uint32_t numColors, uint32_t bytesPerColor,
-            uint32_t offset, SkCodec::SkScanlineOrder rowOrder);
+            uint32_t offset, SkCodec::SkScanlineOrder rowOrder,
+            size_t RLEBytes);
 
     int setSampleX(int);
-
-    int fillWidth() const;
 
 protected:
 
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst,
-                       size_t dstRowBytes, const Options&,
-                       int*) override;
+                       size_t dstRowBytes, const Options&, SkPMColor*,
+                       int*, int*) override;
 
     SkCodec::Result onPrepareToDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options& options) override;
+            const SkCodec::Options& options, SkPMColor inputColorPtr[],
+            int* inputColorCount) override;
 
 private:
 
@@ -68,7 +58,7 @@ private:
      * Creates the color table
      * Sets colorCount to the new color count if it is non-nullptr
      */
-    bool createColorTable(SkColorType dstColorType);
+    bool createColorTable(SkColorType dstColorType, int* colorCount);
 
     bool initializeStreamBuffer();
 
@@ -105,26 +95,23 @@ private:
 
     SkSampler* getSampler(bool createIfNecessary) override;
 
-    sk_sp<SkColorTable>               fColorTable;
+    sk_sp<SkColorTable>        fColorTable;
     // fNumColors is the number specified in the header, or 0 if not present in the header.
-    const uint32_t                    fNumColors;
-    const uint32_t                    fBytesPerColor;
-    const uint32_t                    fOffset;
-
-    inline static constexpr size_t    kBufferSize = 4096;
-    uint8_t                           fStreamBuffer[kBufferSize];
-    size_t                            fBytesBuffered;
-
-    uint32_t                          fCurrRLEByte;
-    int                               fSampleX;
-    std::unique_ptr<SkSampler>        fSampler;
+    const uint32_t             fNumColors;
+    const uint32_t             fBytesPerColor;
+    const uint32_t             fOffset;
+    std::unique_ptr<uint8_t[]> fStreamBuffer;
+    size_t                     fRLEBytes;
+    const size_t               fOrigRLEBytes;
+    uint32_t                   fCurrRLEByte;
+    int                        fSampleX;
+    std::unique_ptr<SkSampler> fSampler;
 
     // Scanline decodes allow the client to ask for a single scanline at a time.
     // This can be tricky when the RLE encoding instructs the decoder to jump down
     // multiple lines.  This field keeps track of lines that need to be skipped
     // on subsequent calls to decodeRows().
-    int                               fLinesToSkip;
+    int                        fLinesToSkip;
 
-    using INHERITED = SkBmpCodec;
+    typedef SkBmpCodec INHERITED;
 };
-#endif  // SkBmpRLECodec_DEFINED

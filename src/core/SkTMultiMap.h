@@ -8,7 +8,8 @@
 #ifndef SkTMultiMap_DEFINED
 #define SkTMultiMap_DEFINED
 
-#include "src/core/SkTDynamicHash.h"
+#include "GrTypes.h"
+#include "SkTDynamicHash.h"
 
 /** A set that contains pointers to instances of T. Instances can be looked up with key Key.
  * Multiple (possibly same) values can have the same key.
@@ -29,20 +30,8 @@ public:
     SkTMultiMap() : fCount(0) {}
 
     ~SkTMultiMap() {
-        this->reset();
-    }
-
-    void reset() {
-        fHash.foreach([&](ValueList* vl) {
-            ValueList* next;
-            for (ValueList* it = vl; it; it = next) {
-                HashTraits::OnFree(it->fValue);
-                next = it->fNext;
-                delete it;
-            }
-        });
-        fHash.reset();
-        fCount = 0;
+        SkASSERT(fCount == 0);
+        SkASSERT(fHash.count() == 0);
     }
 
     void insert(const Key& key, T* value) {
@@ -65,9 +54,6 @@ public:
 
     void remove(const Key& key, const T* value) {
         ValueList* list = fHash.find(key);
-        // Temporarily making this safe for remove entries not in the map because of
-        // crbug.com/877915.
-#if 0
         // Since we expect the caller to be fully aware of what is stored, just
         // assert that the caller removes an existing value.
         SkASSERT(list);
@@ -76,19 +62,21 @@ public:
             prev = list;
             list = list->fNext;
         }
-        this->internalRemove(prev, list, key);
-#else
-        ValueList* prev = nullptr;
-        while (list && list->fValue != value) {
-            prev = list;
-            list = list->fNext;
+
+        if (list->fNext) {
+            ValueList* next = list->fNext;
+            list->fValue = next->fValue;
+            list->fNext = next->fNext;
+            delete next;
+        } else if (prev) {
+            prev->fNext = nullptr;
+            delete list;
+        } else {
+            fHash.remove(key);
+            delete list;
         }
-        // Crash in Debug since it'd be great to detect a repro of 877915.
-        SkASSERT(list);
-        if (list) {
-            this->internalRemove(prev, list, key);
-        }
-#endif
+
+        --fCount;
     }
 
     T* find(const Key& key) const {
@@ -111,34 +99,44 @@ public:
         return nullptr;
     }
 
-    template<class FindPredicate>
-    T* findAndRemove(const Key& key, const FindPredicate f) {
-        ValueList* list = fHash.find(key);
-
-        ValueList* prev = nullptr;
-        while (list) {
-            if (f(list->fValue)){
-                T* value = list->fValue;
-                this->internalRemove(prev, list, key);
-                return value;
-            }
-            prev = list;
-            list = list->fNext;
-        }
-        return nullptr;
-    }
-
     int count() const { return fCount; }
 
 #ifdef SK_DEBUG
-    template <typename Fn>  // f(T) or f(const T&)
-    void foreach(Fn&& fn) const {
-        fHash.foreach([&](const ValueList& vl) {
-            for (const ValueList* it = &vl; it; it = it->fNext) {
-                fn(*it->fValue);
+    class ConstIter {
+    public:
+        explicit ConstIter(const SkTMultiMap* mmap)
+            : fIter(&(mmap->fHash))
+            , fList(nullptr) {
+            if (!fIter.done()) {
+                fList = &(*fIter);
             }
-        });
-    }
+        }
+
+        bool done() const {
+            return fIter.done();
+        }
+
+        const T* operator*() {
+            SkASSERT(fList);
+            return fList->fValue;
+        }
+
+        void operator++() {
+            if (fList) {
+                fList = fList->fNext;
+            }
+            if (!fList) {
+                ++fIter;
+                if (!fIter.done()) {
+                    fList = &(*fIter);
+                }
+            }
+        }
+
+    private:
+        typename SkTDynamicHash<ValueList, Key>::ConstIter fIter;
+        const ValueList* fList;
+    };
 
     bool has(const T* value, const Key& key) const {
         for (ValueList* list = fHash.find(key); list; list = list->fNext) {
@@ -164,24 +162,6 @@ public:
 private:
     SkTDynamicHash<ValueList, Key> fHash;
     int fCount;
-
-    void internalRemove(ValueList* prev, ValueList* elem, const Key& key) {
-        if (elem->fNext) {
-            ValueList* next = elem->fNext;
-            elem->fValue = next->fValue;
-            elem->fNext = next->fNext;
-            delete next;
-        } else if (prev) {
-            prev->fNext = nullptr;
-            delete elem;
-        } else {
-            fHash.remove(key);
-            delete elem;
-        }
-
-        --fCount;
-    }
-
 };
 
 #endif

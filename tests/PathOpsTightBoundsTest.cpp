@@ -4,21 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPath.h"
-#include "include/core/SkRect.h"
-#include "include/pathops/SkPathOps.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkRandom.h"
-#include "tests/PathOpsExtendedTest.h"
-#include "tests/PathOpsThreadedCommon.h"
-#include "tests/Test.h"
-
-#include <algorithm>
-#include <cstdint>
+#include "PathOpsExtendedTest.h"
+#include "PathOpsThreadedCommon.h"
+#include "SkCanvas.h"
+#include "SkRandom.h"
+#include "SkTSort.h"
+#include "Test.h"
 
 static void testTightBoundsLines(PathOpsThreadState* data) {
     SkRandom ran;
@@ -100,14 +91,14 @@ static void testTightBoundsQuads(PathOpsThreadState* data) {
                     continue;
                 }
                 lineWritten = true;
-                bitsWritten.fLeft = std::min(bitsWritten.fLeft, x);
-                bitsWritten.fRight = std::max(bitsWritten.fRight, x);
+                bitsWritten.fLeft = SkTMin(bitsWritten.fLeft, x);
+                bitsWritten.fRight = SkTMax(bitsWritten.fRight, x);
             }
             if (!lineWritten) {
                 continue;
             }
-            bitsWritten.fTop = std::min(bitsWritten.fTop, y);
-            bitsWritten.fBottom = std::max(bitsWritten.fBottom, y);
+            bitsWritten.fTop = SkTMin(bitsWritten.fTop, y);
+            bitsWritten.fBottom = SkTMax(bitsWritten.fBottom, y);
         }
         if (!bitsWritten.isEmpty()) {
             SkIRect tightOut;
@@ -197,14 +188,3 @@ DEF_TEST(PathOpsTightBoundsIllBehaved, reporter) {
     REPORTER_ASSERT(reporter, bounds != tight);
 }
 
-DEF_TEST(PathOpsTightBoundsIllBehavedScaled, reporter) {
-    SkPath path;
-    path.moveTo(0, 0);
-    path.quadTo(1048578, 1048577, 1048576, 1048576);
-    const SkRect& bounds = path.getBounds();
-    SkRect tight;
-    REPORTER_ASSERT(reporter, TightBounds(path, &tight));
-    REPORTER_ASSERT(reporter, bounds != tight);
-    REPORTER_ASSERT(reporter, tight.right() == 1048576);
-    REPORTER_ASSERT(reporter, tight.bottom() == 1048576);
-}

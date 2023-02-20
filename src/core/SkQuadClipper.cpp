@@ -5,10 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkGeometry.h"
-#include "src/core/SkQuadClipper.h"
-
-#include <utility>
+#include "SkQuadClipper.h"
+#include "SkGeometry.h"
 
 SkQuadClipper::SkQuadClipper() {
     fClip.setEmpty();
@@ -110,8 +108,7 @@ bool SkQuadClipper::clipQuad(const SkPoint srcPts[3], SkPoint dst[3]) {
     }
 
     if (reverse) {
-        using std::swap;
-        swap(dst[0], dst[2]);
+        SkTSwap<SkPoint>(dst[0], dst[2]);
     }
     return true;
 }

@@ -4,14 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "bench/Benchmark.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkString.h"
-#include "include/core/SkVertices.h"
-#include "include/effects/SkGradientShader.h"
-#include "src/utils/SkPatchUtils.h"
+#include "Benchmark.h"
+#include "SkCanvas.h"
+#include "SkGradientShader.h"
+#include "SkPaint.h"
+#include "SkPatchUtils.h"
+#include "SkString.h"
 
 /**
  * This bench measures the rendering time of the call SkCanvas::drawPatch with different types of
@@ -78,8 +76,8 @@ public:
         };
         const SkPoint pts[] = { { 200.f / 4.f, 0.f }, { 3.f * 200.f / 4, 200.f } };
 
-        return SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
-                                            SkTileMode::kMirror);
+        return SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+                                            SkShader::kMirror_TileMode);
     }
 
 protected:
@@ -129,16 +127,16 @@ protected:
         for (int i = 0; i < loops; i++) {
             switch (fVertexMode) {
                 case kNone_VertexMode:
-                    canvas->drawPatch(fCubics, nullptr, nullptr, SkBlendMode::kModulate, fPaint);
+                    canvas->drawPatch(fCubics, nullptr, nullptr, fPaint);
                     break;
                 case kColors_VertexMode:
-                    canvas->drawPatch(fCubics, fColors, nullptr, SkBlendMode::kModulate, fPaint);
+                    canvas->drawPatch(fCubics, fColors, nullptr, fPaint);
                     break;
                 case kTexCoords_VertexMode:
-                    canvas->drawPatch(fCubics, nullptr, fTexCoords, SkBlendMode::kModulate, fPaint);
+                    canvas->drawPatch(fCubics, nullptr, fTexCoords, fPaint);
                     break;
                 case kBoth_VertexMode:
-                    canvas->drawPatch(fCubics, fColors, fTexCoords, SkBlendMode::kModulate, fPaint);
+                    canvas->drawPatch(fCubics, fColors, fTexCoords, fPaint);
                     break;
                 default:
                     break;
@@ -154,7 +152,7 @@ protected:
     SkColor     fColors[4];
     VertexMode  fVertexMode;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 class SquarePatchBench : public PatchBench {
@@ -180,7 +178,7 @@ public:
         memcpy(fCubics, points, SkPatchUtils::kNumCtrlPts * sizeof(SkPoint));
     }
 private:
-    using INHERITED = PatchBench;
+    typedef PatchBench INHERITED;
 };
 
 class LODDiffPatchBench : public PatchBench {
@@ -206,7 +204,7 @@ public:
         memcpy(fCubics, points, SkPatchUtils::kNumCtrlPts * sizeof(SkPoint));
     }
 private:
-    using INHERITED = PatchBench;
+    typedef PatchBench INHERITED;
 };
 
 class LoopPatchBench : public PatchBench {
@@ -232,7 +230,7 @@ public:
         memcpy(fCubics, points, SkPatchUtils::kNumCtrlPts * sizeof(SkPoint));
     }
 private:
-    using INHERITED = PatchBench;
+    typedef PatchBench INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -324,40 +322,3 @@ DEF_BENCH( return new LoopPatchBench(SkVector::Make(3.0f, 3.0f),
                                         PatchBench::kTexCoords_VertexMode); )
 DEF_BENCH( return new LoopPatchBench(SkVector::Make(3.0f, 3.0f),
                                         PatchBench::kBoth_VertexMode); )
-
-//////////////////////////////////////////////
-#include "src/utils/SkPatchUtils.h"
-
-class PatchUtilsBench : public Benchmark {
-    SkString    fName;
-    const bool  fLinearInterp;
-public:
-    PatchUtilsBench(bool linearInterp) : fLinearInterp(linearInterp) {
-        fName.printf("patchutils_%s", linearInterp ? "linear" : "legacy");
-    }
-
-    const char* onGetName() override { return fName.c_str(); }
-
-    bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
-    }
-
-    void onDraw(int loops, SkCanvas*) override {
-        const SkColor colors[] = { 0xFF000000, 0xFF00FF00, 0xFF0000FF, 0xFFFF0000 };
-        const SkPoint pts[] = {
-            { 0, 0 }, { 10, 0 }, { 20, 0 }, { 30, 0 },
-            { 30,10}, { 30,20 }, { 30,30 }, { 20,30 },
-            { 10,30}, { 0, 30 }, { 0, 20 }, { 0, 10 },
-        };
-        const SkPoint tex[] = {
-            { 0, 0 }, { 10, 0 }, { 10, 10 }, { 0, 10 },
-        };
-
-        auto cs = fLinearInterp ? SkColorSpace::MakeSRGBLinear() : nullptr;
-        for (int i = 0; i < 100*loops; ++i) {
-            SkPatchUtils::MakeVertices(pts, colors, tex, 20, 20, cs.get());
-        }
-    }
-};
-DEF_BENCH( return new PatchUtilsBench(false); )
-DEF_BENCH( return new PatchUtilsBench(true); )

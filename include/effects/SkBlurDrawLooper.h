@@ -5,22 +5,84 @@
  * found in the LICENSE file.
  */
 
+
 #ifndef SkBlurDrawLooper_DEFINED
 #define SkBlurDrawLooper_DEFINED
 
-#include "include/core/SkDrawLooper.h"
+#include "SkDrawLooper.h"
+#include "SkColor.h"
 
-#ifndef SK_SUPPORT_LEGACY_DRAWLOOPER
-#error "SkDrawLooper is unsupported"
-#endif
+class SkMaskFilter;
+class SkColorFilter;
 
-/**
- *  DEPRECATED: No longer supported in Skia.
- */
-namespace SkBlurDrawLooper {
-    sk_sp<SkDrawLooper> SK_API Make(SkColor4f color, SkColorSpace* cs,
-            SkScalar sigma, SkScalar dx, SkScalar dy);
-    sk_sp<SkDrawLooper> SK_API Make(SkColor color, SkScalar sigma, SkScalar dx, SkScalar dy);
-}  // namespace SkBlurDrawLooper
+/** \class SkBlurDrawLooper
+    This class draws a shadow of the object (possibly offset), and then draws
+    the original object in its original position.
+    should there be an option to just draw the shadow/blur layer? webkit?
+*/
+class SK_API SkBlurDrawLooper : public SkDrawLooper {
+public:
+    enum BlurFlags {
+        kNone_BlurFlag = 0x00,
+        /**
+            The blur layer's dx/dy/radius aren't affected by the canvas
+            transform.
+        */
+        kIgnoreTransform_BlurFlag   = 0x01,
+        kOverrideColor_BlurFlag     = 0x02,
+        kHighQuality_BlurFlag       = 0x04,
+        /** mask for all blur flags */
+        kAll_BlurFlag               = 0x07
+    };
+
+    static sk_sp<SkDrawLooper> Make(SkColor color, SkScalar sigma, SkScalar dx, SkScalar dy,
+                                    uint32_t flags = kNone_BlurFlag) {
+        return sk_sp<SkDrawLooper>(new SkBlurDrawLooper(color, sigma, dx, dy, flags));
+    }
+
+    SkDrawLooper::Context* createContext(SkCanvas*, void* storage) const override;
+
+    size_t contextSize() const override { return sizeof(BlurDrawLooperContext); }
+
+    SK_TO_STRING_OVERRIDE()
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkBlurDrawLooper)
+
+protected:
+    SkBlurDrawLooper(SkColor color, SkScalar sigma, SkScalar dx, SkScalar dy,
+                     uint32_t flags);
+
+    void flatten(SkWriteBuffer&) const override;
+
+    bool asABlurShadow(BlurShadowRec*) const override;
+
+private:
+    sk_sp<SkMaskFilter>  fBlur;
+    sk_sp<SkColorFilter> fColorFilter;
+    SkScalar        fDx, fDy, fSigma;
+    SkColor         fBlurColor;
+    uint32_t        fBlurFlags;
+
+    enum State {
+        kBeforeEdge,
+        kAfterEdge,
+        kDone
+    };
+
+    class BlurDrawLooperContext : public SkDrawLooper::Context {
+    public:
+        explicit BlurDrawLooperContext(const SkBlurDrawLooper* looper);
+
+        bool next(SkCanvas* canvas, SkPaint* paint) override;
+
+    private:
+        const SkBlurDrawLooper* fLooper;
+        State fState;
+    };
+
+    void init(SkScalar sigma, SkScalar dx, SkScalar dy, SkColor color, uint32_t flags);
+    void initEffects();
+
+    typedef SkDrawLooper INHERITED;
+};
 
 #endif

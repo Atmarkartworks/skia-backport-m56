@@ -5,16 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRRect.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
+#include "gm.h"
+#include "SkCanvas.h"
+#include "SkRRect.h"
+#include "SkPath.h"
 
 class DRRectGM : public skiagm::GM {
 public:
@@ -59,8 +53,8 @@ protected:
         inners[4].setRectRadii(r, radii);
 
         canvas->translate(16, 16);
-        for (size_t j = 0; j < std::size(inners); ++j) {
-            for (size_t i = 0; i < std::size(outers); ++i) {
+        for (size_t j = 0; j < SK_ARRAY_COUNT(inners); ++j) {
+            for (size_t i = 0; i < SK_ARRAY_COUNT(outers); ++i) {
                 canvas->save();
                 canvas->translate(dx * j, dy * i);
                 canvas->drawDRRect(outers[i], inners[j], paint);
@@ -70,7 +64,7 @@ protected:
     }
 
 private:
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 DEF_GM( return new DRRectGM; )

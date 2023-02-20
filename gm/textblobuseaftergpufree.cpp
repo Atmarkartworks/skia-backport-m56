@@ -5,20 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
 
-#include <string.h>
+#if SK_SUPPORT_GPU
+
+#include "SkCanvas.h"
+#include "SkSurface.h"
+#include "SkTextBlob.h"
+#include "GrContext.h"
 
 // This tests that we correctly regenerate textblobs after freeing all gpu resources crbug/491350
 namespace skiagm {
@@ -36,35 +30,46 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        auto dContext = GrAsDirectContext(canvas->recordingContext());
+        // This GM exists to test a specific feature of the GPU backend.
+        if (nullptr == canvas->getGrContext()) {
+            skiagm::GM::DrawGpuOnlyMessage(canvas);
+            return;
+        }
 
         const char text[] = "Hamburgefons";
 
-        SkFont font(ToolUtils::create_portable_typeface(), 20);
-        auto blob = SkTextBlob::MakeFromText(text, strlen(text), font);
+        SkPaint paint;
+        sk_tool_utils::set_portable_typeface(&paint);
+        paint.setAntiAlias(true);
+        paint.setTextSize(20);
+
+        SkTextBlobBuilder builder;
+
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 10, 10);
+
+        sk_sp<SkTextBlob> blob(builder.make());
 
         // draw textblob
         SkRect rect = SkRect::MakeLTRB(0.f, 0.f, SkIntToScalar(kWidth), kHeight / 2.f);
         SkPaint rectPaint;
         rectPaint.setColor(0xffffffff);
         canvas->drawRect(rect, rectPaint);
-        canvas->drawTextBlob(blob, 20, 60, SkPaint());
+        canvas->drawTextBlob(blob, 10, 50, paint);
 
         // This text should look fine
-        if (dContext) {
-            dContext->freeGpuResources();
-        }
-        canvas->drawTextBlob(blob, 20, 160, SkPaint());
+        canvas->getGrContext()->freeGpuResources();
+        canvas->drawTextBlob(blob, 10, 150, paint);
     }
 
 private:
-    inline static constexpr int kWidth = 200;
-    inline static constexpr int kHeight = 200;
+    static constexpr int kWidth = 200;
+    static constexpr int kHeight = 200;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new TextBlobUseAfterGpuFree;)
-}  // namespace skiagm
+}
+#endif

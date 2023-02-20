@@ -5,20 +5,18 @@
 * found in the LICENSE file.
 */
 
-#include <memory>
+#include "Benchmark.h"
+#include "SkRandom.h"
+#include "SkSize.h"
+#include "SkTDArray.h"
 
-#include "bench/Benchmark.h"
-#include "include/core/SkSize.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkRandom.h"
+#if SK_SUPPORT_GPU
 
-#include "src/gpu/RectanizerPow2.h"
-#include "src/gpu/RectanizerSkyline.h"
-
-using namespace skgpu;
+#include "GrRectanizer_pow2.h"
+#include "GrRectanizer_skyline.h"
 
 /**
- * This bench exercises the GPU backend's Rectanizer classes. It exercises the following
+ * This bench exercises Ganesh' GrRectanizer classes. It exercises the following
  * rectanizers:
  *      Pow2 Rectanizer
  *      Skyline Rectanizer
@@ -29,8 +27,8 @@ using namespace skgpu;
  */
 class RectanizerBench : public Benchmark {
 public:
-    inline static constexpr int kWidth = 1024;
-    inline static constexpr int kHeight = 1024;
+    static const int kWidth = 1024;
+    static const int kHeight = 1024;
 
     enum RectanizerType {
         kPow2_RectanizerType,
@@ -78,10 +76,10 @@ protected:
         SkASSERT(nullptr == fRectanizer.get());
 
         if (kPow2_RectanizerType == fRectanizerType) {
-            fRectanizer = std::make_unique<RectanizerPow2>(kWidth, kHeight);
+            fRectanizer.reset(new GrRectanizerPow2(kWidth, kHeight));
         } else {
             SkASSERT(kSkyline_RectanizerType == fRectanizerType);
-            fRectanizer = std::make_unique<RectanizerSkyline>(kWidth, kHeight);
+            fRectanizer.reset(new GrRectanizerSkyline(kWidth, kHeight));
         }
     }
 
@@ -117,9 +115,9 @@ private:
     SkString                    fName;
     RectanizerType              fRectanizerType;
     RectType                    fRectType;
-    std::unique_ptr<Rectanizer> fRectanizer;
+    std::unique_ptr<GrRectanizer> fRectanizer;
 
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -136,3 +134,5 @@ DEF_BENCH(return new RectanizerBench(RectanizerBench::kSkyline_RectanizerType,
                                      RectanizerBench::kRandPow2_RectType);)
 DEF_BENCH(return new RectanizerBench(RectanizerBench::kSkyline_RectanizerType,
                                      RectanizerBench::kSmallPow2_RectType);)
+
+#endif

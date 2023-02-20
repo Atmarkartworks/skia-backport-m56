@@ -4,19 +4,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPath.h"
-#include "include/core/SkString.h"
-#include "include/private/base/SkFloatBits.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkRandom.h"
-#include "tests/PathOpsExtendedTest.h"
-#include "tests/PathOpsThreadedCommon.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
+#include "PathOpsExtendedTest.h"
+#include "PathOpsThreadedCommon.h"
 
 #define TEST(name) { name, #name }
 
@@ -143,8 +132,6 @@ path.close();
 testSimplify(reporter, path, filename);
 }
 
-static std::atomic<int> gTigerTests{0};
-
 static void tiger8a_x(skiatest::Reporter* reporter, uint64_t testlines) {
     SkPath path;
 uint64_t i = 0;
@@ -185,10 +172,10 @@ if (testlines & (1LL << i++)) path.lineTo(SkBits2Float(0x43f63638), SkBits2Float
 if (testlines & (1LL << i++)) path.lineTo(SkBits2Float(0x43f6b333), SkBits2Float(0x4360e666));  // 493.4f, 224.9f
 if (testlines & (1LL << i++)) path.lineTo(SkBits2Float(0x43f639c5), SkBits2Float(0x4361375a));  // 492.451f, 225.216f
 if (testlines & (1LL << i++)) path.close();
-SkString testName;
-testName.printf("tiger8a_x%d", ++gTigerTests);
-testSimplify(reporter, path, testName.c_str());
+testSimplify(reporter, path, "tiger");
 }
+
+#include "SkRandom.h"
 
 static void tiger8a_h_1(skiatest::Reporter* reporter, const char* ) {
     uint64_t testlines = 0x0000000000002008;  // best so far: 0x0000001d14c14bb1;
@@ -236,9 +223,7 @@ if (testlines & (1LL << i++)) path.lineTo(SkBits2Float(0x43f8e5e7), SkBits2Float
 if (testlines & (1LL << i++)) path.quadTo(SkBits2Float(0x43f84300), SkBits2Float(0x435b88fd), SkBits2Float(0x43f7b75b), SkBits2Float(0x435c5e8e));  // 496.523f, 219.535f, 495.432f, 220.369f
 if (testlines & (1LL << i++)) path.quadTo(SkBits2Float(0x43f6b984), SkBits2Float(0x435de2c4), SkBits2Float(0x43f72ca1), SkBits2Float(0x43609572));  // 493.449f, 221.886f, 494.349f, 224.584f
 if (testlines & (1LL << i++)) path.close();
-SkString testName;
-testName.printf("tiger8b_x%d", ++gTigerTests);
-testSimplify(reporter, path, testName.c_str());
+testSimplify(reporter, path, "tiger");
 }
 
 static void testTiger(PathOpsThreadState* data) {
@@ -267,7 +252,7 @@ static void tiger_threaded(skiatest::Reporter* reporter, const char* filename) {
                     testlines |= 1LL << bit;
                 }
                 *testRunner.fRunnables.append() =
-                        new PathOpsThreadedRunnable(&testTiger,
+                        new PathOpsThreadedRunnable(&testTiger, 
                                                     (int) (unsigned) (testlines & 0xFFFFFFFF),
                                                     (int) (unsigned) (testlines >> 32),
                                                     ab, 0, &testRunner);
@@ -328,9 +313,9 @@ testSimplify(reporter, path, filename);
 
 
 
-static void (*skipTest)(skiatest::Reporter* , const char* filename) = nullptr;
-static void (*firstTest)(skiatest::Reporter* , const char* filename) = nullptr;
-static void (*stopTest)(skiatest::Reporter* , const char* filename) = nullptr;
+static void (*skipTest)(skiatest::Reporter* , const char* filename) = 0;
+static void (*firstTest)(skiatest::Reporter* , const char* filename) = 0;
+static void (*stopTest)(skiatest::Reporter* , const char* filename) = 0;
 
 static TestDesc tests[] = {
     TEST(tiger8a_h_1),
@@ -341,7 +326,7 @@ static TestDesc tests[] = {
     TEST(tiger_threaded),
 };
 
-static const size_t testCount = std::size(tests);
+static const size_t testCount = SK_ARRAY_COUNT(tests);
 static bool runReverse = false;
 
 DEF_TEST(PathOpsTiger, reporter) {

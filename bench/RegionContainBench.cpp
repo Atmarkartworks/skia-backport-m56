@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "bench/Benchmark.h"
-#include "include/core/SkRegion.h"
-#include "include/core/SkString.h"
-#include "src/base/SkRandom.h"
+#include "Benchmark.h"
+#include "SkRandom.h"
+#include "SkRegion.h"
+#include "SkString.h"
 
 static bool sect_proc(SkRegion& a, SkRegion& b) {
     SkRegion result;
@@ -42,7 +42,7 @@ public:
             fA.op(randrect(rand, i), SkRegion::kXOR_Op);
         }
 
-        fB.setRect({0, 0, H, W});
+        fB.setRect(0, 0, H, W);
     }
 
     bool isSuitableFor(Backend backend) override {
@@ -61,7 +61,7 @@ protected:
     }
 
 private:
-    using INHERITED = Benchmark;
+    typedef Benchmark INHERITED;
 };
 
 DEF_BENCH(return new RegionContainBench(sect_proc, "sect");)

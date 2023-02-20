@@ -4,23 +4,14 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPath.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/core/SkGeometry.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsConic.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsQuad.h"
-#include "src/pathops/SkReduceOrder.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstddef>
-#include <utility>
+#include "PathOpsExtendedTest.h"
+#include "PathOpsTestCommon.h"
+#include "SkGeometry.h"
+#include "SkIntersections.h"
+#include "SkPathOpsConic.h"
+#include "SkPathOpsLine.h"
+#include "SkReduceOrder.h"
+#include "Test.h"
 
 static struct lineConic {
     ConicPts conic;
@@ -36,7 +27,7 @@ static struct lineConic {
     },
 };
 
-static size_t lineConicTests_count = std::size(lineConicTests);
+static size_t lineConicTests_count = SK_ARRAY_COUNT(lineConicTests);
 
 static int doIntersect(SkIntersections& intersections, const SkDConic& conic, const SkDLine& line,
                        bool& flipped) {
@@ -47,8 +38,7 @@ static int doIntersect(SkIntersections& intersections, const SkDConic& conic, co
         double bottom = line[1].fY;
         flipped = top > bottom;
         if (flipped) {
-            using std::swap;
-            swap(top, bottom);
+            SkTSwap<double>(top, bottom);
         }
         result = intersections.vertical(conic, top, bottom, line[0].fX, flipped);
     } else if (line[0].fY == line[1].fY) {
@@ -56,8 +46,7 @@ static int doIntersect(SkIntersections& intersections, const SkDConic& conic, co
         double right = line[1].fX;
         flipped = left > right;
         if (flipped) {
-            using std::swap;
-            swap(left, right);
+            SkTSwap<double>(left, right);
         }
         result = intersections.horizontal(conic, left, right, line[0].fY, flipped);
     } else {
@@ -75,7 +64,7 @@ static struct oneLineConic {
       {{{25.6499996,20.6499996}, {45.6500015,20.6499996}}}}
 };
 
-static size_t oneOffs_count = std::size(oneOffs);
+static size_t oneOffs_count = SK_ARRAY_COUNT(oneOffs);
 
 static void testOneOffs(skiatest::Reporter* reporter) {
     bool flipped = false;
@@ -95,6 +84,7 @@ static void testOneOffs(skiatest::Reporter* reporter) {
             SkDPoint lineXY = line.ptAtT(lineT);
             if (!conicXY.approximatelyEqual(lineXY)) {
                 conicXY.approximatelyEqual(lineXY);
+                SkDebugf("");
             }
             REPORTER_ASSERT(reporter, conicXY.approximatelyEqual(lineXY));
         }

@@ -4,22 +4,13 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkDocument.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkTypes.h"
-#include "include/docs/SkPDFDocument.h"
-#include "include/private/base/SkCPUTypes.h"
-#include "tests/Test.h"
+#include "SkCanvas.h"
+#include "SkDocument.h"
+#include "SkStream.h"
+#include "Test.h"
 
 static void run_test(SkWStream* out, SkBlendMode mode, U8CPU alpha) {
-    auto pdfDoc = SkPDF::MakeDocument(out);
+    sk_sp<SkDocument> pdfDoc(SkDocument::MakePDF(out));
     SkCanvas* c = pdfDoc->beginPage(612.0f, 792.0f);
     SkPaint black;
     SkPaint background;
@@ -42,7 +33,7 @@ DEF_TEST(SkPDF_OpaqueSrcModeToSrcOver, r) {
     U8CPU alpha = SK_AlphaOPAQUE;
     run_test(&srcMode, SkBlendMode::kSrc, alpha);
     run_test(&srcOverMode, SkBlendMode::kSrcOver, alpha);
-    REPORTER_ASSERT(r, srcMode.bytesWritten() == srcOverMode.bytesWritten());
+    REPORTER_ASSERT(r, srcMode.getOffset() == srcOverMode.getOffset());
     // The two PDFs should be equal because they have an opaque alpha.
 
     srcMode.reset();
@@ -51,6 +42,6 @@ DEF_TEST(SkPDF_OpaqueSrcModeToSrcOver, r) {
     alpha = 0x80;
     run_test(&srcMode, SkBlendMode::kSrc, alpha);
     run_test(&srcOverMode, SkBlendMode::kSrcOver, alpha);
-    REPORTER_ASSERT(r, srcMode.bytesWritten() > srcOverMode.bytesWritten());
+    REPORTER_ASSERT(r, srcMode.getOffset() > srcOverMode.getOffset());
     // The two PDFs should not be equal because they have a non-opaque alpha.
 }

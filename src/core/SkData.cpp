@@ -5,34 +5,29 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkData.h"
+#include "SkData.h"
+#include "SkOSFile.h"
+#include "SkOnce.h"
+#include "SkReadBuffer.h"
+#include "SkStream.h"
+#include "SkWriteBuffer.h"
 
-#include "include/core/SkStream.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkOnce.h"
-#include "src/core/SkOSFile.h"
-#include "src/core/SkStreamPriv.h"
-
-#include <cstring>
-#include <new>
-
-SkData::SkData(const void* ptr, size_t size, ReleaseProc proc, void* context)
-    : fReleaseProc(proc)
-    , fReleaseProcContext(context)
-    , fPtr(ptr)
-    , fSize(size)
-{}
+SkData::SkData(const void* ptr, size_t size, ReleaseProc proc, void* context) {
+    fPtr = const_cast<void*>(ptr);
+    fSize = size;
+    fReleaseProc = proc;
+    fReleaseProcContext = context;
+}
 
 /** This constructor means we are inline with our fPtr's contents.
  *  Thus we set fPtr to point right after this.
  */
-SkData::SkData(size_t size)
-    : fReleaseProc(nullptr)
-    , fReleaseProcContext(nullptr)
-    , fPtr((const char*)(this + 1))
-    , fSize(size)
-{}
+SkData::SkData(size_t size) {
+    fPtr = (char*)(this + 1);   // contents are immediately after this
+    fSize = size;
+    fReleaseProc = nullptr;
+    fReleaseProcContext = nullptr;
+}
 
 SkData::~SkData() {
     if (fReleaseProc) {
@@ -41,13 +36,11 @@ SkData::~SkData() {
 }
 
 bool SkData::equals(const SkData* other) const {
-    if (this == other) {
-        return true;
-    }
     if (nullptr == other) {
         return false;
     }
-    return fSize == other->fSize && !sk_careful_memcmp(fPtr, other->fPtr, fSize);
+
+    return fSize == other->fSize && !memcmp(fPtr, other->fPtr, fSize);
 }
 
 size_t SkData::copyRange(size_t offset, size_t length, void* buffer) const {
@@ -61,14 +54,8 @@ size_t SkData::copyRange(size_t offset, size_t length, void* buffer) const {
     }
     SkASSERT(length > 0);
 
-    if (buffer) {
-        memcpy(buffer, this->bytes() + offset, length);
-    }
+    memcpy(buffer, this->bytes() + offset, length);
     return length;
-}
-
-void SkData::operator delete(void* p) {
-    ::operator delete(p);
 }
 
 sk_sp<SkData> SkData::PrivateNewWithCopy(const void* srcOrNull, size_t length) {
@@ -77,7 +64,10 @@ sk_sp<SkData> SkData::PrivateNewWithCopy(const void* srcOrNull, size_t length) {
     }
 
     const size_t actualLength = length + sizeof(SkData);
-    SkASSERT_RELEASE(length < actualLength);  // Check for overflow.
+    if (actualLength < length) {
+        // we overflowed
+        sk_throw();
+    }
 
     void* storage = ::operator new (actualLength);
     sk_sp<SkData> data(new (storage) SkData(length));
@@ -87,7 +77,7 @@ sk_sp<SkData> SkData::PrivateNewWithCopy(const void* srcOrNull, size_t length) {
     return data;
 }
 
-void SkData::NoopReleaseProc(const void*, void*) {}
+void SkData::DummyReleaseProc(const void*, void*) {}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -115,14 +105,6 @@ sk_sp<SkData> SkData::MakeWithCopy(const void* src, size_t length) {
 
 sk_sp<SkData> SkData::MakeUninitialized(size_t length) {
     return PrivateNewWithCopy(nullptr, length);
-}
-
-sk_sp<SkData> SkData::MakeZeroInitialized(size_t length) {
-    auto data = MakeUninitialized(length);
-    if (length != 0) {
-        memset(data->writable_data(), 0, data->size());
-    }
-    return data;
 }
 
 sk_sp<SkData> SkData::MakeWithProc(const void* ptr, size_t length, ReleaseProc proc, void* ctx) {
@@ -161,7 +143,8 @@ sk_sp<SkData> SkData::MakeFromFD(int fd) {
     if (nullptr == addr) {
         return nullptr;
     }
-    return SkData::MakeWithProc(addr, size, sk_mmap_releaseproc, reinterpret_cast<void*>(size));
+
+    return SkData::MakeWithProc(addr, size, sk_mmap_releaseproc, nullptr);
 }
 
 // assumes context is a SkData
@@ -206,11 +189,6 @@ sk_sp<SkData> SkData::MakeWithCString(const char cstr[]) {
 ///////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkData> SkData::MakeFromStream(SkStream* stream, size_t size) {
-    // reduce the chance of OOM by checking that the stream has enough bytes to read from before
-    // allocating that potentially large buffer.
-    if (StreamRemainingLengthIsBelow(stream, size)) {
-        return nullptr;
-    }
     sk_sp<SkData> data(SkData::MakeUninitialized(size));
     if (stream->read(data->writable_data(), size) != size) {
         return nullptr;

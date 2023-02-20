@@ -8,29 +8,36 @@
 #ifndef SkRasterClip_DEFINED
 #define SkRasterClip_DEFINED
 
-#include "include/core/SkClipOp.h"
-#include "include/core/SkRegion.h"
-#include "include/core/SkShader.h"
-#include "include/private/base/SkMacros.h"
-#include "src/core/SkAAClip.h"
+#include "SkRegion.h"
+#include "SkAAClip.h"
 
 class SkRRect;
 
 /**
  *  Wraps a SkRegion and SkAAClip, so we have a single object that can represent either our
  *  BW or antialiased clips.
+ *
+ *  This class is optimized for the raster backend of canvas, but can be expense to keep up2date,
+ *  so it supports a runtime option (force-conservative-rects) to turn it into a super-fast
+ *  rect-only tracker. The gpu backend uses this since it does not need the result (it uses
+ *  SkClipStack instead).
  */
 class SkRasterClip {
 public:
-    SkRasterClip();
-    explicit SkRasterClip(const SkIRect&);
-    explicit SkRasterClip(const SkRegion&);
-    explicit SkRasterClip(const SkRasterClip&);
-    SkRasterClip(const SkPath& path, const SkIRect& bounds, bool doAA);
-
+    SkRasterClip(bool forceConservativeRects = false);
+    SkRasterClip(const SkIRect&, bool forceConservativeRects = false);
+    SkRasterClip(const SkRegion&);
+    SkRasterClip(const SkRasterClip&);
     ~SkRasterClip();
 
-    SkRasterClip& operator=(const SkRasterClip&);
+    // Only compares the current state. Does not compare isForceConservativeRects(), so that field
+    // could be different but this could still return true.
+    bool operator==(const SkRasterClip&) const;
+    bool operator!=(const SkRasterClip& other) const {
+        return !(*this == other);
+    }
+
+    bool isForceConservativeRects() const { return fForceConservativeRects; }
 
     bool isBW() const { return fIsBW; }
     bool isAA() const { return !fIsBW; }
@@ -47,27 +54,26 @@ public:
         return fIsRect;
     }
 
-    bool isComplex() const {
-        return fIsBW ? fBW.isComplex() : !fAA.isEmpty();
-    }
-    const SkIRect& getBounds() const {
-        return fIsBW ? fBW.getBounds() : fAA.getBounds();
-    }
+    bool isComplex() const;
+    const SkIRect& getBounds() const;
 
     bool setEmpty();
     bool setRect(const SkIRect&);
 
-    bool op(const SkIRect&, SkClipOp);
-    bool op(const SkRegion&, SkClipOp);
-    bool op(const SkRect&, const SkMatrix& matrix, SkClipOp, bool doAA);
-    bool op(const SkRRect&, const SkMatrix& matrix, SkClipOp, bool doAA);
-    bool op(const SkPath&, const SkMatrix& matrix, SkClipOp, bool doAA);
-    bool op(sk_sp<SkShader>);
+    bool op(const SkIRect&, SkRegion::Op);
+    bool op(const SkRegion&, SkRegion::Op);
+    bool op(const SkRect&, const SkMatrix& matrix, const SkIRect&, SkRegion::Op, bool doAA);
+    bool op(const SkRRect&, const SkMatrix& matrix, const SkIRect&, SkRegion::Op, bool doAA);
+    bool op(const SkPath&, const SkMatrix& matrix, const SkIRect&, SkRegion::Op, bool doAA);
 
     void translate(int dx, int dy, SkRasterClip* dst) const;
+    void translate(int dx, int dy) {
+        this->translate(dx, dy, this);
+    }
 
-    bool quickContains(const SkIRect& rect) const {
-        return fIsBW ? fBW.quickContains(rect) : fAA.quickContains(rect);
+    bool quickContains(const SkIRect& rect) const;
+    bool quickContains(int left, int top, int right, int bottom) const {
+        return quickContains(SkIRect::MakeLTRB(left, top, right, bottom));
     }
 
     /**
@@ -79,23 +85,23 @@ public:
         return !SkIRect::Intersects(this->getBounds(), rect);
     }
 
+    // hack for SkCanvas::getTotalClip
+    const SkRegion& forceGetBW();
+
 #ifdef SK_DEBUG
     void validate() const;
 #else
     void validate() const {}
 #endif
 
-    sk_sp<SkShader> clipShader() const { return fShader; }
-
 private:
     SkRegion    fBW;
     SkAAClip    fAA;
+    bool        fForceConservativeRects;
     bool        fIsBW;
     // these 2 are caches based on querying the right obj based on fIsBW
     bool        fIsEmpty;
     bool        fIsRect;
-    // if present, this augments the clip, not replaces it
-    sk_sp<SkShader> fShader;
 
     bool computeIsEmpty() const {
         return fIsBW ? fBW.isEmpty() : fAA.isEmpty();
@@ -111,7 +117,7 @@ private:
         // detect that our computed AA is really just a (hard-edged) rect
         if (detectAARect && !fIsEmpty && !fIsBW && fAA.isRect()) {
             fBW.setRect(fAA.getBounds());
-            fAA.setEmpty(); // don't need this anymore
+            fAA.setEmpty(); // don't need this guy anymore
             fIsBW = true;
         }
 
@@ -121,7 +127,10 @@ private:
 
     void convertToAA();
 
-    bool op(const SkRasterClip&, SkClipOp);
+    bool setPath(const SkPath& path, const SkRegion& clip, bool doAA);
+    bool setPath(const SkPath& path, const SkIRect& clip, bool doAA);
+    bool op(const SkRasterClip&, SkRegion::Op);
+    bool setConservativeRect(const SkRect& r, const SkIRect& clipR, bool isInverse);
 };
 
 class SkAutoRasterClipValidate : SkNoncopyable {
@@ -135,6 +144,7 @@ public:
 private:
     const SkRasterClip& fRC;
 };
+#define SkAutoRasterClipValidate(...) SK_REQUIRE_LOCAL_VAR(SkAutoRasterClipValidate)
 
 #ifdef SK_DEBUG
     #define AUTO_RASTERCLIP_VALIDATE(rc)    SkAutoRasterClipValidate arcv(rc)
@@ -150,7 +160,7 @@ private:
  *  not, they return the raw blitter and (bw) clip region.
  *
  *  We need to keep the constructor/destructor cost as small as possible, so we
- *  can freely put this on the stack, and not pay too much for the case when
+ *  can freely put this guy on the stack, and not pay too much for the case when
  *  we're really BW anyways.
  */
 class SkAAClipBlitterWrapper {

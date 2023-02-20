@@ -5,10 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTime.h"
-#include "include/private/base/SkTo.h"
-#include "tests/Test.h"
+#include "SkTime.h"
+#include "Test.h"
 
+// Sanity checks for the GetDateTime function.
 DEF_TEST(Time_GetDateTime, r) {
     SkTime::DateTime dateTime;
     SkTime::GetDateTime(&dateTime);

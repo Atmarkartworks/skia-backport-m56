@@ -12,46 +12,23 @@
  * have been selected to require 32 bits of precision and full IEEE conformance
  */
 
-#include "include/core/SkAlphaType.h"
-#include "include/core/SkColorSpace.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkString.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
-#include "include/private/base/SkTDArray.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkHalf.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrImageInfo.h"
-#include "src/gpu/ganesh/GrPixmap.h"
-#include "src/gpu/ganesh/GrSurfaceProxyView.h"
-#include "src/gpu/ganesh/SurfaceContext.h"
-#include "tests/CtsEnforcement.h"
-#include "tests/Test.h"
-#include "tools/gpu/ProxyUtils.h"
+#include <float.h>
+#include "Test.h"
 
-#include <cstring>
-#include <initializer_list>
-#include <memory>
-#include <utility>
-
-struct GrContextOptions;
+#if SK_SUPPORT_GPU
+#include "GrContext.h"
+#include "GrTexture.h"
+#include "SkHalf.h"
 
 static const int DEV_W = 100, DEV_H = 100;
+static const SkIRect DEV_RECT = SkIRect::MakeWH(DEV_W, DEV_H);
 
 template <typename T>
-void runFPTest(skiatest::Reporter* reporter, GrDirectContext* dContext,
-               T min, T max, T epsilon, T maxInt,
-               int arraySize, GrColorType colorType) {
-    if (0 != arraySize % 4) {
-        REPORT_FAILURE(reporter, "(0 != arraySize % 4)",
-                       SkString("arraySize must be divisible by 4."));
-        return;
-    }
-
+void runFPTest(skiatest::Reporter* reporter, GrContext* context,
+               T min, T max, T epsilon, T maxInt, int arraySize, GrPixelConfig config) {
     SkTDArray<T> controlPixelData, readBuffer;
-    controlPixelData.resize(arraySize);
-    readBuffer.resize(arraySize);
+    controlPixelData.setCount(arraySize);
+    readBuffer.setCount(arraySize);
 
     for (int i = 0; i < arraySize; i += 4) {
         controlPixelData[i + 0] = min;
@@ -60,52 +37,63 @@ void runFPTest(skiatest::Reporter* reporter, GrDirectContext* dContext,
         controlPixelData[i + 3] = maxInt;
     }
 
-    for (auto origin : {kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin}) {
-        GrImageInfo info(colorType, kPremul_SkAlphaType, nullptr, {DEV_W, DEV_H});
-        GrCPixmap controlPixmap(info, controlPixelData.begin(), info.minRowBytes());
-        auto fpView = sk_gpu_test::MakeTextureProxyViewFromData(dContext,
-                                                                GrRenderable::kYes,
-                                                                origin,
-                                                                controlPixmap);
+    for (int origin = 0; origin < 2; ++origin) {
+        GrSurfaceDesc desc;
+        desc.fFlags = kRenderTarget_GrSurfaceFlag;
+        desc.fWidth = DEV_W;
+        desc.fHeight = DEV_H;
+        desc.fConfig = config;
+        desc.fOrigin = 0 == origin ?
+            kTopLeft_GrSurfaceOrigin : kBottomLeft_GrSurfaceOrigin;
+        sk_sp<GrTexture> fpTexture(context->textureProvider()->createTexture(
+            desc, SkBudgeted::kNo, controlPixelData.begin(), 0));
         // Floating point textures are NOT supported everywhere
-        if (!fpView) {
+        if (nullptr == fpTexture) {
             continue;
         }
-
-        auto sc = dContext->priv().makeSC(std::move(fpView), info.colorInfo());
-        REPORTER_ASSERT(reporter, sc);
-
-        GrPixmap readPixmap(info, readBuffer.begin(), info.minRowBytes());
-        bool result = sc->readPixels(dContext, readPixmap, {0, 0});
-        REPORTER_ASSERT(reporter, result);
+        fpTexture->readPixels(0, 0, DEV_W, DEV_H, desc.fConfig, readBuffer.begin(), 0);
         REPORTER_ASSERT(reporter,
-            !memcmp(readBuffer.begin(), controlPixelData.begin(), readBuffer.size_bytes()));
+                        0 == memcmp(readBuffer.begin(), controlPixelData.begin(), readBuffer.bytes()));
     }
+}
+
+static const int FP_CONTROL_ARRAY_SIZE = DEV_W * DEV_H * 4/*RGBA*/;
+static const float kMaxIntegerRepresentableInSPFloatingPoint = 16777216;  // 2 ^ 24
+
+DEF_GPUTEST_FOR_RENDERING_CONTEXTS(FloatingPointTextureTest, reporter, ctxInfo) {
+    runFPTest<float>(reporter, ctxInfo.grContext(), FLT_MIN, FLT_MAX, FLT_EPSILON,
+                     kMaxIntegerRepresentableInSPFloatingPoint,
+                     FP_CONTROL_ARRAY_SIZE, kRGBA_float_GrPixelConfig);
 }
 
 static const int HALF_ALPHA_CONTROL_ARRAY_SIZE = DEV_W * DEV_H * 1 /*alpha-only*/;
 static const SkHalf kMaxIntegerRepresentableInHalfFloatingPoint = 0x6800;  // 2 ^ 11
 
-DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(HalfFloatAlphaTextureTest,
-                                       reporter,
-                                       ctxInfo,
-                                       CtsEnforcement::kApiLevel_T) {
-    auto direct = ctxInfo.directContext();
+// The half float tests currently fail on ES3 ANGLE.
+static bool is_rendering_and_not_angle_es3(sk_gpu_test::GrContextFactory::ContextType type) {
+    if (type == sk_gpu_test::GrContextFactory::kANGLE_D3D11_ES3_ContextType ||
+        type == sk_gpu_test::GrContextFactory::kANGLE_GL_ES3_ContextType) {
+        return false;
+    }
+    return sk_gpu_test::GrContextFactory::IsRenderingContext(type);
+}
 
-    runFPTest<SkHalf>(reporter, direct, SK_HalfMin, SK_HalfMax, SK_HalfEpsilon,
-                      kMaxIntegerRepresentableInHalfFloatingPoint, HALF_ALPHA_CONTROL_ARRAY_SIZE,
-                      GrColorType::kAlpha_F16);
+DEF_GPUTEST_FOR_CONTEXTS(HalfFloatAlphaTextureTest,
+                         &is_rendering_and_not_angle_es3,
+                         reporter, ctxInfo) {
+    runFPTest<SkHalf>(reporter, ctxInfo.grContext(), SK_HalfMin, SK_HalfMax, SK_HalfEpsilon,
+        kMaxIntegerRepresentableInHalfFloatingPoint,
+        HALF_ALPHA_CONTROL_ARRAY_SIZE, kAlpha_half_GrPixelConfig);
 }
 
 static const int HALF_RGBA_CONTROL_ARRAY_SIZE = DEV_W * DEV_H * 4 /*RGBA*/;
 
-DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(HalfFloatRGBATextureTest,
-                                       reporter,
-                                       ctxInfo,
-                                       CtsEnforcement::kApiLevel_T) {
-    auto direct = ctxInfo.directContext();
-
-    runFPTest<SkHalf>(reporter, direct, SK_HalfMin, SK_HalfMax, SK_HalfEpsilon,
-                      kMaxIntegerRepresentableInHalfFloatingPoint, HALF_RGBA_CONTROL_ARRAY_SIZE,
-                      GrColorType::kRGBA_F16);
+DEF_GPUTEST_FOR_CONTEXTS(HalfFloatRGBATextureTest,
+                         &is_rendering_and_not_angle_es3,
+                         reporter, ctxInfo) {
+    runFPTest<SkHalf>(reporter, ctxInfo.grContext(), SK_HalfMin, SK_HalfMax, SK_HalfEpsilon,
+        kMaxIntegerRepresentableInHalfFloatingPoint,
+        HALF_RGBA_CONTROL_ARRAY_SIZE, kRGBA_half_GrPixelConfig);
 }
+
+#endif

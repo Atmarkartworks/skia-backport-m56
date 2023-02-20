@@ -5,16 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkColorMatrix.h"
-#include "include/private/base/SkCPUTypes.h"
+#include "SkColorMatrixFilter.h"
 
-static SkScalar byte_to_unit_float(U8CPU byte) {
+static SkScalar byte_to_scale(U8CPU byte) {
     if (0xFF == byte) {
         // want to get this exact
         return 1;
@@ -23,21 +16,21 @@ static SkScalar byte_to_unit_float(U8CPU byte) {
     }
 }
 
-sk_sp<SkColorFilter> SkColorFilters::Lighting(SkColor mul, SkColor add) {
+sk_sp<SkColorFilter> SkColorMatrixFilter::MakeLightingFilter(SkColor mul, SkColor add) {
     const SkColor opaqueAlphaMask = SK_ColorBLACK;
     // omit the alpha and compare only the RGB values
     if (0 == (add & ~opaqueAlphaMask)) {
-        return SkColorFilters::Blend(mul | opaqueAlphaMask, SkBlendMode::kModulate);
+        return SkColorFilter::MakeModeFilter(mul | opaqueAlphaMask, SkBlendMode::kModulate);
     }
 
     SkColorMatrix matrix;
-    matrix.setScale(byte_to_unit_float(SkColorGetR(mul)),
-                    byte_to_unit_float(SkColorGetG(mul)),
-                    byte_to_unit_float(SkColorGetB(mul)),
+    matrix.setScale(byte_to_scale(SkColorGetR(mul)),
+                    byte_to_scale(SkColorGetG(mul)),
+                    byte_to_scale(SkColorGetB(mul)),
                     1);
-    matrix.postTranslate(byte_to_unit_float(SkColorGetR(add)),
-                         byte_to_unit_float(SkColorGetG(add)),
-                         byte_to_unit_float(SkColorGetB(add)),
+    matrix.postTranslate(SkIntToScalar(SkColorGetR(add)),
+                         SkIntToScalar(SkColorGetG(add)),
+                         SkIntToScalar(SkColorGetB(add)),
                          0);
-    return SkColorFilters::Matrix(matrix);
+    return SkColorFilter::MakeMatrixFilterRowMajor255(matrix.fMat);
 }

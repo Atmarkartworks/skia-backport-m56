@@ -9,13 +9,14 @@
 # ios_setup.sh: Sets environment variables used by other iOS scripts.
 
 # File system location where we mount the ios devices.
-if [[ -z "${IOS_MOUNT_POINT}" ]]; then
-  IOS_MOUNT_POINT="/tmp/mnt_iosdevice"
-fi
+IOS_MOUNT_POINT="/tmp/mnt_iosdevice"
 
 # Location on the ios device where all data are stored. This is
 # relative to the mount point.
 IOS_DOCS_DIR="Documents"
+
+# Temporary location to assemble the app into an .ipa package.
+IOS_PCKG_DIR="/tmp/ios_pckg"
 
 # Directory with the Skia source.
 SKIA_SRC_DIR=$(cd "${SCRIPT_DIR}/../../.."; pwd)
@@ -26,12 +27,51 @@ PROVISIONING_PROFILE=""
 # Code Signing identity - this needs to be set up on the local machine.
 CODE_SIGN_IDENTITY="iPhone Developer"
 
+IOS_BUNDLE_ID="com.google.iOSShell"
+
 IOS_RESULTS_DIR="results"
+
+# BUILDTYPE is 'Debug' by default.
+if [[ -z "$BUILDTYPE" ]]; then
+  BUILDTYPE="Debug"
+fi
+
+# Out dir is $SKIA_SRC_DIR/out by default. 
+if [[ -z "$SKIA_OUT" ]]; then 
+  SKIA_OUT="$SKIA_SRC_DIR/out"
+fi 
 
 # Location of XCode build products.
 if [[ -z "$XCODEBUILD" ]]; then
   XCODEBUILD="${SKIA_SRC_DIR}/xcodebuild"
 fi
+
+# Name of the iOS app.
+IOS_APP=iOSShell.ipa
+
+# Location of the compiled iOS code.
+IOS_OUT=${XCODEBUILD}/${BUILDTYPE}-iphoneos
+
+# Location of the compiled iOS app.
+IOS_APP_PATH=${IOS_OUT}/${IOS_APP}
+
+ios_uninstall_app() {
+  ideviceinstaller -U "$IOS_BUNDLE_ID"
+}
+
+ios_package_app() {
+  rm -rf $IOS_PCKG_DIR
+  mkdir -p $IOS_PCKG_DIR/Payload  # this directory must be named 'Payload'
+  cp -rf "${IOS_OUT}/iOSShell.app" "${IOS_PCKG_DIR}/Payload/"
+  pushd $IOS_PCKG_DIR
+  zip -r ${IOS_APP} Payload
+  cp ${IOS_APP} ${IOS_APP_PATH}
+  popd
+}
+
+ios_install_app() {
+  ideviceinstaller -i ${IOS_APP_PATH}
+}
 
 ios_rm() {
   local TARGET="$IOS_MOUNT_POINT/$IOS_DOCS_DIR/$1"
@@ -50,12 +90,10 @@ ios_mkdir() {
 
 ios_cat() {
   local TARGET="$IOS_MOUNT_POINT/$IOS_DOCS_DIR/$1"
-  >&2 echo "target: '${TARGET}''"
   ios_mount
-  RET="$( cat ${TARGET} )"
+  RET="$(cat $TARGET)"
   ios_umount
-  >&2 echo "Result: '${RET}'"
-  echo -e "${RET}"
+  echo -e "$RET"
 }
 
 # ios_mount: mounts the iOS device for reading or writing.
@@ -63,7 +101,7 @@ ios_mount() {
   # If this is already mounted we unmount it.
   if $(mount | grep --quiet "$IOS_MOUNT_POINT"); then
     >&2 echo "Device already mounted at: $IOS_MOUNT_POINT - Unmounting."
-    ios_umount || true
+    ios_umount || true   
   fi
 
   # Ensure there is a mount directory.
@@ -71,24 +109,19 @@ ios_mount() {
     mkdir -p $IOS_MOUNT_POINT
   fi
   ifuse --container $IOS_BUNDLE_ID $IOS_MOUNT_POINT
-
-  sleep 2
-  if [[ ! -d "${IOS_MOUNT_POINT}/${IOS_DOCS_DIR}" ]]; then
-    exit 1
-  fi
+  sleep 1
   >&2 echo "Successfully mounted device."
-  #find $IOS_MOUNT_POINT
 }
 
 # ios_umount: unmounts the ios device.
 ios_umount() {
-  sudo umount $IOS_MOUNT_POINT
+  umount $IOS_MOUNT_POINT
   sleep 1
 }
 
 # ios_restart: restarts the iOS device.
 ios_restart() {
-  ios_umount || true
+  ios_umount || true 
   idevicediagnostics restart
 }
 
@@ -101,7 +134,7 @@ ios_pull() {
 
   ios_mount
   if [[ -d "${HOST_DST}" ]]; then
-    cp -r "$IOS_SRC/." "$HOST_DST"
+    cp -r "$IOS_SRC/" "$HOST_DST"
   else
     cp -r "$IOS_SRC" "$HOST_DST"
   fi
@@ -117,7 +150,7 @@ ios_push() {
   ios_mount
   rm -rf $IOS_DST
   mkdir -p "$(dirname $IOS_DST)"
-  cp -r -L "$HOST_SRC" "$IOS_DST"
+  cp -r "$HOST_SRC" "$IOS_DST"
   ios_umount
 }
 

@@ -5,85 +5,76 @@
  * found in the LICENSE file.
  */
 
-#include "src/sksl/SkSLUtil.h"
-
-#include "src/core/SkSLTypeShared.h"
-#include "src/sksl/SkSLBuiltinTypes.h"
-#include "src/sksl/SkSLContext.h"
-#include "src/sksl/SkSLOutputStream.h"
-#include "src/sksl/SkSLStringStream.h"
-#include "src/sksl/ir/SkSLType.h"
-
-#include <string>
+#include "SkSLUtil.h"
 
 namespace SkSL {
 
-// TODO: Once Graphite has its own GPU-caps system, SK_GRAPHITE_ENABLED should get its own mode.
-// At the moment, it either mimics what GrShaderCaps reports, or it uses these hard-coded values
-// depending on the build.
-#if defined(SKSL_STANDALONE) || !SK_SUPPORT_GPU
-std::unique_ptr<ShaderCaps> ShaderCapsFactory::MakeShaderCaps() {
-    std::unique_ptr<ShaderCaps> standalone = std::make_unique<ShaderCaps>();
-    standalone->fShaderDerivativeSupport = true;
-    standalone->fExplicitTextureLodSupport = true;
-    standalone->fFlatInterpolationSupport = true;
-    standalone->fNoPerspectiveInterpolationSupport = true;
-    standalone->fSampleMaskSupport = true;
-    standalone->fExternalTextureSupport = true;
-    return standalone;
+std::string to_string(double value) {
+    std::stringstream buffer;
+    buffer << std::setprecision(std::numeric_limits<double>::digits10) << value;
+    std::string result = buffer.str();
+    if (result.find_last_of(".") == std::string::npos && 
+        result.find_last_of("e") == std::string::npos) {
+        result += ".0";
+    }
+    return result;
 }
+
+std::string to_string(int32_t value) {
+    std::stringstream buffer;
+    buffer << value;
+    return buffer.str();
+}
+
+std::string to_string(uint32_t value) {
+    std::stringstream buffer;
+    buffer << value;
+    return buffer.str();
+}
+
+std::string to_string(int64_t value) {
+    std::stringstream buffer;
+    buffer << value;
+    return buffer.str();
+}
+
+std::string to_string(uint64_t value) {
+    std::stringstream buffer;
+    buffer << value;
+    return buffer.str();
+}
+
+int stoi(std::string s) {
+    if (s.size() > 2 && s[0] == '0' && s[1] == 'x') {
+        char* p;
+        int result = strtoul(s.substr(2).c_str(), &p, 16);
+        ASSERT(*p == 0);
+        return result;
+    }
+    return atoi(s.c_str());
+}
+
+double stod(std::string s) {
+    return atof(s.c_str());
+}
+
+long stol(std::string s) {
+    if (s.size() > 2 && s[0] == '0' && s[1] == 'x') {
+        char* p;
+        long result = strtoul(s.substr(2).c_str(), &p, 16);
+        ASSERT(*p == 0);
+        return result;
+    }
+    return atol(s.c_str());
+}
+
+void sksl_abort() {
+#ifdef SKIA
+    sk_abort_no_print();
+    exit(1);
 #else
-std::unique_ptr<ShaderCaps> ShaderCapsFactory::MakeShaderCaps() {
-    return std::make_unique<ShaderCaps>();
-}
-#endif  // defined(SKSL_STANDALONE) || !SK_SUPPORT_GPU
-
-void write_stringstream(const StringStream& s, OutputStream& out) {
-    out.write(s.str().c_str(), s.str().size());
-}
-
-#if !defined(SKSL_STANDALONE) && (SK_SUPPORT_GPU || SK_SUPPORT_GRAPHITE)
-bool type_to_sksltype(const Context& context, const Type& type, SkSLType* outType) {
-    // If a new GrSL type is added, this function will need to be updated.
-    static_assert(kSkSLTypeCount == 41);
-
-    if (type.matches(*context.fTypes.fVoid    )) { *outType = SkSLType::kVoid;     return true; }
-    if (type.matches(*context.fTypes.fBool    )) { *outType = SkSLType::kBool;     return true; }
-    if (type.matches(*context.fTypes.fBool2   )) { *outType = SkSLType::kBool2;    return true; }
-    if (type.matches(*context.fTypes.fBool3   )) { *outType = SkSLType::kBool3;    return true; }
-    if (type.matches(*context.fTypes.fBool4   )) { *outType = SkSLType::kBool4;    return true; }
-    if (type.matches(*context.fTypes.fShort   )) { *outType = SkSLType::kShort;    return true; }
-    if (type.matches(*context.fTypes.fShort2  )) { *outType = SkSLType::kShort2;   return true; }
-    if (type.matches(*context.fTypes.fShort3  )) { *outType = SkSLType::kShort3;   return true; }
-    if (type.matches(*context.fTypes.fShort4  )) { *outType = SkSLType::kShort4;   return true; }
-    if (type.matches(*context.fTypes.fUShort  )) { *outType = SkSLType::kUShort;   return true; }
-    if (type.matches(*context.fTypes.fUShort2 )) { *outType = SkSLType::kUShort2;  return true; }
-    if (type.matches(*context.fTypes.fUShort3 )) { *outType = SkSLType::kUShort3;  return true; }
-    if (type.matches(*context.fTypes.fUShort4 )) { *outType = SkSLType::kUShort4;  return true; }
-    if (type.matches(*context.fTypes.fFloat   )) { *outType = SkSLType::kFloat;    return true; }
-    if (type.matches(*context.fTypes.fFloat2  )) { *outType = SkSLType::kFloat2;   return true; }
-    if (type.matches(*context.fTypes.fFloat3  )) { *outType = SkSLType::kFloat3;   return true; }
-    if (type.matches(*context.fTypes.fFloat4  )) { *outType = SkSLType::kFloat4;   return true; }
-    if (type.matches(*context.fTypes.fFloat2x2)) { *outType = SkSLType::kFloat2x2; return true; }
-    if (type.matches(*context.fTypes.fFloat3x3)) { *outType = SkSLType::kFloat3x3; return true; }
-    if (type.matches(*context.fTypes.fFloat4x4)) { *outType = SkSLType::kFloat4x4; return true; }
-    if (type.matches(*context.fTypes.fHalf    )) { *outType = SkSLType::kHalf;     return true; }
-    if (type.matches(*context.fTypes.fHalf2   )) { *outType = SkSLType::kHalf2;    return true; }
-    if (type.matches(*context.fTypes.fHalf3   )) { *outType = SkSLType::kHalf3;    return true; }
-    if (type.matches(*context.fTypes.fHalf4   )) { *outType = SkSLType::kHalf4;    return true; }
-    if (type.matches(*context.fTypes.fHalf2x2 )) { *outType = SkSLType::kHalf2x2;  return true; }
-    if (type.matches(*context.fTypes.fHalf3x3 )) { *outType = SkSLType::kHalf3x3;  return true; }
-    if (type.matches(*context.fTypes.fHalf4x4 )) { *outType = SkSLType::kHalf4x4;  return true; }
-    if (type.matches(*context.fTypes.fInt     )) { *outType = SkSLType::kInt;      return true; }
-    if (type.matches(*context.fTypes.fInt2    )) { *outType = SkSLType::kInt2;     return true; }
-    if (type.matches(*context.fTypes.fInt3    )) { *outType = SkSLType::kInt3;     return true; }
-    if (type.matches(*context.fTypes.fInt4    )) { *outType = SkSLType::kInt4;     return true; }
-    if (type.matches(*context.fTypes.fUInt    )) { *outType = SkSLType::kUInt;     return true; }
-    if (type.matches(*context.fTypes.fUInt2   )) { *outType = SkSLType::kUInt2;    return true; }
-    if (type.matches(*context.fTypes.fUInt3   )) { *outType = SkSLType::kUInt3;    return true; }
-    if (type.matches(*context.fTypes.fUInt4   )) { *outType = SkSLType::kUInt4;    return true; }
-    return false;
-}
+    abort();
 #endif
+}
 
-}  // namespace SkSL
+} // namespace

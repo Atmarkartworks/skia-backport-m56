@@ -4,19 +4,13 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsLine.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathOpsQuad.h"
-#include "src/pathops/SkReduceOrder.h"
-#include "tests/PathOpsTestCommon.h"
-#include "tests/Test.h"
-
-#include <array>
-#include <cstddef>
-#include <utility>
+#include "PathOpsExtendedTest.h"
+#include "PathOpsTestCommon.h"
+#include "SkIntersections.h"
+#include "SkPathOpsLine.h"
+#include "SkPathOpsQuad.h"
+#include "SkReduceOrder.h"
+#include "Test.h"
 
 static struct lineQuad {
     QuadPts quad;
@@ -32,7 +26,7 @@ static struct lineQuad {
     {{{{0, 0}, {0, 1}, {1, 1}}}, {{{0, 1}, {1, 0}}},  1,  {{.25, .75}, {0, 0}} },
 };
 
-static size_t lineQuadTests_count = std::size(lineQuadTests);
+static size_t lineQuadTests_count = SK_ARRAY_COUNT(lineQuadTests);
 
 static int doIntersect(SkIntersections& intersections, const SkDQuad& quad, const SkDLine& line,
                        bool& flipped) {
@@ -43,8 +37,7 @@ static int doIntersect(SkIntersections& intersections, const SkDQuad& quad, cons
         double bottom = line[1].fY;
         flipped = top > bottom;
         if (flipped) {
-            using std::swap;
-            swap(top, bottom);
+            SkTSwap<double>(top, bottom);
         }
         result = intersections.vertical(quad, top, bottom, line[0].fX, flipped);
     } else if (line[0].fY == line[1].fY) {
@@ -52,8 +45,7 @@ static int doIntersect(SkIntersections& intersections, const SkDQuad& quad, cons
         double right = line[1].fX;
         flipped = left > right;
         if (flipped) {
-            using std::swap;
-            swap(left, right);
+            SkTSwap<double>(left, right);
         }
         result = intersections.horizontal(quad, left, right, line[0].fY, flipped);
     } else {
@@ -82,7 +74,7 @@ static struct oneLineQuad {
         {{{406.207703, 121.298294}, {348.781738, 123.864815}}}},
 };
 
-static size_t oneOffs_count = std::size(oneOffs);
+static size_t oneOffs_count = SK_ARRAY_COUNT(oneOffs);
 
 static void testOneOffs(skiatest::Reporter* reporter) {
     bool flipped = false;
@@ -102,6 +94,7 @@ static void testOneOffs(skiatest::Reporter* reporter) {
             SkDPoint lineXY = line.ptAtT(lineT);
             if (!quadXY.approximatelyEqual(lineXY)) {
                 quadXY.approximatelyEqual(lineXY);
+                SkDebugf("");
             }
             REPORTER_ASSERT(reporter, quadXY.approximatelyEqual(lineXY));
         }

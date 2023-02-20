@@ -5,23 +5,10 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkBlendMode.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTextBlob.h"
-#include "include/core/SkTypeface.h"
-#include "tools/ToolUtils.h"
+#include "gm.h"
 
-#include <string.h>
+#include "SkCanvas.h"
+#include "SkTextBlob.h"
 
 namespace skiagm {
 class TextBlobBlockReordering : public GM {
@@ -36,15 +23,16 @@ protected:
 
         // make textblob
         // Large text is used to trigger atlas eviction
-        SkFont font(ToolUtils::create_portable_typeface(), 56);
-        font.setEdging(SkFont::Edging::kAlias);
+        SkPaint paint;
+        paint.setTextSize(56);
         const char* text = "AB";
+        sk_tool_utils::set_portable_typeface(&paint);
 
         SkRect bounds;
-        font.measureText(text, strlen(text), SkTextEncoding::kUTF8, &bounds);
+        paint.measureText(text, strlen(text), &bounds);
 
         SkScalar yOffset = bounds.height();
-        ToolUtils::add_to_text_blob(&builder, text, font, 0, yOffset - 30);
+        sk_tool_utils::add_to_text_blob(&builder, text, paint, 0, yOffset - 30);
 
         // build
         fBlob = builder.make();
@@ -58,11 +46,11 @@ protected:
         return SkISize::Make(kWidth, kHeight);
     }
 
-    // This draws the same text blob 3 times.  The second draw used a different xfer mode so its
-    // GrDrawOp doesn't get combined with the first and third. Ultimately, they will be flushed in
-    // the order first, third, and then second.
+    // This draws the same text blob 3 times.  The second draw used a different
+    // xfer mode so it doens't get batched with the first and third.
+    // ultimately thye iwll be flushed in the order first, third, and then second
     void onDraw(SkCanvas* canvas) override {
-        canvas->drawColor(SK_ColorGRAY);
+        canvas->drawColor(sk_tool_utils::color_to_565(SK_ColorGRAY));
 
         SkPaint paint;
         canvas->translate(10, 40);
@@ -75,7 +63,8 @@ protected:
 
         canvas->translate(SkIntToScalar(xDelta), SkIntToScalar(yDelta));
 
-        // Draw a rect where the text should be, and then twiddle the xfermode so we don't combine.
+	// draw a rect where the text should be, and then twiddle the xfermode
+        // so we don't batch
         SkPaint redPaint;
         redPaint.setColor(SK_ColorRED);
         canvas->drawRect(bounds, redPaint);
@@ -90,13 +79,13 @@ protected:
 private:
     sk_sp<SkTextBlob> fBlob;
 
-    inline static constexpr int kWidth = 275;
-    inline static constexpr int kHeight = 200;
+    static constexpr int kWidth = 275;
+    static constexpr int kHeight = 200;
 
-    using INHERITED = GM;
+    typedef GM INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 DEF_GM(return new TextBlobBlockReordering;)
-}  // namespace skiagm
+}

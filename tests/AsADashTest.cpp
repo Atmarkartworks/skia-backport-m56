@@ -5,15 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPathEffect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/effects/SkCornerPathEffect.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "include/private/base/SkTemplates.h"
-#include "tests/Test.h"
+#include "Test.h"
 
-using namespace skia_private;
+#include "SkPathEffect.h"
+#include "SkDashPathEffect.h"
+#include "SkCornerPathEffect.h"
 
 DEF_TEST(AsADashTest_noneDash, reporter) {
     sk_sp<SkPathEffect> pe(SkCornerPathEffect::Make(1.0));
@@ -47,7 +43,7 @@ DEF_TEST(AsADashTest_usingDash, reporter) {
     REPORTER_ASSERT(reporter, SkScalarMod(phase, totalIntSum) == info.fPhase);
 
     // Since it is a kDash_DashType, allocate space for the intervals and recall asADash
-    AutoTArray<SkScalar> intervals(info.fCount);
+    SkAutoTArray<SkScalar> intervals(info.fCount);
     info.fIntervals = intervals.get();
     pe->asADash(&info);
     REPORTER_ASSERT(reporter, inIntervals[0] == info.fIntervals[0]);

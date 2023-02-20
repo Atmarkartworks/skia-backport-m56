@@ -8,10 +8,10 @@
 #ifndef SkRemotableFontMgr_DEFINED
 #define SkRemotableFontMgr_DEFINED
 
-#include "include/core/SkFontStyle.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkTemplates.h"
+#include "../private/SkTemplates.h"
+#include "SkFontStyle.h"
+#include "SkRefCnt.h"
+#include "SkTypes.h"
 
 class SkDataTable;
 class SkStreamAsset;
@@ -48,13 +48,22 @@ private:
     friend SkRemotableFontIdentitySet* sk_remotable_font_identity_set_new();
 
     int fCount;
-    skia_private::AutoTArray<SkFontIdentity> fData;
+    SkAutoTMalloc<SkFontIdentity> fData;
 
-    using INHERITED = SkRefCnt;
+    typedef SkRefCnt INHERITED;
 };
 
 class SK_API SkRemotableFontMgr : public SkRefCnt {
 public:
+    /**
+     *  Returns the names of the known fonts on the system.
+     *  Will not return NULL, will return an empty table if no families exist.
+     *
+     *  The indexes may be used with getIndex(int) and
+     *  matchIndexStyle(int, SkFontStyle).
+     */
+    virtual sk_sp<SkDataTable> getFamilyNames() const = 0;
+
     /**
      *  Returns all of the fonts with the given familyIndex.
      *  Returns NULL if the index is out of bounds.
@@ -133,7 +142,7 @@ public:
     virtual SkStreamAsset* getData(int dataId) const = 0;
 
 private:
-    using INHERITED = SkRefCnt;
+    typedef SkRefCnt INHERITED;
 };
 
 #endif

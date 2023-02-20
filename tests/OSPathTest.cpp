@@ -5,13 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkString.h"
-#include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "src/utils/SkOSPath.h"
-#include "tests/Test.h"
-
-#include <cstddef>
+#include "SkOSPath.h"
+#include "SkString.h"
+#include "Test.h"
 
 /**
  *  Test SkOSPath::Join, SkOSPath::Basename, and SkOSPath::Dirname.

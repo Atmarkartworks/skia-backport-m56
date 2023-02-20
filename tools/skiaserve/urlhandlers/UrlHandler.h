@@ -4,10 +4,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#ifndef UrlHandler_DEFINED
-#define UrlHandler_DEFINED
 
-#include "include/core/SkColor.h"
+#include "SkColor.h"
 
 struct MHD_Connection;
 struct Request;
@@ -114,9 +112,9 @@ public:
 };
 
 /*
- * Returns a json descripton of all the GPU ops in the image
+ * Returns a json descripton of all the batches in the image
  */
-class OpsHandler : public UrlHandler {
+class BatchesHandler : public UrlHandler {
 public:
     bool canHandle(const char* method, const char* url) override;
     int handle(Request* request, MHD_Connection* connection,
@@ -125,9 +123,9 @@ public:
 };
 
 /*
- * Enables drawing of gpu op bounds
+ * Enables drawing of batch bounds
  */
-class OpBoundsHandler : public UrlHandler {
+class BatchBoundsHandler : public UrlHandler {
 public:
     bool canHandle(const char* method, const char* url) override;
     int handle(Request* request, MHD_Connection* connection,
@@ -164,4 +162,3 @@ public:
                const char* upload_data, size_t* upload_data_size) override;
 };
 
-#endif  // UrlHandler_DEFINED

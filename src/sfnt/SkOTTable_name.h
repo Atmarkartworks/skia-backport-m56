@@ -8,9 +8,9 @@
 #ifndef SkOTTable_name_DEFINED
 #define SkOTTable_name_DEFINED
 
-#include "include/core/SkString.h"
-#include "src/core/SkEndian.h"
-#include "src/sfnt/SkOTTableTypes.h"
+#include "SkEndian.h"
+#include "SkOTTableTypes.h"
+#include "SkString.h"
 
 #pragma pack(push, 1)
 
@@ -540,13 +540,12 @@ struct SkOTTableName {
 
     class Iterator {
     public:
-        Iterator(const uint8_t* nameTable, size_t size)
-            : fNameTable(nameTable), fNameTableSize(size), fIndex(0), fType(-1) { }
-        Iterator(const uint8_t* nameTable, size_t size, SK_OT_USHORT type)
-            : fNameTable(nameTable), fNameTableSize(size), fIndex(0), fType(type)
+        Iterator(const SkOTTableName& name) : fName(name), fIndex(0), fType(-1) { }
+        Iterator(const SkOTTableName& name, SkOTTableName::Record::NameID::Predefined::Value type)
+            : fName(name), fIndex(0), fType(type)
         { }
 
-        void reset(SK_OT_USHORT type) {
+        void reset(SkOTTableName::Record::NameID::Predefined::Value type) {
             fIndex = 0;
             fType = type;
         }
@@ -559,8 +558,7 @@ struct SkOTTableName {
         bool next(Record&);
 
     private:
-        const uint8_t* fNameTable;
-        const size_t fNameTableSize;
+        const SkOTTableName& fName;
         size_t fIndex;
         int fType;
     };

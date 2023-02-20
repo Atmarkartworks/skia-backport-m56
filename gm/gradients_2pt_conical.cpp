@@ -5,21 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
-#include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkPoint.h"
-#include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkSize.h"
-#include "include/core/SkString.h"
-#include "include/core/SkTileMode.h"
-#include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "gm.h"
+#include "SkGradientShader.h"
 
 namespace skiagm {
 
@@ -51,7 +38,7 @@ constexpr GradData gGradData[] = {
 };
 
 static sk_sp<SkShader> Make2ConicalOutside(const SkPoint pts[2], const GradData& data,
-                                           SkTileMode tm, const SkMatrix& localMatrix) {
+                                           SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = (pts[1].fX - pts[0].fX) / 10;
     SkScalar radius1 = (pts[1].fX - pts[0].fX) / 3;
@@ -61,18 +48,8 @@ static sk_sp<SkShader> Make2ConicalOutside(const SkPoint pts[2], const GradData&
                                                  data.fPos, data.fCount, tm, 0, &localMatrix);
 }
 
-static sk_sp<SkShader> Make2ConicalOutsideStrip(const SkPoint pts[2], const GradData& data,
-                                                SkTileMode tm, const SkMatrix& localMatrix) {
-    SkPoint center0, center1;
-    SkScalar radius = (pts[1].fX - pts[0].fX) / 3;
-    center0.set(pts[0].fX, pts[0].fY);
-    center1.set(pts[1].fX, pts[1].fY);
-    return SkGradientShader::MakeTwoPointConical(center0, radius, center1, radius, data.fColors,
-                                                 data.fPos, data.fCount, tm, 0, &localMatrix);
-}
-
 static sk_sp<SkShader> Make2ConicalOutsideFlip(const SkPoint pts[2], const GradData& data,
-                             SkTileMode tm, const SkMatrix& localMatrix) {
+                             SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = (pts[1].fX - pts[0].fX) / 10;
     SkScalar radius1 = (pts[1].fX - pts[0].fX) / 3;
@@ -83,7 +60,7 @@ static sk_sp<SkShader> Make2ConicalOutsideFlip(const SkPoint pts[2], const GradD
 }
 
 static sk_sp<SkShader> Make2ConicalInside(const SkPoint pts[2], const GradData& data,
-                                          SkTileMode tm, const SkMatrix& localMatrix) {
+                                          SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
                 SkScalarAve(pts[0].fY, pts[1].fY));
@@ -96,7 +73,7 @@ static sk_sp<SkShader> Make2ConicalInside(const SkPoint pts[2], const GradData& 
 }
 
 static sk_sp<SkShader> Make2ConicalInsideFlip(const SkPoint pts[2], const GradData& data,
-                                              SkTileMode tm, const SkMatrix& localMatrix) {
+                                              SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
                 SkScalarAve(pts[0].fY, pts[1].fY));
@@ -109,29 +86,20 @@ static sk_sp<SkShader> Make2ConicalInsideFlip(const SkPoint pts[2], const GradDa
 }
 
 static sk_sp<SkShader> Make2ConicalInsideCenter(const SkPoint pts[2], const GradData& data,
-                             SkTileMode tm, const SkMatrix& localMatrix) {
-    SkPoint center0;
+                             SkShader::TileMode tm, const SkMatrix& localMatrix) {
+    SkPoint center0, center1;
     center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
                 SkScalarAve(pts[0].fY, pts[1].fY));
+    center1.set(SkScalarInterp(pts[0].fX, pts[1].fX, SkIntToScalar(3)/5),
+                SkScalarInterp(pts[0].fY, pts[1].fY, SkIntToScalar(1)/4));
     return SkGradientShader::MakeTwoPointConical(center0, (pts[1].fX - pts[0].fX) / 7,
                                                  center0, (pts[1].fX - pts[0].fX) / 2,
                                                  data.fColors, data.fPos, data.fCount, tm,
                                                  0, &localMatrix);
 }
 
-static sk_sp<SkShader> Make2ConicalInsideCenterReversed(const SkPoint pts[2], const GradData& data,
-                             SkTileMode tm, const SkMatrix& localMatrix) {
-    SkPoint center0;
-    center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
-                SkScalarAve(pts[0].fY, pts[1].fY));
-    return SkGradientShader::MakeTwoPointConical(center0, (pts[1].fX - pts[0].fX) / 2,
-                                                 center0, (pts[1].fX - pts[0].fX) / 7,
-                                                 data.fColors, data.fPos, data.fCount, tm,
-                                                 0, &localMatrix);
-}
-
 static sk_sp<SkShader> Make2ConicalZeroRad(const SkPoint pts[2], const GradData& data,
-                                           SkTileMode tm, const SkMatrix& localMatrix) {
+                                           SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
                 SkScalarAve(pts[0].fY, pts[1].fY));
@@ -144,7 +112,7 @@ static sk_sp<SkShader> Make2ConicalZeroRad(const SkPoint pts[2], const GradData&
 }
 
 static sk_sp<SkShader> Make2ConicalZeroRadFlip(const SkPoint pts[2], const GradData& data,
-                                               SkTileMode tm, const SkMatrix& localMatrix) {
+                                               SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
                 SkScalarAve(pts[0].fY, pts[1].fY));
@@ -157,7 +125,7 @@ static sk_sp<SkShader> Make2ConicalZeroRadFlip(const SkPoint pts[2], const GradD
 }
 
 static sk_sp<SkShader> Make2ConicalZeroRadCenter(const SkPoint pts[2], const GradData& data,
-                             SkTileMode tm, const SkMatrix& localMatrix) {
+                             SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
                 SkScalarAve(pts[0].fY, pts[1].fY));
@@ -169,7 +137,7 @@ static sk_sp<SkShader> Make2ConicalZeroRadCenter(const SkPoint pts[2], const Gra
 }
 
 static sk_sp<SkShader> Make2ConicalZeroRadOutside(const SkPoint pts[2], const GradData& data,
-                                                  SkTileMode tm,
+                                                  SkShader::TileMode tm,
                                                   const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = 0.f;
@@ -182,7 +150,7 @@ static sk_sp<SkShader> Make2ConicalZeroRadOutside(const SkPoint pts[2], const Gr
 }
 
 static sk_sp<SkShader> Make2ConicalZeroRadFlipOutside(const SkPoint pts[2], const GradData& data,
-                                                      SkTileMode tm,
+                                                      SkShader::TileMode tm,
                                                       const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = 0.f;
@@ -194,7 +162,7 @@ static sk_sp<SkShader> Make2ConicalZeroRadFlipOutside(const SkPoint pts[2], cons
 }
 
 static sk_sp<SkShader> Make2ConicalEdgeX(const SkPoint pts[2], const GradData& data,
-                                         SkTileMode tm, const SkMatrix& localMatrix) {
+                                         SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = (pts[1].fX - pts[0].fX) / 7;
     SkScalar radius1 = (pts[1].fX - pts[0].fX) / 3;
@@ -206,7 +174,7 @@ static sk_sp<SkShader> Make2ConicalEdgeX(const SkPoint pts[2], const GradData& d
 }
 
 static sk_sp<SkShader> Make2ConicalEdgeY(const SkPoint pts[2], const GradData& data,
-                                         SkTileMode tm, const SkMatrix& localMatrix) {
+                                         SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = (pts[1].fX - pts[0].fX) / 7;
     SkScalar radius1 = (pts[1].fX - pts[0].fX) / 3;
@@ -218,7 +186,7 @@ static sk_sp<SkShader> Make2ConicalEdgeY(const SkPoint pts[2], const GradData& d
 }
 
 static sk_sp<SkShader> Make2ConicalZeroRadEdgeX(const SkPoint pts[2], const GradData& data,
-                                                SkTileMode tm,
+                                                SkShader::TileMode tm,
                                                 const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = 0.f;
@@ -231,7 +199,7 @@ static sk_sp<SkShader> Make2ConicalZeroRadEdgeX(const SkPoint pts[2], const Grad
 }
 
 static sk_sp<SkShader> Make2ConicalZeroRadEdgeY(const SkPoint pts[2], const GradData& data,
-                                                SkTileMode tm, const SkMatrix& localMatrix) {
+                                                SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = 0.f;
     SkScalar radius1 = (pts[1].fX - pts[0].fX) / 3;
@@ -243,7 +211,7 @@ static sk_sp<SkShader> Make2ConicalZeroRadEdgeY(const SkPoint pts[2], const Grad
 }
 
 static sk_sp<SkShader> Make2ConicalTouchX(const SkPoint pts[2], const GradData& data,
-                                          SkTileMode tm, const SkMatrix& localMatrix) {
+                                          SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = (pts[1].fX - pts[0].fX) / 7;
     SkScalar radius1 = (pts[1].fX - pts[0].fX) / 3;
@@ -255,7 +223,7 @@ static sk_sp<SkShader> Make2ConicalTouchX(const SkPoint pts[2], const GradData& 
 }
 
 static sk_sp<SkShader> Make2ConicalTouchY(const SkPoint pts[2], const GradData& data,
-                                          SkTileMode tm, const SkMatrix& localMatrix) {
+                                          SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     SkScalar radius0 = (pts[1].fX - pts[0].fX) / 7;
     SkScalar radius1 = (pts[1].fX - pts[0].fX) / 3;
@@ -267,7 +235,7 @@ static sk_sp<SkShader> Make2ConicalTouchY(const SkPoint pts[2], const GradData& 
 }
 
 static sk_sp<SkShader> Make2ConicalInsideSmallRad(const SkPoint pts[2], const GradData& data,
-                             SkTileMode tm, const SkMatrix& localMatrix) {
+                             SkShader::TileMode tm, const SkMatrix& localMatrix) {
     SkPoint center0, center1;
     center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
                 SkScalarAve(pts[0].fY, pts[1].fY));
@@ -280,18 +248,16 @@ static sk_sp<SkShader> Make2ConicalInsideSmallRad(const SkPoint pts[2], const Gr
 }
 
 typedef sk_sp<SkShader> (*GradMaker)(const SkPoint pts[2], const GradData& data,
-                                     SkTileMode tm, const SkMatrix& localMatrix);
+                                     SkShader::TileMode tm, const SkMatrix& localMatrix);
 
 constexpr GradMaker gGradMakersOutside[] = {
     Make2ConicalOutside, Make2ConicalOutsideFlip,
-    Make2ConicalZeroRadOutside, Make2ConicalZeroRadFlipOutside,
-    Make2ConicalOutsideStrip
+    Make2ConicalZeroRadOutside, Make2ConicalZeroRadFlipOutside
 };
 
 constexpr GradMaker gGradMakersInside[] = {
     Make2ConicalInside, Make2ConicalInsideFlip, Make2ConicalInsideCenter,
     Make2ConicalZeroRad, Make2ConicalZeroRadFlip, Make2ConicalZeroRadCenter,
-    Make2ConicalInsideCenterReversed
 };
 
 constexpr GradMaker gGradMakersEdgeCases[] = {
@@ -307,9 +273,9 @@ constexpr struct {
     const int fCount;
     const char* fName;
 } gGradCases[] = {
-    { gGradMakersOutside,   std::size(gGradMakersOutside),     "outside"  },
-    { gGradMakersInside,    std::size(gGradMakersInside),      "inside"  },
-    { gGradMakersEdgeCases, std::size(gGradMakersEdgeCases),   "edge"  },
+    { gGradMakersOutside,   SK_ARRAY_COUNT(gGradMakersOutside),     "outside"  },
+    { gGradMakersInside,    SK_ARRAY_COUNT(gGradMakersInside),      "inside"  },
+    { gGradMakersEdgeCases, SK_ARRAY_COUNT(gGradMakersEdgeCases),   "edge"  },
 };
 
 enum GradCaseType { // these must match the order in gGradCases
@@ -322,38 +288,28 @@ enum GradCaseType { // these must match the order in gGradCases
 
 class ConicalGradientsGM : public GM {
 public:
-    ConicalGradientsGM(GradCaseType gradCaseType, bool dither,
-                       SkTileMode mode = SkTileMode::kClamp)
+    ConicalGradientsGM(GradCaseType gradCaseType, bool dither)
         : fGradCaseType(gradCaseType)
-        , fDither(dither)
-        , fMode(mode) {
+        , fDither(dither) {
+        this->setBGColor(sk_tool_utils::color_to_565(0xFFDDDDDD));
         fName.printf("gradients_2pt_conical_%s%s", gGradCases[gradCaseType].fName,
                      fDither ? "" : "_nodither");
-        switch (mode) {
-        case SkTileMode::kRepeat:
-            fName.appendf("_repeat");
-            break;
-        case SkTileMode::kMirror:
-            fName.appendf("_mirror");
-            break;
-        default:
-            break;
-        }
     }
 
-private:
-    void onOnceBeforeDraw() override { this->setBGColor(0xFFDDDDDD); }
+protected:
+    SkString onShortName() {
+        return fName;
+    }
 
-    SkString onShortName() override { return fName; }
+    virtual SkISize onISize() { return SkISize::Make(840, 815); }
 
-    SkISize onISize() override { return {840, 815}; }
-
-    void onDraw(SkCanvas* canvas) override {
+    virtual void onDraw(SkCanvas* canvas) {
 
         SkPoint pts[2] = {
             { 0, 0 },
             { SkIntToScalar(100), SkIntToScalar(100) }
         };
+        SkShader::TileMode tm = SkShader::kClamp_TileMode;
         SkRect r = { 0, 0, SkIntToScalar(100), SkIntToScalar(100) };
         SkPaint paint;
         paint.setAntiAlias(true);
@@ -364,7 +320,7 @@ private:
         const GradMaker* gradMaker = gGradCases[fGradCaseType].fMaker;
         const int count = gGradCases[fGradCaseType].fCount;
 
-        for (size_t i = 0; i < std::size(gGradData); i++) {
+        for (size_t i = 0; i < SK_ARRAY_COUNT(gGradData); i++) {
             canvas->save();
             for (int j = 0; j < count; j++) {
                 SkMatrix scale = SkMatrix::I();
@@ -374,7 +330,7 @@ private:
                     scale.postTranslate(25.f, 25.f);
                 }
 
-                paint.setShader(gradMaker[j](pts, gGradData[i], fMode, scale));
+                paint.setShader(gradMaker[j](pts, gGradData[i], tm, scale));
                 canvas->drawRect(r, paint);
                 canvas->translate(0, SkIntToScalar(120));
             }
@@ -384,10 +340,11 @@ private:
     }
 
 private:
+    typedef GM INHERITED;
+
     GradCaseType fGradCaseType;
     SkString fName;
     bool fDither;
-    SkTileMode fMode;
 };
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -395,16 +352,8 @@ DEF_GM( return new ConicalGradientsGM(kInside_GradCaseType, true); )
 DEF_GM( return new ConicalGradientsGM(kOutside_GradCaseType, true); )
 DEF_GM( return new ConicalGradientsGM(kEdge_GradCaseType, true); )
 
-DEF_GM( return new ConicalGradientsGM(kInside_GradCaseType, true, SkTileMode::kRepeat); )
-DEF_GM( return new ConicalGradientsGM(kOutside_GradCaseType, true, SkTileMode::kRepeat); )
-DEF_GM( return new ConicalGradientsGM(kEdge_GradCaseType, true, SkTileMode::kRepeat); )
-
-DEF_GM( return new ConicalGradientsGM(kInside_GradCaseType, true, SkTileMode::kMirror); )
-DEF_GM( return new ConicalGradientsGM(kOutside_GradCaseType, true, SkTileMode::kMirror); )
-DEF_GM( return new ConicalGradientsGM(kEdge_GradCaseType, true, SkTileMode::kMirror); )
-
 DEF_GM( return new ConicalGradientsGM(kInside_GradCaseType, false); )
 DEF_GM( return new ConicalGradientsGM(kOutside_GradCaseType, false); )
 DEF_GM( return new ConicalGradientsGM(kEdge_GradCaseType, false); )
 
-}  // namespace skiagm
+}

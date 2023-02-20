@@ -8,8 +8,8 @@
 #ifndef SkDiscardableMemoryPool_DEFINED
 #define SkDiscardableMemoryPool_DEFINED
 
-#include "include/private/base/SkMutex.h"
-#include "include/private/chromium/SkDiscardableMemory.h"
+#include "SkDiscardableMemory.h"
+#include "SkMutex.h"
 
 #ifndef SK_LAZY_CACHE_STATS
     #ifdef SK_DEBUG
@@ -27,6 +27,8 @@
  */
 class SkDiscardableMemoryPool : public SkDiscardableMemory::Factory {
 public:
+    virtual ~SkDiscardableMemoryPool() { }
+
     virtual size_t getRAMUsed() = 0;
     virtual void setRAMBudget(size_t budget) = 0;
     virtual size_t getRAMBudget() = 0;
@@ -48,8 +50,10 @@ public:
     /**
      *  This non-global pool can be used for unit tests to verify that
      *  the pool works.
+     *  Without mutex, will be not be thread safe.
      */
-    static sk_sp<SkDiscardableMemoryPool> Make(size_t size);
+    static SkDiscardableMemoryPool* Create(
+            size_t size, SkBaseMutex* mutex = nullptr);
 };
 
 /**

@@ -9,16 +9,23 @@
 #ifndef SkJpegUtility_codec_DEFINED
 #define SkJpegUtility_codec_DEFINED
 
-#include <cstdint>
+#include "SkStream.h"
+
+#include <setjmp.h>
+// stdio is needed for jpeglib
+#include <stdio.h>
 
 extern "C" {
-    // We need to include stdio.h before jpeg because jpeg does not include it, but uses FILE
-    // See https://github.com/libjpeg-turbo/libjpeg-turbo/issues/17
-    #include <stdio.h> // IWYU pragma: keep
     #include "jpeglib.h"
+    #include "jerror.h"
 }
 
-class SkStream;
+/*
+ * Error handling struct
+ */
+struct skjpeg_error_mgr : jpeg_error_mgr {
+    jmp_buf fJmpBuf;
+};
 
 /*
  * Error handling function

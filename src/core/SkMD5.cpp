@@ -13,9 +13,8 @@
 //SK_CPU_LENDIAN allows 32 bit <=> 8 bit conversions without copies (if alligned).
 //SK_CPU_FAST_UNALIGNED_ACCESS allows 32 bit <=> 8 bit conversions without copies if SK_CPU_LENDIAN.
 
-#include "src/core/SkMD5.h"
-
-#include "include/private/base/SkFeatures.h"
+#include "SkMD5.h"
+#include <string.h>
 
 /** MD5 basic transformation. Transforms state based on block. */
 static void transform(uint32_t state[4], const uint8_t block[64]);
@@ -67,8 +66,7 @@ bool SkMD5::write(const void* buf, size_t inputLength) {
     return true;
 }
 
-SkMD5::Digest SkMD5::finish() {
-    SkMD5::Digest digest;
+void SkMD5::finish(Digest& digest) {
     // Get the number of bits before padding.
     uint8_t bits[8];
     encode(bits, this->byteCount << 3);
@@ -76,7 +74,7 @@ SkMD5::Digest SkMD5::finish() {
     // Pad out to 56 mod 64.
     unsigned int bufferIndex = (unsigned int)(this->byteCount & 0x3F);
     unsigned int paddingLength = (bufferIndex < 56) ? (56 - bufferIndex) : (120 - bufferIndex);
-    static const uint8_t PADDING[64] = {
+    static uint8_t PADDING[64] = {
         0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -94,7 +92,6 @@ SkMD5::Digest SkMD5::finish() {
     // Clear state.
     memset(this, 0, sizeof(*this));
 #endif
-    return digest;
 }
 
 struct F { uint32_t operator()(uint32_t x, uint32_t y, uint32_t z) {

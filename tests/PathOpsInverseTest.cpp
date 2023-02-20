@@ -4,35 +4,25 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/core/SkPath.h"
-#include "include/core/SkPathTypes.h"
-#include "include/core/SkString.h"
-#include "include/pathops/SkPathOps.h"
-#include "tests/PathOpsExtendedTest.h"
-#include "tests/Test.h"
+#include "PathOpsExtendedTest.h"
 
 DEF_TEST(PathOpsInverse, reporter) {
-    const SkPathDirection dirs[] = {SkPathDirection::kCW, SkPathDirection::kCCW};
-    const SkPathFillType fts[] = {
-        SkPathFillType::kWinding,        SkPathFillType::kEvenOdd,
-        SkPathFillType::kInverseWinding, SkPathFillType::kInverseEvenOdd
-    };
     SkPath one, two;
-    int testCount = 0;
     for (int op = kDifference_SkPathOp; op <= kReverseDifference_SkPathOp; ++op) {
-        for (auto oneFill : fts) {
-            for (auto oneDir : dirs) {
+        for (int oneFill = SkPath::kWinding_FillType; oneFill <= SkPath::kInverseEvenOdd_FillType;
+                    ++oneFill) {
+            for (int oneDir = SkPath::kCW_Direction; oneDir != SkPath::kCCW_Direction; ++oneDir) {
                 one.reset();
-                one.setFillType(oneFill);
-                one.addRect(0, 0, 6, 6, oneDir);
-                for (auto twoFill : fts) {
-                    for (auto twoDir : dirs) {
+                one.setFillType((SkPath::FillType) oneFill);
+                one.addRect(0, 0, 6, 6, (SkPath::Direction) oneDir);
+                for (int twoFill = SkPath::kWinding_FillType;
+                        twoFill <= SkPath::kInverseEvenOdd_FillType; ++twoFill) {
+                    for (int twoDir = SkPath::kCW_Direction; twoDir != SkPath::kCCW_Direction;
+                            ++twoDir) {
                         two.reset();
-                        two.setFillType(twoFill);
-                        two.addRect(3, 3, 9, 9, twoDir);
-                        SkString testName;
-                        testName.printf("inverseTest%d", ++testCount);
-                        testPathOp(reporter, one, two, (SkPathOp) op, testName.c_str());
+                        two.setFillType((SkPath::FillType) twoFill);
+                        two.addRect(3, 3, 9, 9, (SkPath::Direction) twoDir);
+                        testPathOp(reporter, one, two, (SkPathOp) op, "inverseTest");
                     }
                 }
             }
