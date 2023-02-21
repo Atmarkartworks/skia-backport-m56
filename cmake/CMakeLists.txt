@@ -3,6 +3,7 @@ cmake_minimum_required (VERSION 3.1)   # First version with CMAKE_CXX_STANDARD.
 project (skimake)
 set (CMAKE_CXX_STANDARD 11)
 
+
 # Default to Release mode.  We're mainly targeting Skia users, not Skia developers.
 if (NOT CMAKE_BUILD_TYPE)
     set (CMAKE_BUILD_TYPE Release)
@@ -32,8 +33,9 @@ set (userconfig_directory ${CMAKE_BINARY_DIR}/include)
 list (APPEND public_includes ${userconfig_directory})
 
 # These guys are third_party but provided by a Skia checkout.
-list (APPEND srcs             ../third_party/etc1/etc1.cpp ../third_party/ktx/ktx.cpp)
+list (APPEND srcs             ../third_party/etc1/etc1.cpp ../third_party/ktx/ktx.cpp ../third_party/gif/SkGifImageReader.cpp)
 list (APPEND private_includes ../third_party/etc1          ../third_party/ktx)
+list (APPEND private_includes ../third_party/gif          ../third_party/etc1   ../third_party/png  ../.    ../third_party/externals/zlib)
 
 list (APPEND private_includes ../third_party/libpng)
 file (GLOB libpng_srcs ../third_party/libpng/*.c)
@@ -150,6 +152,7 @@ find_package (EXPAT)
 find_package (Lua)
 find_package (ZLIB)
 
+
 # For libraries that don't have find_package() scripts, we do it ourselves:
 find_path (WEBP_INCLUDE_DIRS "webp/decode.h")
 find_library (WEBP_LIBRARIES "webp")
@@ -205,7 +208,7 @@ else()
 endif()
 
 # PNG
-add_definitions(-DSK_HAS_PNG_LIBRARY)
+#add_definitions(-DSK_HAS_PNG_LIBRARY)
 add_definitions(-DPNG_ARM_NEON_OPT=0)
 
 if (ZLIB_FOUND)
