@@ -1,3 +1,6 @@
+#
+# come from https://github.com/revery-ui/esy-skia/blob/master/DEPS
+#
 use_relative_paths = True
 
 deps = {
