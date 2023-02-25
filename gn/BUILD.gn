@@ -84,6 +84,7 @@ config("default") {
       "$windk/win_sdk/Include/10.0.10586.0/ucrt",
       "$windk/win_sdk/Include/10.0.10586.0/um",
     ]
+    vulkan = getenv("VULKAN_SDK")
     lib_dirs = [
       # For local builds.
       "$windk/../Windows Kits/10/Lib/10.0.10150.0/ucrt/$target_cpu",
@@ -92,6 +93,7 @@ config("default") {
       # For builds using win_toolchain asset.
       "$windk/win_sdk/Lib/10.0.10586.0/ucrt/$target_cpu",
       "$windk/win_sdk/Lib/10.0.10586.0/um/$target_cpu",
+      "$vulkan/lib",
     ]
     if (target_cpu == "x86") {
       lib_dirs += [ "$windk/VC/lib" ]
@@ -419,6 +421,9 @@ config("executable") {
 }
 
 toolchain("msvc") {
+  lib_switch = ""
+  lib_dir_switch = ""
+  
   lib_dir_switch = "/LIBPATH:"
 
   bin = "$windk/VC/bin/amd64"
@@ -434,7 +439,8 @@ toolchain("msvc") {
     pdbname = "{{target_out_dir}}/{{label_name}}_c.pdb"
 
     # Label names may have spaces so pdbname must be quoted.
-    command = "$env_setup$bin/cl.exe /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd\"$pdbname\""
+    #command = "$env_setup$bin/cl.exe /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd\"$pdbname\""    
+    command = "$env_setup$bin/cl.exe /nologo /FC @$rspfile /c {{source}} /Fo{{output}} /Fd\"$pdbname\""
     depsformat = "msvc"
     outputs = [
       "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj",
@@ -449,7 +455,8 @@ toolchain("msvc") {
     pdbname = "{{target_out_dir}}/{{label_name}}_c.pdb"
 
     # Label names may have spaces so pdbname must be quoted.
-    command = "$env_setup$bin/cl.exe /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd\"$pdbname\""
+    #command = "$env_setup$bin/cl.exe /nologo /showIncludes /FC @$rspfile /c {{source}} /Fo{{output}} /Fd\"$pdbname\""    
+    command = "$env_setup$bin/cl.exe /nologo /FC @$rspfile /c {{source}} /Fo{{output}} /Fd\"$pdbname\""
     depsformat = "msvc"
     outputs = [
       "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj",
@@ -481,7 +488,7 @@ toolchain("msvc") {
     pdbname = "${dllname}.pdb"
     rspfile = "${dllname}.rsp"
 
-    command = "$env_setup$bin/link.exe /nologo /IMPLIB:$libname /DLL /OUT:$dllname /PDB:$pdbname @$rspfile"
+    command = "$env_setup$bin/link.exe /nologo /VERVOSE /IMPLIB:$libname /DLL /OUT:$dllname /PDB:$pdbname @$rspfile"
     outputs = [
       dllname,
       libname,
@@ -539,6 +546,7 @@ toolchain("msvc") {
 toolchain("gcc_like") {
   lib_switch = "-l"
   lib_dir_switch = "-L"
+
 
   tool("cc") {
     depfile = "{{output}}.d"
