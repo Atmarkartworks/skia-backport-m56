@@ -137,13 +137,14 @@ file (GLOB_RECURSE sse41_srcs ../src/*sse41*.cpp ../src/*SSE41*.cpp)
 file (GLOB_RECURSE sse42_srcs ../src/*sse42*.cpp ../src/*SSE42*.cpp)
 file (GLOB_RECURSE avx_srcs   ../src/*_avx.cpp)
 file (GLOB_RECURSE hsw_srcs   ../src/*_hsw.cpp)
+
+set(cf_multi "-mavx2 -mbmi -mbmi2 -mf16c -mfma")
 if (NOT WIN32)
     set_source_files_properties(${ssse3_srcs} PROPERTIES COMPILE_FLAGS -mssse3)
     set_source_files_properties(${sse41_srcs} PROPERTIES COMPILE_FLAGS -msse4.1)
     set_source_files_properties(${sse42_srcs} PROPERTIES COMPILE_FLAGS -msse4.2)
-    set_source_files_properties(${avx_srcs}   PROPERTIES COMPILE_FLAGS -mavx)
-    set_source_files_properties(${hsw_srcs}   PROPERTIES COMPILE_FLAGS
-        -mavx2 -mbmi -mbmi2 -mf16c -mfma)
+    set_source_files_properties(${avx_srcs} PROPERTIES COMPILE_FLAGS -mavx)
+    set_source_files_properties(${hsw_srcs} PROPERTIES COMPILE_FLAGS ${cf_multi})
 endif()
 
 # Detect our optional dependencies.
@@ -156,6 +157,8 @@ find_package (ZLIB)
 # For libraries that don't have find_package() scripts, we do it ourselves:
 find_path (WEBP_INCLUDE_DIRS "webp/decode.h")
 find_library (WEBP_LIBRARIES "webp")
+find_library (WEBP_LIBRARIES2 "webpdemux")
+
 
 find_path (OSMESA_INCLUDE_DIRS "GL/osmesa.h")
 find_library(OSMESA_LIBRARIES "OSMesa")
@@ -223,6 +226,7 @@ endif()
 if (WEBP_INCLUDE_DIRS AND WEBP_LIBRARIES)
     list (APPEND private_includes ${WEBP_INCLUDE_DIRS})
     list (APPEND libs             ${WEBP_LIBRARIES})
+    list (APPEND libs             ${WEBP_LIBRARIES2})
     add_definitions(-DSK_HAS_WEBP_LIBRARY)
 else()
     remove_srcs(../src/images/*WEBP*)
